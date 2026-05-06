@@ -23,16 +23,13 @@
     ],
     "deny": [
       "Edit(.env)",
-      "Edit(.env.local)",
       "Edit(.env.development)",
       "Edit(.env.production)",
       "Edit(.env.test)",
       "Write(.env)",
-      "Write(.env.local)",
       "Write(.env.development)",
       "Write(.env.production)",
-      "Write(.env.test)",
-      "Edit(.github/workflows/*)"
+      "Write(.env.test)"
     ]
   }
 }

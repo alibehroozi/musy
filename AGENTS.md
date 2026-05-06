@@ -142,8 +142,8 @@ Stateful infra runs in Docker; the apps run on the host.
 
 ```bash
 npm install
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
+cp apps/api/.env.example apps/api/.env.local
+cp apps/web/.env.example apps/web/.env.local
 npm run db:up        # start mongo + mongo-express
 npm run dev          # api (:3001) + web (:5173) in parallel
 ```
@@ -154,12 +154,14 @@ Mongo Express UI at http://localhost:8181 — useful for verifying that a featur
 
 ## Environment files (strict separation)
 
-| File            | Read by            | Allowed contents                                                                          |
-| --------------- | ------------------ | ----------------------------------------------------------------------------------------- |
-| `apps/api/.env` | NestJS at runtime  | Server-only secrets: `MONGO_URI`, `ANTHROPIC_API_KEY`, OAuth client secrets, session keys |
-| `apps/web/.env` | Vite at build time | `VITE_*` config inlined into the public bundle. **No secrets, ever.**                     |
+| File                  | Read by            | Allowed contents                                                                          |
+| --------------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| `apps/api/.env.local` | NestJS at runtime  | Server-only secrets: `MONGO_URI`, `ANTHROPIC_API_KEY`, OAuth client secrets, session keys |
+| `apps/web/.env.local` | Vite at build time | `VITE_*` config inlined into the public bundle. **No secrets, ever.**                     |
 
-**Never share env values between the two files.** If a backend secret leaked into `apps/web/.env`, Vite could inline it into the public JS bundle and ship it to every browser. The split is a safety boundary, not a stylistic choice.
+**Local-dev convention is `.env.local`** (gitignored). NestJS reads `.env.local` first and falls back to `.env`; Vite loads `.env.local` automatically and lets it override `.env`. The `.env.example` files are committed templates.
+
+**Never share env values between the two files.** If a backend secret leaked into `apps/web/.env.local`, Vite could inline it into the public JS bundle and ship it to every browser. The split is a safety boundary, not a stylistic choice.
 
 When adding a new env var, ask: does any user-agent ever need to see this? If no → goes in `apps/api/.env.example`. If yes → it's not a secret; goes in `apps/web/.env.example` with a `VITE_` prefix.
 
@@ -167,7 +169,7 @@ When adding a new env var, ask: does any user-agent ever need to see this? If no
 
 The repo is structured for two deploy surfaces:
 
-- **API → runtime host** (Render / Fly / Railway / ECS). Real env vars come from the platform's secret manager. The `.env` file does not exist in production.
+- **API → runtime host** (Render / Fly / Railway / ECS). Real env vars come from the platform's secret manager. No `.env*` file in production.
 - **Web → static host** (Vercel / Netlify / Cloudflare Pages). `VITE_*` vars are set in the platform's build settings and inlined at build time. The static bundle is then served from CDN.
 - **Mongo → managed** (Atlas) or self-hosted; `MONGO_URI` lives only in the API's secret manager.
 

@@ -35,28 +35,32 @@ If `node_modules/` is missing → install. If present, skip (trust the user to r
 
 ## Step 3 — Env files
 
-For each app, ensure a real `.env` exists. If not, copy from the example and **tell the user what's blank** so they know what to fill before running.
+The local-dev convention is **`.env.local`** (gitignored). NestJS reads `.env.local` first and falls back to `.env`; Vite loads `.env.local` automatically and lets it override `.env`. The `.env.example` files are the committed templates.
+
+For each app, ensure a real `.env.local` exists. If not, copy from the example and **tell the user what's blank** so they know what to fill before running.
 
 \```bash
-[ -f apps/api/.env ] || cp apps/api/.env.example apps/api/.env
-[ -f apps/web/.env ] || cp apps/web/.env.example apps/web/.env
+[ -f apps/api/.env.local ] || cp apps/api/.env.example apps/api/.env.local
+[ -f apps/web/.env.local ] || cp apps/web/.env.example apps/web/.env.local
 \```
 
-Then read each `.env` and validate:
+If a legacy `apps/api/.env` or `apps/web/.env` exists from before the switch, leave it alone — the fallback loaders mean it still works. Note it to the user as something they may want to rename to `.env.local` for consistency.
 
-**`apps/api/.env`** — required keys (error if blank):
+Then read each `.env.local` and validate:
+
+**`apps/api/.env.local`** — required keys (error if blank):
 
 - `API_PORT` (default 3001)
 - `MONGO_URI` — must point at the docker mongo (`mongodb://localhost:27117/...`); if it points at a different port, the API will silently use someone else's mongo
 - `WEB_ORIGIN` (default `http://localhost:5173`)
 
-**`apps/api/.env`** — optional keys (warn if blank, don't error):
+**`apps/api/.env.local`** — optional keys (warn if blank, don't error):
 
 - `ANTHROPIC_API_KEY` — needed when AI features land
 - `OPENAI_API_KEY` — alternate provider
 - (any provider keys added by future features — see the maintenance note at the bottom of this command)
 
-**`apps/web/.env`** — required keys:
+**`apps/web/.env.local`** — required keys:
 
 - `VITE_API_URL` (default `/api`)
 
@@ -111,8 +115,8 @@ Stop at the first blocker; don't continue probing past a hard failure.
 ## Hard rules
 
 - **Idempotent.** Two runs in a row produce the same green result and don't break anything.
-- **Read-only on user files.** Don't overwrite an existing `.env`. Don't `npm install --force`. Don't `docker compose down -v` (that wipes data).
-- **Respect the deny list.** Editing `.env` directly is denied; this command only ever **copies** from `.env.example` via Bash `cp` when the target is missing.
+- **Read-only on user files.** Don't overwrite an existing `.env.local` or `.env`. Don't `npm install --force`. Don't `docker compose down -v` (that wipes data).
+- **Respect the deny list.** Editing `.env.local` (or `.env`) directly is denied; this command only ever **copies** from `.env.example` via Bash `cp` when the target is missing.
 - **No silent fixes.** If a probe fails, surface it. Don't auto-install Node, don't auto-start Docker Desktop. Surface, instruct, stop.
 
 ## Watch out for
@@ -128,7 +132,7 @@ Triggers that require updating this command:
 | If a change adds/modifies…                                               | Update here                                              |
 | ------------------------------------------------------------------------ | -------------------------------------------------------- |
 | A docker service in `docker-compose.yml`                                 | Add a healthcheck step in Step 4, plus the URL in Step 5 |
-| A required env var in `apps/api/.env.example` or `apps/web/.env.example` | Add the presence check in Step 3                         |
+| A required env var in `apps/api/.env.example` or `apps/web/.env.example` | Add the presence check in Step 3 (against `.env.local`)  |
 | A new system dep (Playwright browsers, native module, CLI tool)          | Add the probe in Step 1                                  |
 | A new port binding                                                       | Update the URL list in Step 5                            |
 | A new auto-init step (DB seed, migration, fixture)                       | Add the step here                                        |

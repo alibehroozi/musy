@@ -34,7 +34,9 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
 
 9. **Manually exercise** the changed behavior **and the surrounding feature**. Regressions in adjacent areas are the most common failure mode of change tasks. Click through related UI; hit related endpoints.
 
-10. **PR title:** `change: <short description>`. PR body must list:
+10. **Update `/prepare-local` if local-dev requirements changed.** Did this change add/modify a docker service, env var, port, or system dep? If yes, update `.claude/commands/prepare-local.md` in this PR.
+
+11. **PR title:** `change: <short description>`. PR body must list:
 
 - Invariants added (with IDs and text)
 - Invariants tightened (with IDs and old → new)

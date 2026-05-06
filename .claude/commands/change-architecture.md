@@ -81,11 +81,12 @@ Now bring existing code in line with the new spec.
 
 1. **`npm run verify`** must be green. Lint, types across all workspaces, every invariant test. If it's red, the migration is not done.
 2. **`npm run db:up && npm run dev`** if the change touches runtime behavior. Smoke-test the affected paths in the browser / via curl.
-3. **Commit** with title `arch(code): <short description>`. Body lists:
+3. **Update `/prepare-local` if local-dev requirements changed.** Architecture changes that add a service, port, env var, or system dep must update `.claude/commands/prepare-local.md`. Commit it as part of `arch(code):` (or as a third commit `arch(setup):` if it's substantial).
+4. **Commit** with title `arch(code): <short description>`. Body lists:
    - Files moved / renamed / split (concise count + a few examples is fine)
    - Any behavior that incidentally changed (should be none for a pure architecture change — flag it loudly if it did)
    - Confirmation `npm run verify` is green
-4. **Open PR** against `main`. Title `arch: <description>`. Body links both commits, summarizes the migration scope, lists alternatives considered.
+5. **Open PR** against `main`. Title `arch: <description>`. Body links both commits, summarizes the migration scope, lists alternatives considered.
 
 ## Hard rules
 

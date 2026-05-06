@@ -6,6 +6,10 @@ Music app with AI-powered taste processing. Installable PWA. Maintained entirely
 
 Prereqs: **Node ≥ 20**, **Docker Desktop** (for Mongo).
 
+**With Claude Code:** run `/prepare-local` — it probes the prereqs, installs deps, copies missing `.env` files, brings up Docker, and tells you what's blank. Then `npm run dev`.
+
+**Manually:**
+
 ```bash
 npm install
 cp apps/api/.env.example apps/api/.env   # backend secrets (Mongo, AI keys)

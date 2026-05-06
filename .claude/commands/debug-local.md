@@ -104,6 +104,8 @@ Run `/new-invariant`. Then:
 
 ## Tier 7 — PR
 
+Before opening: did the fix change anything a fresh checkout would need (env var, docker service, port, system dep)? If yes, update `.claude/commands/prepare-local.md` in this PR. Most fixes don't, but the rare ones that do silently break onboarding if missed.
+
 Title: `fix: <short description>`
 
 Body must include:

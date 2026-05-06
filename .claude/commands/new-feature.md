@@ -32,7 +32,9 @@ The user describes a feature they want built. Your job is to take it from descri
    - Use the feature in the browser / via curl
    - Confirm Mongo Express (http://localhost:8181) shows the expected docs
 
-8. **Open PR** against `main` with title `task: <short title>` and a body that lists the new invariant IDs.
+8. **Update `/prepare-local` if local-dev requirements changed.** Did this feature add a new docker service, a new required env var, a new system dep, a new port, or a new init step? If yes, update `.claude/commands/prepare-local.md` so a fresh checkout still works. If no, skip.
+
+9. **Open PR** against `main` with title `task: <short title>` and a body that lists the new invariant IDs.
 
 ## Hard rules (re-stated from AGENTS.md)
 

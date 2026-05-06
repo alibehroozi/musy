@@ -1,0 +1,35 @@
+# Project-specific gitleaks config.
+# The default rules already cover most providers; this file documents intent
+# and adds patterns for the specific providers we'll integrate with.
+
+title = "moc gitleaks config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API key"
+regex = '''sk-ant-[a-zA-Z0-9_-]{20,}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API key"
+regex = '''sk-[A-Za-z0-9]{20,}'''
+keywords = ["sk-"]
+
+[[rules]]
+id = "spotify-client-secret"
+description = "Spotify-shaped client secret (32 hex chars)"
+regex = '''(?i)spotify[_-]?(client[_-]?secret|secret)\s*[:=]\s*["']?[a-f0-9]{32}["']?'''
+keywords = ["spotify"]
+
+[allowlist]
+description = "Files allowed to contain placeholder secret-shaped strings"
+paths = [
+  '''\.env\.example$''',
+  '''\.gitleaks\.toml$''',
+  '''AGENTS\.md$''',
+  '''INVARIANTS\.md$''',
+]

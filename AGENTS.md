@@ -32,7 +32,7 @@ These are non-negotiable. CI enforces them. Do not bypass.
 5. **Zod schemas in `libs/shared/contracts/` are the API contract.** Both NestJS (via `nestjs-zod`) and React parse with the same schema. No drift.
 6. **Do not touch without explicit human approval:**
    - `INVARIANTS.md` — only via `/new-invariant`
-   - `package.json` dependency additions — propose first, get sign-off
+   - `package.json` dependency additions — propose first with **2–3 open-source alternatives + your recommendation in bullet form, one short reason each**. Open-source first; only propose paid/proprietary when open-source options are clearly worse. Get sign-off before installing.
    - `.github/workflows/`
    - any `.env*` file other than `.env.example`
 7. **Privacy:** user listening history and identifiers never leak across users, never appear in third-party logs, and never reach LLM prompts unless the prompt explicitly requires them and the call site is annotated with the reason.

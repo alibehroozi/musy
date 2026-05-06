@@ -22,13 +22,18 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
    - **Should tighten** → propose updated text + severity. Run `/new-invariant` to add the tighter version (which produces its own 2 commits). Generally **add** rather than edit existing rows in place.
    - **No longer applies** → flag to user with the row text and proposed reason. **Removal requires explicit user approval in the chat.** Never silently delete a row.
 
-4. **Branch.** `git checkout -b change-<slug>`.
+4. **Tooling check (only if the change introduces a capability the codebase doesn't already cover).** Most behavior changes don't need new packages — say "no new packages — using `<existing>`" and skip. Otherwise:
+   - 2–3 **open-source** candidates per new capability + your recommendation. **One short reason each. Bullet list only. No paragraphs.**
+   - Open-source first; propose paid/proprietary only when open-source options are clearly worse — and say why
+   - **Stop and wait for user approval** before adding any dep
 
-5. **Run `/new-invariant` for new properties the change introduces.** This produces commits 1 and 2 of the sequence (spec, then test stubs).
+5. **Branch.** `git checkout -b change-<slug>`.
 
-6. **Re-read `ARCHITECTURE.md`** for the section(s) covering the touch points. Behavior changes are where layering shortcuts creep in.
+6. **Run `/new-invariant` for new properties the change introduces.** This produces commits 1 and 2 of the sequence (spec, then test stubs).
 
-7. **Implement, libs-first, one commit per layer.** Per AGENTS.md hard rule #10 — same shape as `/new-feature`:
+7. **Re-read `ARCHITECTURE.md`** for the section(s) covering the touch points. Behavior changes are where layering shortcuts creep in.
+
+8. **Implement, libs-first, one commit per layer.** Per AGENTS.md hard rule #10 — same shape as `/new-feature`:
    - `change(contracts): ...` — Zod schema updates (if shape changed)
    - `change(api-core): ...` — pure backend logic
    - `change(web-core): ...` — pure frontend logic
@@ -39,13 +44,13 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
 
    Watch for previously-green tests turning red — that's a signal an existing invariant is now violated. Default conclusion: **your code is wrong.** Only after deliberate analysis (and user sign-off) should the conclusion be that the invariant needs updating.
 
-8. **Run verify after the final code commit.** `npm run verify`. Both old and new invariants must be green. The HEAD of the branch must be green.
+9. **Run verify after the final code commit.** `npm run verify`. Both old and new invariants must be green. The HEAD of the branch must be green.
 
-9. **Manually exercise** the changed behavior **and the surrounding feature**. Regressions in adjacent areas are the most common failure mode of change tasks. Click through related UI; hit related endpoints.
+10. **Manually exercise** the changed behavior **and the surrounding feature**. Regressions in adjacent areas are the most common failure mode of change tasks. Click through related UI; hit related endpoints.
 
-10. **Update `/prepare-local` if local-dev requirements changed.** Did this change add/modify a docker service, env var, port, or system dep? If yes, commit `chore(setup): update /prepare-local for <reason>` separately.
+11. **Update `/prepare-local` if local-dev requirements changed.** Did this change add/modify a docker service, env var, port, or system dep? If yes, commit `chore(setup): update /prepare-local for <reason>` separately.
 
-11. **PR title:** `change: <short description>`. PR body must list:
+12. **PR title:** `change: <short description>`. PR body must list:
 
 - Invariants added (with IDs and text)
 - Invariants tightened (with IDs and old → new)

@@ -10,13 +10,28 @@ The user describes a feature they want built. Your job is to take it from descri
 
 1. **Confirm the scope.** Restate the feature in one sentence and confirm with the user. If it's bigger than a single PR, propose a split before proceeding. Don't push past ambiguous scope.
 
-2. **Branch.** `git checkout -b task-<slug>` (e.g. `task-magic-link-login`).
+2. **Tooling check (terse).** Before branching:
+   - List capabilities this feature needs that the codebase doesn't already cover (auth? email? rate-limit? embeddings? caching? scheduling?)
+   - For each new capability: 2–3 **open-source** candidates + your recommendation. **One short reason each. Bullet list only. No paragraphs.**
+   - Open-source first; propose paid/proprietary only when open-source options are clearly worse — and say why
+   - "No new packages — using `<existing>`" is a valid output and the most common one
+   - **Stop and wait for user approval** before adding any dep
 
-3. **Define invariants FIRST.** Run `/new-invariant`. That command runs explore → suggest → write and stops at red stubs. Confirm `npm run test:invariants` shows the new tests as `todo` or failing — if they pass, the stubs are wrong.
+   Example output shape:
 
-4. **Re-read `ARCHITECTURE.md`** for the section(s) relevant to where you're about to write code (apps/api, apps/web, the relevant lib). The implementation must conform — controller/service/repository layering on the api side, component sizing / hook / context rules on the web side, allowed-deps boundary on libs.
+   ```
+   - magic-link tokens: lucia (recommended — TS-native, small) | passport-magic-login | roll-own
+   - email send: nodemailer (recommended — std, ESM-friendly) | resend SDK | postmark SDK
+   Approve?
+   ```
 
-5. **Implement libs-first, one commit per layer.** Per AGENTS.md hard rule #10, each layer that's touched is its own commit. Empty layers are skipped.
+3. **Branch.** `git checkout -b task-<slug>` (e.g. `task-magic-link-login`).
+
+4. **Define invariants FIRST.** Run `/new-invariant`. That command runs explore → suggest → write and stops at red stubs. Confirm `npm run test:invariants` shows the new tests as `todo` or failing — if they pass, the stubs are wrong.
+
+5. **Re-read `ARCHITECTURE.md`** for the section(s) relevant to where you're about to write code (apps/api, apps/web, the relevant lib). The implementation must conform — controller/service/repository layering on the api side, component sizing / hook / context rules on the web side, allowed-deps boundary on libs.
+
+6. **Implement libs-first, one commit per layer.** Per AGENTS.md hard rule #10, each layer that's touched is its own commit. Empty layers are skipped.
 
    Order, with conventional commit message prefix in parens:
    - **`feat(contracts): ...`** — Zod schemas in `libs/shared/contracts/`. Both BE and FE will import these.
@@ -27,19 +42,20 @@ The user describes a feature they want built. Your job is to take it from descri
 
    **Convert `it.todo` test bodies into real assertions in the same commit as the layer that makes them passable.** Tests that depend on `contracts` get real bodies in the `feat(contracts):` commit. Tests that depend on `api` get real bodies in the `feat(api):` commit. By the final code commit, every test is green.
 
-6. **Run verify** after each layer commit. `npm run verify` doesn't have to pass on every intermediate commit (test commits often run red against missing implementation), but **the final commit on the branch must be green**.
+7. **Run verify** after each layer commit. `npm run verify` doesn't have to pass on every intermediate commit (test commits often run red against missing implementation), but **the final commit on the branch must be green**.
 
-7. **Manually exercise.** For UI/API features:
+8. **Manually exercise.** For UI/API features:
    - `npm run db:up && npm run dev`
    - Use the feature in the browser / via curl
    - Confirm Mongo Express (http://localhost:8181) shows the expected docs
 
-8. **Update `/prepare-local` if local-dev requirements changed.** Did this feature add a new docker service, a new required env var, a new system dep, a new port, or a new init step? If yes, commit `chore(setup): update /prepare-local for <reason>` separately. If no, skip.
+9. **Update `/prepare-local` if local-dev requirements changed.** Did this feature add a new docker service, a new required env var, a new system dep, a new port, or a new init step? If yes, commit `chore(setup): update /prepare-local for <reason>` separately. If no, skip.
 
-9. **Open PR** against `main` with title `task: <short title>`. Body lists:
-   - The commit sequence (spec → test → code by layer)
-   - The new invariant IDs
-   - Confirmation final commit is `npm run verify` green
+10. **Open PR** against `main` with title `task: <short title>`. Body lists:
+
+- The commit sequence (spec → test → code by layer)
+- The new invariant IDs
+- Confirmation final commit is `npm run verify` green
 
 ## Hard rules (re-stated from AGENTS.md)
 
@@ -53,8 +69,9 @@ The user describes a feature they want built. Your job is to take it from descri
 
 ## Watch out for
 
-- **Skipping step 4 (re-read ARCHITECTURE.md).** Most architectural drift comes from agents going on muscle-memory instead of checking the project's specific layering rules.
-- **Implementing before invariants.** If you find yourself writing code without a red test, stop. Go back to step 3.
+- **Skipping step 2 (tooling check).** Asking the user about packages mid-implementation is too late — propose options upfront, terse and bullet-listed, and wait for sign-off before adding deps.
+- **Skipping step 5 (re-read ARCHITECTURE.md).** Most architectural drift comes from agents going on muscle-memory instead of checking the project's specific layering rules.
+- **Implementing before invariants.** If you find yourself writing code without a red test, stop. Go back to step 4.
 - **Drive-by changes.** A feature PR touches only what the feature requires. Refactors go in their own PRs.
 - **Skipping the manual exercise.** Type-checked + green tests means correct logic, not correct user experience. For UI features, click through it before calling done.
 - **Adding a new invariant section.** Categories in `INVARIANTS.md` are by constraint, never by feature. If nothing fits, the invariant is mis-phrased.

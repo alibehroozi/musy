@@ -1,4 +1,4 @@
-# moc
+# musy
 
 Music app with AI-powered taste processing. Installable PWA. Maintained entirely by AI agents.
 

@@ -4,11 +4,32 @@ Music app with AI-powered taste processing. Installable PWA. Maintained entirely
 
 ## Quick start
 
+Prereqs: **Node ≥ 20**, **Docker Desktop** (for Mongo).
+
 ```bash
 npm install
 cp .env.example .env   # fill in real values
+npm run db:up          # start MongoDB + Mongo Express in Docker
 npm run dev            # API on :3001, web on :5173
 ```
+
+Open the app at http://localhost:5173. Browse the database at http://localhost:8181.
+
+### Local infrastructure
+
+Stateful infra runs in Docker; the apps run on the host for fast hot-reload.
+
+| Command            | What it does                                  |
+| ------------------ | --------------------------------------------- |
+| `npm run db:up`    | start Mongo + Mongo Express (detached)        |
+| `npm run db:down`  | stop containers (data persists in the volume) |
+| `npm run db:logs`  | tail container logs                           |
+| `npm run db:reset` | wipe the volume — nukes all dev data          |
+
+Services:
+
+- **MongoDB** at `mongodb://localhost:27117` — connection string in `.env` (`MONGO_URI`). The non-default port (`27117` instead of the standard `27017`) is intentional, so Docker doesn't collide with any other local mongo.
+- **Mongo Express** at http://localhost:8181 — browse collections, edit docs, run queries.
 
 ## Verification
 

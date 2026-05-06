@@ -52,6 +52,21 @@ When adding a feature:
 
 Use `/new-invariant` for guided invariant authoring.
 
+## Local development
+
+Stateful infra runs in Docker; the apps run on the host.
+
+```bash
+npm install
+cp .env.example .env
+npm run db:up        # start mongo + mongo-express
+npm run dev          # api (:3001) + web (:5173) in parallel
+```
+
+Mongo Express UI at http://localhost:8181 — useful for verifying that a feature actually wrote what it claimed to.
+
+`npm run db:reset` nukes the dev volume — use it when a schema change makes existing dev data inconsistent.
+
 ## Verification pipeline
 
 ```

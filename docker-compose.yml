@@ -1,0 +1,48 @@
+# Local development infrastructure.
+#
+# Brings up everything the API needs to run on your machine. The apps themselves
+# (api, web) run on the host with `npm run dev` — only stateful infra runs in
+# containers. This keeps hot-reload fast and the AI's debugging surface small.
+#
+# Usage:
+#   npm run db:up      # start mongo + mongo-express (detached)
+#   npm run db:down    # stop and remove containers (data persists in the volume)
+#   npm run db:reset   # nuke the volume — wipes all dev data
+#   npm run db:logs    # tail container logs
+#
+# Mongo:            mongodb://localhost:27117/<db>  (non-default host port to avoid
+#                                                   collisions with other local mongos)
+# Mongo Express UI: http://localhost:8181           (browse collections in the browser)
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: musy-mongo
+    restart: unless-stopped
+    ports:
+      - "27117:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  mongo-express:
+    image: mongo-express:1
+    container_name: musy-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8181:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: "27017"
+      ME_CONFIG_BASICAUTH: "false"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

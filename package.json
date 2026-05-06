@@ -26,6 +26,10 @@
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
     "dev": "npm-run-all -p dev:api dev:web",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f",
+    "db:reset": "docker compose down -v",
     "prepare": "husky"
   },
   "devDependencies": {

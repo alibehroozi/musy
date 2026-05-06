@@ -20,7 +20,6 @@ Music app with AI-powered taste processing. Installable PWA. Maintained entirely
 - `libs/web/core/` — pure frontend logic (no React deps).
 - `tests/invariants/<category>/` — invariant tests, mirroring `INVARIANTS.md` taxonomy.
 - `INVARIANTS.md` — the spec. Every invariant has a stable ID and maps to a test.
-- `TASKS.md` — current backlog.
 
 ## Hard rules
 
@@ -56,14 +55,13 @@ Use `/new-invariant` for guided invariant authoring.
 
 The `.claude/commands/` directory encodes workflows so the procedure survives across sessions and agents. Use them — they exist precisely so day-100 work follows the same shape as day-1 work.
 
-| Command           | When to use                                                                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/new-invariant`  | Define invariants for a feature (the spec step). Stops after `INVARIANTS.md` is updated and tests are stubbed red.                          |
-| `/new-feature`    | Implement a feature end-to-end. Calls `/new-invariant` internally, then libs-first implementation, verify, manual exercise, PR.             |
-| `/change-feature` | Modify an existing feature. Audits affected invariants, requires sign-off before removing any rule, prevents adjacent-feature regressions.  |
-| `/debug-local`    | Diagnose a reported issue. Tiered: invariants first → local repro → temp Playwright → fix → **promote the repro to a permanent invariant.** |
-| `/verify`         | Run `npm run verify` and produce a tight summary of failures.                                                                               |
-| `/pick-task`      | Autonomous loop driver: pick the top item from `TASKS.md` Ready and run the new-feature workflow. Used by the daily auto-PR cron (later).   |
+| Command           | When to use                                                                                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/new-invariant`  | Define invariants for a feature (the spec step). Three phases: explore the codebase, suggest 2–4 candidates with reasoning, write to `INVARIANTS.md` and stub tests red after user sign-off. |
+| `/new-feature`    | Implement a feature end-to-end. Calls `/new-invariant` internally, then libs-first implementation, verify, manual exercise, PR.                                                              |
+| `/change-feature` | Modify an existing feature. Audits affected invariants, requires sign-off before removing any rule, prevents adjacent-feature regressions.                                                   |
+| `/debug-local`    | Diagnose a reported issue. Tiered: invariants first → local repro → temp Playwright → fix → **promote the repro to a permanent invariant.**                                                  |
+| `/verify`         | Run `npm run verify` and produce a tight summary of failures.                                                                                                                                |
 
 ## Local development
 

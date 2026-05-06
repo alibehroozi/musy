@@ -43,8 +43,8 @@ npm run e2e                # Layer 3: Playwright (TODO)
 ## Where to start
 
 - **Working with the codebase?** Read [`AGENTS.md`](AGENTS.md) — the operating manual.
-- **Adding a feature?** Read [`INVARIANTS.md`](INVARIANTS.md) and use `/new-invariant`.
-- **What's next?** Read [`TASKS.md`](TASKS.md).
+- **Adding a feature?** Describe what you want and run `/new-feature` (which uses `/new-invariant` internally).
+- **Debugging a reported issue?** Run `/debug-local`.
 - **Why is it like this?** Read [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Environment files

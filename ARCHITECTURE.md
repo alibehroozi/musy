@@ -41,7 +41,7 @@ The biggest failure mode of AI-maintained code is the agent silently weakening t
 
 ## What we're explicitly deferring
 
-- **Authentication implementation** — first feature in the backlog will define this.
+- **Authentication implementation** — the first auth feature defines the approach (cookie session vs JWT, magic-link vs OAuth).
 - **AI provider choice** — pin when `TASTE-02` lands.
 - **Deployment target** — pin when we're ready to push past local + CI.
 - **Caching layer (Redis, etc.)** — add when we feel pain.

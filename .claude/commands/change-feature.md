@@ -24,7 +24,7 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
 
 4. **For new properties the change introduces**, run `/new-invariant`.
 
-5. **Branch.** `git checkout -b change-<id>-<slug>`. Update `TASKS.md` if the change has a backlog row; otherwise append it under In progress.
+5. **Branch.** `git checkout -b change-<slug>`.
 
 6. **Implement.** Same libs-first pattern as `/new-feature`. Watch for previously-green tests turning red — that's a signal an existing invariant is now violated. Default conclusion: **your code is wrong.** Only after deliberate analysis (and user sign-off) should the conclusion be that the invariant needs updating.
 
@@ -32,7 +32,7 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
 
 8. **Manually exercise** the changed behavior **and the surrounding feature**. Regressions in adjacent areas are the most common failure mode of change tasks. Click through related UI; hit related endpoints.
 
-9. **PR title:** `change: <ID> <short description>`. PR body must list:
+9. **PR title:** `change: <short description>`. PR body must list:
    - Invariants added (with IDs and text)
    - Invariants tightened (with IDs and old → new)
    - Invariants removed (with link/quote of user approval)

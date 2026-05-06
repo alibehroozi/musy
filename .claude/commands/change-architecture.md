@@ -68,31 +68,32 @@ Only enter Phase 3 after explicit convergence in Phase 2.
 
 The spec commit lands by itself so the migration commit can be reverted independently if it breaks something.
 
-## Phase 4 — Migrate code
+## Phase 4 — Migrate code (one commit per layer)
 
-Now bring existing code in line with the new spec.
+Now bring existing code in line with the new spec. Per AGENTS.md hard rule #10, the migration is split by layer — never one mega-commit.
 
 1. **Map the touch points.** `grep` for the patterns the change affects. List every file that needs to move / rename / split. Show the list to the user — they get a chance to flag anything missing before you start moving things.
-2. **Migrate libs first.** If the change crosses the lib/app boundary, libs are easier to migrate cleanly because they have no framework imports.
-3. **Then apps.** Update controllers, services, components — whatever the change touches. **Maintain layering rules through the migration**; don't introduce new violations to "make it work."
+2. **Migrate one layer at a time, commit after each.** Order: libs first (no framework imports, lowest risk), then apps. For each layer touched, the commit message is `arch(code, <scope>): <what>`:
+   - `arch(code, contracts): ...`
+   - `arch(code, api-core): ...`
+   - `arch(code, web-core): ...`
+   - `arch(code, api): ...` — typically split further if multiple modules need touching: `arch(code, api/users): ...`, `arch(code, api/auth): ...`
+   - `arch(code, web): ...`
+3. **Maintain layering rules through every commit.** Don't introduce new violations to "make it work." Each migration commit should leave the codebase architecturally clean even if the broader migration isn't done yet.
 4. **Update tests** only as much as their imports / paths require. **Test bodies must not weaken.** If a test fails because the architecture change made the old behavior wrong, the tests are right and the migration is incomplete — go fix the migration.
 
 ## Phase 5 — Verify
 
-1. **`npm run verify`** must be green. Lint, types across all workspaces, every invariant test. If it's red, the migration is not done.
+1. **`npm run verify`** must be green at the HEAD of the branch. Intermediate commits during migration may be transiently red (a renamed import not yet updated everywhere); the final commit must be green.
 2. **`npm run db:up && npm run dev`** if the change touches runtime behavior. Smoke-test the affected paths in the browser / via curl.
-3. **Update `/prepare-local` if local-dev requirements changed.** Architecture changes that add a service, port, env var, or system dep must update `.claude/commands/prepare-local.md`. Commit it as part of `arch(code):` (or as a third commit `arch(setup):` if it's substantial).
-4. **Commit** with title `arch(code): <short description>`. Body lists:
-   - Files moved / renamed / split (concise count + a few examples is fine)
-   - Any behavior that incidentally changed (should be none for a pure architecture change — flag it loudly if it did)
-   - Confirmation `npm run verify` is green
-5. **Open PR** against `main`. Title `arch: <description>`. Body links both commits, summarizes the migration scope, lists alternatives considered.
+3. **Update `/prepare-local` if local-dev requirements changed.** Architecture changes that add a service, port, env var, or system dep must update `.claude/commands/prepare-local.md`. Commit as `chore(setup): update /prepare-local for <reason>`.
+4. **Open PR** against `main`. Title `arch: <description>`. Body links every commit in order, summarizes the migration scope, lists alternatives considered.
 
 ## Hard rules
 
 - **No silent compliance.** If you don't think the proposal is right, say so concretely. At least twice. Then defer if the user insists.
-- **Two commits, in order.** Spec first (`arch(spec):`), code second (`arch(code):`). Reversibility matters.
-- **Don't ship a code migration that breaks tests.** If `npm run verify` is red after migration, the migration is incomplete. Don't paper over it.
+- **Micro-commits, in order.** `arch(spec):` first, then `arch(code, <scope>):` per layer. Reversibility matters; one mega-commit defeats the point.
+- **Don't ship a code migration that breaks tests.** If `npm run verify` is red at the branch HEAD, the migration is incomplete. Don't paper over it.
 - **Don't change behavior under the guise of architecture.** A pure architecture change moves code without changing what the code does. If a behavior change is necessary alongside, scope it explicitly and call it out — possibly split it into a separate `/change-feature` PR.
 - **Don't update `INVARIANTS.md` here.** Different lifecycles, different commands.
 

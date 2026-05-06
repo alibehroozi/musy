@@ -60,24 +60,34 @@ After presenting, **stop and wait.** Three responses to handle:
 
 Aim for 2–4 invariants. Fewer means the feature isn't pinned down; more usually means some are restating each other.
 
-## Phase 3 — Write
+## Phase 3 — Write (two commits, in order)
 
 Only enter Phase 3 **after** explicit user approval of the candidate set.
 
+Per AGENTS.md hard rule #10, this phase produces **two commits**:
+
+### Commit 1 — `spec: add <feature> invariants (<IDs>)`
+
 1. **Append the rows** to the existing `## <Category>` sections in `INVARIANTS.md`. Use the existing `| ID | Invariant | Severity |` format. **Never create a new per-feature section.**
+2. Stage **only `INVARIANTS.md`** and commit. Body lists the IDs and one-line summary of each.
 
-2. **Stub the tests** in `tests/invariants/<category>/<feature>.test.ts` with one `describe("<ID>: <description>", ...)` block per code-checkable invariant. Each block contains an `it.todo(...)` placeholder describing the test approach. **Do not write real assertions yet** — that's the implementation step (`/new-feature` handles that). `BROWSER-*` and `PWA-*` invariants are not stubbed in vitest; they belong in the Playwright suite.
+### Commit 2 — `test(invariants): stub <feature> tests`
 
-3. **Confirm red.** Run `npm run test:invariants`. Verify the new tests show as `todo` or fail. If they pass, the stub is wrong — fix and re-run.
+1. **Stub the tests** in `tests/invariants/<category>/<feature>.test.ts` with one `describe("<ID>: <description>", ...)` block per code-checkable invariant. Each block contains an `it.todo(...)` placeholder describing the test approach. **Do not write real assertions yet** — that's the implementation step (`/new-feature` handles that). `BROWSER-*` and `PWA-*` invariants are not stubbed in vitest; they belong in the Playwright suite.
+2. **Confirm red (or todo).** Run `npm run test:invariants`. Verify the new tests show as `todo` or fail. If they pass, the stub is wrong — fix and re-run.
+3. Stage **only the new / modified test files** and commit.
 
-4. **Print a tight summary:**
-   - IDs added
-   - File paths to review (`INVARIANTS.md` rows, test stub paths)
-   - Suggested next prompt: `/new-feature` to drive implementation
+### Print a tight summary
+
+- IDs added
+- Both commit hashes
+- File paths to review
+- Suggested next prompt: `/new-feature` to drive implementation
 
 ## Hard rules
 
 - **Three phases, in order.** No suggesting before exploring; no writing before approval.
+- **Two commits, in order.** Spec first (`spec: ...`), test stubs second (`test(invariants): ...`). Never combine them.
 - **Don't implement the feature.** That's `/new-feature`. This command stops at red stubs.
 - **Don't invent a new section in `INVARIANTS.md`.** Categories are by constraint, never by feature. If nothing fits, the invariant is mis-phrased — restate it.
 - **Don't fabricate intent.** Ambiguous description → ask. Do not guess and proceed.

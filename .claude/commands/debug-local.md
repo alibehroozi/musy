@@ -86,7 +86,7 @@ When the temp Playwright test now passes against the fix, run the full `npm run 
 
 Smallest possible diff that's also architecturally clean. If you find yourself rewriting a module, stop and re-scope — that's a refactor, not a fix.
 
-## Tier 6 — Promote the repro into an invariant
+## Tier 6 — Promote the repro into an invariant + commit discipline
 
 This is the part most agents skip. Do not skip it. The fact that a real bug existed means the spec had a hole — close it before moving on.
 
@@ -97,14 +97,38 @@ Decide the missing invariant's category:
 - Bug in pure logic → `LOGIC-*`
 - Authorization / data-leak class → `SEC-*` or `PRIVACY-*`
 
-Run `/new-invariant`. Then:
+Now commit the fix per AGENTS.md hard rule #10 — **three commits, in order**:
 
-- For `BROWSER-*`: move the temp test from `tests/_scratch/` to `tests/invariants/browser/`. Promote.
-- For others: discard the temp test; the equivalent vitest/jest test already covers it via the new invariant.
+### Commit 1 — `spec: add <ID> — <description>`
+
+Run `/new-invariant`'s Phase 3 step 1 only: append the row to the matching category in `INVARIANTS.md`. Stage only `INVARIANTS.md`. Commit.
+
+### Commit 2 — `test(<category>): <ID> regression test`
+
+Promote the repro:
+
+- For `BROWSER-*`: move the temp test from `tests/_scratch/` to `tests/invariants/browser/<feature>.test.ts`. Tighten its assertions to test the invariant cleanly, not just reproduce the original bug.
+- For others: write the equivalent vitest/jest test in `tests/invariants/<category>/`. Discard the scratch test.
+
+Run the new test and **confirm it fails** against the buggy code. (If it passes, your test isn't actually catching the regression.)
+
+Stage only the test file(s). Commit.
+
+### Commit 3+ — `fix(<scope>): <root cause>`
+
+The actual source-code fix. One commit per layer if the fix touches multiple. Most fixes are one-layer.
+
+Examples:
+
+- `fix(api): scope getPlaylists query by userId`
+- `fix(web): handle 401 from /me without infinite redirect loop`
+- `fix(api-core): handle empty array in normalizeTasteVector`
+
+Run `npm run verify` after the fix commit. The previously-failing test from Commit 2 now passes; everything else stays green.
 
 ## Tier 7 — PR
 
-Before opening: did the fix change anything a fresh checkout would need (env var, docker service, port, system dep)? If yes, update `.claude/commands/prepare-local.md` in this PR. Most fixes don't, but the rare ones that do silently break onboarding if missed.
+Before opening: did the fix change anything a fresh checkout would need (env var, docker service, port, system dep)? If yes, commit `chore(setup): update /prepare-local for <reason>` separately. Most fixes don't, but the rare ones that do silently break onboarding if missed.
 
 Title: `fix: <short description>`
 
@@ -112,14 +136,16 @@ Body must include:
 
 - The reported symptom
 - The root cause (one paragraph)
+- The commit sequence (`spec:` → `test:` → `fix:`)
 - The new invariant ID(s) added to prevent regression
-- `npm run verify` green confirmation
+- `npm run verify` green confirmation at branch HEAD
 
 ## Hard rules
 
+- **Three commits, in order.** `spec:` → `test:` → `fix:`. The test commit must be red against the buggy code (proof the regression test actually catches it). The fix commit makes it green.
 - **Never delete a test to make a bug "go away."**
 - **Always promote the repro to an invariant.** If you decide not to (e.g. one-off browser quirk), the user must approve in the chat with reasoning.
-- **`tests/_scratch/` is gitignored.** Temp tests never enter version control.
+- **`tests/_scratch/` is gitignored.** Temp tests never enter version control. They get promoted (moved to `tests/invariants/...`) or discarded.
 
 ## Watch out for
 

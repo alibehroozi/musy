@@ -75,11 +75,16 @@ For each candidate, instrument minimally (one targeted log line) before changing
 
 ## Tier 5 — Fix
 
-Hard rule: **fix the source, not the test.**
+Hard rules:
+
+- **Fix the source, not the test.**
+- **The fix must conform to `ARCHITECTURE.md`.** A bug that came from layering drift (HTTP in service, Mongoose in controller, business logic in component) is fixed by restoring the layering, not by patching in place.
+
+Re-read the relevant `ARCHITECTURE.md` section before changing code. If the bug originated in a layered violation, the fix relocates code to its correct layer.
 
 When the temp Playwright test now passes against the fix, run the full `npm run verify` to make sure no other invariant regressed. If something else turned red, you over-corrected.
 
-Smallest possible diff. If you find yourself rewriting a module, stop and re-scope.
+Smallest possible diff that's also architecturally clean. If you find yourself rewriting a module, stop and re-scope — that's a refactor, not a fix.
 
 ## Tier 6 — Promote the repro into an invariant
 

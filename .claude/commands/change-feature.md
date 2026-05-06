@@ -26,20 +26,24 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
 
 5. **Branch.** `git checkout -b change-<slug>`.
 
-6. **Implement.** Same libs-first pattern as `/new-feature`. Watch for previously-green tests turning red — that's a signal an existing invariant is now violated. Default conclusion: **your code is wrong.** Only after deliberate analysis (and user sign-off) should the conclusion be that the invariant needs updating.
+6. **Re-read `ARCHITECTURE.md`** for the section(s) covering the touch points. Behavior changes are where layering shortcuts creep in — confirm the change still respects controller/service/repository boundaries on the api, component sizing / hook / context rules on the web, allowed-deps on libs.
 
-7. **Run verify.** `npm run verify`. Both old and new invariants must be green. If an old one fails and you intend to retire it, stop and escalate per step 3.
+7. **Implement.** Same libs-first pattern as `/new-feature`, conforming to `ARCHITECTURE.md`. Watch for previously-green tests turning red — that's a signal an existing invariant is now violated. Default conclusion: **your code is wrong.** Only after deliberate analysis (and user sign-off) should the conclusion be that the invariant needs updating.
 
-8. **Manually exercise** the changed behavior **and the surrounding feature**. Regressions in adjacent areas are the most common failure mode of change tasks. Click through related UI; hit related endpoints.
+8. **Run verify.** `npm run verify`. Both old and new invariants must be green. If an old one fails and you intend to retire it, stop and escalate per step 3.
 
-9. **PR title:** `change: <short description>`. PR body must list:
-   - Invariants added (with IDs and text)
-   - Invariants tightened (with IDs and old → new)
-   - Invariants removed (with link/quote of user approval)
-   - What you manually exercised
+9. **Manually exercise** the changed behavior **and the surrounding feature**. Regressions in adjacent areas are the most common failure mode of change tasks. Click through related UI; hit related endpoints.
+
+10. **PR title:** `change: <short description>`. PR body must list:
+
+- Invariants added (with IDs and text)
+- Invariants tightened (with IDs and old → new)
+- Invariants removed (with link/quote of user approval)
+- What you manually exercised
 
 ## Hard rules
 
+- **Conform to `ARCHITECTURE.md`.** The change must respect the project's layering and per-package rules.
 - **Removing an invariant requires explicit user approval in the chat.** The rule is the spec — losing it is losing a guardrail.
 - If a previously-passing test now fails because of your change, the default is that **your code is wrong**.
 - Never edit existing invariant text "to make it pass." Add a new invariant if the property genuinely changed; never weaken an existing one.

@@ -1,27 +1,362 @@
 # Architecture
 
-Short, high-signal notes on **why** things are the way they are. Not a tour of files (that's `AGENTS.md`).
+This is the **operational** architecture reference. `AGENTS.md` says what rules apply globally; this file says how each workspace package is laid out, what each layer does, and when to reach for which NestJS or React tool.
 
-## Why npm workspaces, not Nx
+> **Every new implementation and every fix must conform to this document.** If a constraint here doesn't fit a real situation, raise it as a question before silently bypassing.
+
+---
+
+## Core principle
+
+**Pure logic in `libs/`, side effects in `apps/`. Layered, not entangled.**
+
+A function that does pure data transformation belongs in `libs/api/core/` or `libs/web/core/` — even if its only caller is one Nest service or one React feature. The cost of moving it is one import; the value is testability without spinning up a container or a DOM.
+
+---
+
+## Workspace map
+
+| Path                     | Role                                                                       | Allowed dependencies                                               |
+| ------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `apps/api/`              | NestJS HTTP service. Side effects: HTTP, Mongo, AI provider calls, logging | NestJS, Mongoose, `@moc/contracts`, `@moc/api-core`, provider SDKs |
+| `apps/web/`              | React PWA. Side effects: DOM, fetch, Service Worker, browser storage       | React, Vite, `@moc/contracts`, `@moc/web-core`                     |
+| `libs/shared/contracts/` | Zod schemas shared FE↔BE                                                   | Zod only                                                           |
+| `libs/api/core/`         | Pure backend logic                                                         | `@moc/contracts` only — **no NestJS, no Mongoose, no I/O**         |
+| `libs/web/core/`         | Pure frontend logic                                                        | `@moc/contracts` only — **no React, no DOM, no JSX**               |
+
+If a lib reaches for something outside its allowed deps, the feature is in the wrong place. Move it.
+
+---
+
+## apps/api — NestJS
+
+### Folder structure
+
+```
+apps/api/src/
+├── main.ts                    # Bootstrap: ConfigService, CORS, listen
+├── app.module.ts              # Top-level module — composes feature modules
+├── health.controller.ts       # Liveness/readiness — kept here, no module
+├── common/                    # Cross-cutting infra
+│   ├── all-exceptions.filter.ts
+│   ├── public.decorator.ts
+│   └── auth.guard.ts          # Global default — opt out via @Public()
+└── modules/
+    └── <domain>/              # One feature module per bounded context
+        ├── <domain>.module.ts
+        ├── <domain>.controller.ts
+        ├── <domain>.service.ts
+        ├── <domain>.repository.ts
+        ├── <domain>.schema.ts
+        └── <domain>.guard.ts  # Optional, only for ownership-scoped routes
+```
+
+**One module per bounded context** — `users/`, `auth/`, `taste/`, `recommendations/`. A feature that spans two domains gets its own module that imports from both, rather than cramming logic into one or the other.
+
+### File roles — strict layering
+
+Each layer talks to the layer directly below. Skipping layers is a smell.
+
+| File                     | Knows about                                            | Never knows about                     |
+| ------------------------ | ------------------------------------------------------ | ------------------------------------- |
+| `<domain>.controller.ts` | HTTP, request body shape, response shape, auth context | Mongoose, business rules              |
+| `<domain>.service.ts`    | Orchestration, business rules, calls to other services | HTTP, query syntax, request objects   |
+| `<domain>.repository.ts` | Mongoose queries, indexes, transactions                | HTTP, business rules, request objects |
+| `<domain>.schema.ts`     | Mongoose document shape                                | HTTP, business rules                  |
+
+The controller calls the service. The service calls the repository (and `@moc/api-core` for pure logic). The repository talks to Mongoose. **Don't inject the repository directly into the controller.** The service exists to keep HTTP concerns out of data access.
+
+### When to reach for what
+
+| Need                               | Reach for                                                                              | Don't reach for                                           |
+| ---------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Validate request body              | `nestjs-zod` `ZodValidationPipe` with a `@moc/contracts` schema                        | hand-rolled DTO classes, `class-validator`                |
+| Authenticate the caller            | Global `AuthGuard`; routes opt out via `@Public()`                                     | Express middleware (use Nest DI)                          |
+| Authorize resource access          | Per-domain `OwnerGuard` checking `req.user.id` against the doc's `userId`              | inline `if (req.user.id !== doc.userId)` in the service   |
+| Map thrown error to HTTP response  | The single global `AllExceptionsFilter` returning the shared `ErrorResponse` Zod shape | `try/catch` returning `res.status(...)` in the controller |
+| Cross-cutting log/timing           | An interceptor — only if a feature actually needs it                                   | sprinkled `console.log`                                   |
+| Pure data transform                | A function in `@moc/api-core`                                                          | a method on a service                                     |
+| One-off helper used in one service | A private method on the service                                                        | a new file or a new lib                                   |
+| Test a service                     | Vitest with the repository mocked, or `mongodb-memory-server` for integration          | a full Nest test container for pure logic                 |
+
+### Services
+
+Services own orchestration and business rules. They:
+
+- Take and return plain types (Zod-inferred from `@moc/contracts`), never Mongoose documents
+- Are injected via constructor — no `@Inject` magic unless absolutely required
+- Don't know HTTP exists — no `@Req`, no `Response`, no status codes
+- Throw domain-shaped errors (`UserNotFoundError`, `RateLimitedError`) which the filter converts
+
+A service longer than ~150 lines or with more than ~5 public methods is doing too much. Split by sub-domain.
+
+### Repositories
+
+A repository wraps Mongoose for one collection. It:
+
+- Is the **only** place that imports `Model<T>` for that collection
+- Returns plain objects (`.lean()`), never Mongoose documents — keeps Mongoose contained
+- Has no business logic — `findActiveBy(...)` belongs in the service, not the repo
+- Is testable by swapping the model implementation in tests, or by `mongodb-memory-server`
+
+### Guards
+
+Use guards for **authorization decisions about the request itself**: "is this caller allowed to call this endpoint at all?" or "does this caller own this resource?"
+
+- `AuthGuard` — global default. Routes opt out with `@Public()`
+- `OwnerGuard` — per-resource ownership check. Reads the param (`:id`) and the auth user
+
+Don't use guards for input validation (that's Zod) or for business-rule decisions like "the user's plan allows this" (that's the service).
+
+### Filters
+
+Exactly **one** global `AllExceptionsFilter`:
+
+- Maps thrown errors to the shared `ErrorResponse` Zod shape
+- Logs at the boundary — one structured log per failed request
+- Translates known domain errors (`UserNotFoundError` → 404, `RateLimitedError` → 429); everything else is 500
+
+### Interceptors and middleware
+
+Both exist; both are easily abused.
+
+- **Interceptor** — request-scoped concern that wraps the handler. Use for: timing, response transformation. **Don't** use for: business logic, side effects.
+- **Middleware** — Express-level. Use for: helmet, rate-limit, body-parser config. Don't use for anything you can do in NestJS proper.
+
+When in doubt, prefer Nest primitives over Express middleware — they integrate with DI.
+
+### Mongoose schemas
+
+- One file per collection
+- Define indexes alongside fields, not in a separate `init` block
+- `versionKey: false` on every collection (we don't use optimistic concurrency yet)
+- IDs: app-generated UUIDs in a separate `id` field, **not** Mongoose's `_id`. Mongo creates `_id` automatically; treat it as opaque
+- Validation lives in Zod, not in Mongoose. Mongoose's `required: true` is fine but is not the source of truth
+
+### Configuration
+
+- All env reads via `ConfigService` — **no `process.env.X`** in a service body
+- Read at module-init time (in `useFactory`), not on every request
+- `getOrThrow` for required vars, `get` with default for optional
+
+---
+
+## apps/web — React
+
+### Folder structure
+
+```
+apps/web/src/
+├── main.tsx                # Entry — createRoot, providers
+├── App.tsx                 # Top-level shell, router
+├── index.css               # Global styles ONLY (resets, body, root vars)
+├── routes.tsx              # Route table — single source of routes
+├── components/             # Atomic, generic UI — Button, Card, Input
+├── features/
+│   └── <name>/             # One feature subtree per domain
+│       ├── <Name>Page.tsx          # Page (or container) component
+│       ├── components/             # Feature-private subcomponents
+│       ├── hooks/                  # Feature-private hooks
+│       └── api.ts                  # Feature-private fetchers (uses @moc/web-core)
+├── hooks/                  # App-wide custom hooks (useAuth, useToast)
+└── contexts/               # App-wide context providers (AuthProvider, ThemeProvider)
+```
+
+**Features are subtrees, not file dumps.** A feature that has more than ~5 files belongs in a folder with subfolders.
+
+### Component sizing
+
+Hard ceilings — when hit, split:
+
+| Kind                                                 | Soft cap  | Hard cap  |
+| ---------------------------------------------------- | --------- | --------- |
+| Atomic component (`components/`)                     | 80 lines  | 120 lines |
+| Feature subcomponent (`features/<name>/components/`) | 150 lines | 200 lines |
+| Page (`<Name>Page.tsx`)                              | 200 lines | 300 lines |
+
+Splits happen along three axes:
+
+- **Subcomponents** — extract a JSX subtree that has its own state or props
+- **Custom hooks** — extract stateful logic (the `useFeatureX` pattern)
+- **Pure helpers** — move data transforms to `libs/web/core/` or the feature's `api.ts`
+
+A 200-line component with 180 lines of JSX and 20 lines of logic is fine. A 100-line component with 80 lines of intertwined `useState` / `useEffect` / handlers is not — it's hiding a hook.
+
+### When to use which hook
+
+| Want                                   | Reach for                                                    | Don't                                                   |
+| -------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+| Local state                            | `useState`                                                   | a class component                                       |
+| Side effect at mount/update            | `useEffect` with **explicit, minimal** dependencies          | logic in the component body that should be in an effect |
+| Derived value from props/state         | a `const` (just compute it)                                  | `useMemo` for cheap computations                        |
+| Expensive derived value                | `useMemo` with measured benefit                              | `useMemo` "for safety" everywhere                       |
+| Stable callback for child memo         | `useCallback`                                                | `useCallback` on every handler                          |
+| Cross-component state                  | `useContext` — only if used by ≥3 separated subtrees         | a global mutable object                                 |
+| Server state                           | `fetchJson` in a feature hook (or TanStack Query when added) | `useEffect` + `setState` for fetch (race-prone)         |
+| Imperative DOM access                  | `useRef`                                                     | `document.querySelector`                                |
+| Track changing value without re-render | `useRef`                                                     | `useState` you never read                               |
+
+### Custom hooks
+
+- Prefix `use*`, always
+- One responsibility per hook
+- Return either an array tuple (for two values, like `useState`-style) or an object (for three or more)
+- **Never side-effect during render** — all effects go in `useEffect`
+- Hooks composed of other hooks live in `features/<name>/hooks/`; app-wide ones in `src/hooks/`
+
+### Context
+
+Context is a footgun. **The default answer is don't use context.** Use it only when **all three** are true:
+
+1. The value is genuinely app-wide (auth, theme, user prefs)
+2. At least three separated subtrees consume it
+3. The value changes infrequently — every consumer re-renders when it changes
+
+When a need looks contextual but fails one of the three:
+
+- Single subtree → lift state up to the common parent
+- Frequent updates → external store (Zustand) or refs, not context
+- Server state → server-state library (TanStack Query when added), not context
+
+`AuthProvider` is the canonical good case. `FormStateProvider` for one form is the canonical bad case.
+
+### Components
+
+- **Function components only.** No class components. No `forwardRef` unless a library demands it.
+- Props typed with explicit interfaces, never `any`
+- **Default exports forbidden** — named exports only (better refactor support, better grep)
+- One component per file (atomic), or several tightly-coupled ones (feature subtree)
+- No prop drilling past 2 levels — that's the signal to lift, hook, or (rarely) contextify
+
+### Styling
+
+- Global resets in `index.css`
+- Per-component styles: inline `style={{}}` for now; we'll adopt CSS modules at first non-trivial component
+- **No CSS-in-JS libraries** until we have a measured reason
+
+### Data fetching
+
+- Always go through `fetchJson` from `@moc/web-core`. It validates the response against the shared Zod schema — drift between FE and BE fails at the boundary, not three components deep.
+- **Loading and error states are required, not optional.** A fetch that doesn't render an error UI is a missing feature, not a stylistic choice.
+- Don't fetch on every render. Either `useEffect` with stable deps and an in-flight guard, or a server-state library.
+- Feature fetchers live in `features/<name>/api.ts` — never spread across components.
+
+### Routing
+
+- Single `routes.tsx` is the source of truth — every route is registered there
+- Lazy-load route components when the route bundle exceeds ~50KB
+
+---
+
+## libs/shared/contracts
+
+The Zod schemas here are the **wire format** between FE and BE. Both sides parse with the same schema; types are inferred (`z.infer<typeof X>`).
+
+Rules:
+
+- One file per domain (`users.ts`, `auth.ts`, `taste.ts`)
+- Export both the schema (`User`) and the inferred type (`type User = z.infer<typeof User>`)
+- No NestJS, no React, no Mongoose imports — Zod-only
+- Versioning: when an API endpoint's shape changes incompatibly, add a new schema (`UserV2`), don't mutate the existing one
+
+A schema in this lib that's used on only one side is a smell — either move it to the appropriate `core` lib, or pull it through to the other side.
+
+---
+
+## libs/api/core
+
+Pure backend functions. Validators, transformers, business rules that have no I/O.
+
+Rules:
+
+- No `@nestjs/*` imports
+- No `mongoose` imports
+- No DB, no `fetch`, no `fs`, no `setTimeout`, no `Date.now()` outside the call site (pass `now` in)
+- 100% deterministic — same input, same output, every time
+- Tested with vitest in milliseconds
+
+If you need to call a service or hit a DB, you're not writing core logic — you're writing a service.
+
+---
+
+## libs/web/core
+
+Pure frontend functions. Formatters, parsers, the typed `fetchJson`.
+
+Rules:
+
+- No `react` imports (no hooks, no JSX)
+- No DOM access
+- No `window`, no `document` (except via passed-in arguments)
+- Testable headlessly with vitest
+
+Custom React hooks belong in `apps/web/src/hooks/` or `apps/web/src/features/<name>/hooks/`, not here. This lib is for things that work in any JS context.
+
+---
+
+## Cross-cutting rules
+
+### Imports
+
+- Workspace packages always via aliases: `@moc/contracts`, `@moc/api-core`, `@moc/web-core`. **Never `../../../libs/...`.**
+- No barrel files inside `apps/` (causes Vite/Nest to over-bundle). Barrels are fine in `libs/*/src/index.ts`.
+- Type-only imports use `import type {...}` — TS strips them, smaller output
+
+### Naming
+
+| Kind                   | Convention                                                                 |
+| ---------------------- | -------------------------------------------------------------------------- |
+| File (TS, code module) | `kebab-case.role.ts` (`users.controller.ts`)                               |
+| File (TSX, component)  | `PascalCase.tsx` (`Button.tsx`)                                            |
+| Class / type           | `PascalCase`                                                               |
+| Function / variable    | `camelCase`                                                                |
+| Const                  | `camelCase` for runtime, `SCREAMING_SNAKE_CASE` for module-level constants |
+| Boolean                | `is*` / `has*` / `should*`                                                 |
+
+### Error handling
+
+- Throw domain errors (`UserNotFoundError`). Don't return `{ ok: false, error: ... }` from services.
+- Catch only at the boundary — `AllExceptionsFilter` on api, error boundary on web
+- Never swallow with `catch (e) { /* nothing */ }` — log or rethrow
+
+### Logging
+
+- One structured log per request boundary (entry + exit) via the filter
+- **No `console.log` in feature code** — use the Nest logger; on the web, leave error UI to the error boundary, not console
+- Never log full request bodies (PII risk) or env vars (secret leak)
+
+### Tests
+
+- Unit tests live next to the code (`<file>.test.ts`)
+- Invariant tests live in `tests/invariants/<category>/` (mirrored from `INVARIANTS.md`)
+- E2E in `tests/e2e/` (Playwright); temporary repros in `tests/_scratch/` (gitignored)
+
+---
+
+## Why these rules and not others
+
+Brief notes on trade-offs we've already made.
+
+### Why npm workspaces, not Nx
 
 We need: monorepo, two apps, shared TypeScript libs, fast tests. Nx adds generators and a task graph, but also adds a layer of indirection an AI agent has to learn. npm workspaces gives us 90% of the benefit with config that fits on one screen. We can switch to Nx when we feel concrete pain — likely around test caching and `affected` for the daily auto-PR loop.
 
-## Why Mongoose (not Prisma)
+### Why Mongoose (not Prisma)
 
 Chosen because the user wants MongoDB. Mongoose has first-class NestJS support (`@nestjs/mongoose`) and TypeScript schema classes that read naturally for an AI agent. We pair it with Zod at HTTP boundaries — Mongoose owns persistence, Zod owns the API contract.
 
-## Why Zod in `libs/shared/contracts/`
+### Why Zod in `libs/shared/contracts/`
 
 End-to-end type safety with one source of truth. NestJS controllers parse incoming bodies with `nestjs-zod`. The React fetcher parses responses with the same Zod schema. If the backend changes its response, the frontend's parser fails at the boundary, not in some downstream component. Drift is impossible.
 
-## Why pure logic in `libs/`, side effects in `apps/`
+### Why pure logic in `libs/`, side effects in `apps/`
 
 Two reasons:
 
 1. **Test surface** — pure functions test in milliseconds, no Nest container, no mongo, no DOM. The Layer 2 budget stays small.
 2. **Invariants survive rewrites** — `LOGIC-*` invariants reference functions in `libs/` that are part of the project's stable API. They'd break if the lib was renamed, but not if the React/Nest layer was swapped.
 
-## Why three layers of verification
+### Why three layers of verification
 
 Speed and signal-to-noise:
 
@@ -31,19 +366,24 @@ Speed and signal-to-noise:
 
 If we only had Layer 3, the AI would wait 10 minutes per iteration. If we only had Layer 1+2, visual bugs would ship.
 
-## Why categorize invariants by constraint, not feature
+### Why categorize invariants by constraint, not feature
 
 Pulled directly from `agentic-dev-days-chess`. A per-feature taxonomy creates a graveyard of dead sections when features get refactored. A constraint-based taxonomy means every invariant has an obvious home and removing a feature never orphans rules. Adopting this from day one is much cheaper than refactoring later.
 
-## Why hard rules exist (and are repeated everywhere)
+### Why hard rules exist (and are repeated everywhere)
 
-The biggest failure mode of AI-maintained code is the agent silently weakening the spec to make tests pass. The hard rules in `AGENTS.md` exist to make that drift detectable. CI enforces what it can (gitleaks, test-passes-without-test-edits is enforced via `git diff` checks in workflows we'll add).
+The biggest failure mode of AI-maintained code is the agent silently weakening the spec to make tests pass. The hard rules in `AGENTS.md` exist to make that drift detectable. CI enforces what it can.
 
-## What we're explicitly deferring
+---
 
-- **Authentication implementation** — the first auth feature defines the approach (cookie session vs JWT, magic-link vs OAuth).
-- **AI provider choice** — pin when `TASTE-02` lands.
-- **Deployment target** — pin when we're ready to push past local + CI.
-- **Caching layer (Redis, etc.)** — add when we feel pain.
+## Deferred decisions
 
 The principle: pick when the first feature needs it. Premature decisions in an AI-maintained codebase calcify before they're stress-tested.
+
+- **Authentication implementation** — the first auth feature defines the approach (cookie session vs JWT, magic-link vs OAuth)
+- **AI provider choice** — pin when the first taste-processing feature lands
+- **Server-state library** — TanStack Query is the default; pin when the first multi-component shared fetch arrives
+- **Component styling** — CSS modules vs vanilla — pin at first non-trivial component
+- **Deployment target** — pin when ready to push past local + CI
+- **Caching layer (Redis, etc.)** — add when we feel pain
+- **Lint-enforced architecture rules** — `eslint-plugin-import` `no-restricted-imports` could enforce the layer/import rules above mechanically. Deferred until we feel a violation slip through.

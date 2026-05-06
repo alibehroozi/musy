@@ -36,6 +36,7 @@ These are non-negotiable. CI enforces them. Do not bypass.
    - `.github/workflows/`
    - any `.env*` file other than `.env.example`
 7. **Privacy:** user listening history and identifiers never leak across users, never appear in third-party logs, and never reach LLM prompts unless the prompt explicitly requires them and the call site is annotated with the reason.
+8. **Conform to `ARCHITECTURE.md`.** All new implementations and fixes follow the per-package layout, layering, and "when to use what" rules in [`ARCHITECTURE.md`](ARCHITECTURE.md). If a constraint there blocks something legitimate, raise it as a question — don't silently bypass.
 
 ## Invariant workflow
 

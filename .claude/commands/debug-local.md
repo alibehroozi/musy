@@ -6,6 +6,25 @@ description: Diagnose and fix a reported issue using a tiered approach (invarian
 
 The user reports something is broken. Goal: not just fix THIS bug, but leave behind a guardrail that catches the same class of bug next time.
 
+## Tier -1 — Pre-flight: must run in the main checkout
+
+Per AGENTS.md hard rule #11: this command brings up the local stack (`npm run db:up && npm run dev`) and writes temp Playwright tests under `tests/_scratch/` (gitignored). Neither propagates from a Claude Code worktree back to the main repo, and the local-stack URLs (`localhost:3001`, `localhost:5173`) reach whatever the **main** repo is currently running — diagnosing one tree's bug from another tree is incoherent.
+
+Run the canonical worktree detection from `AGENTS.md`:
+
+\```bash
+common_dir=$(git rev-parse --git-common-dir)
+case "$common_dir" in
+".git" | "$(pwd)/.git") echo "main" ;;
+  *) echo "worktree (main is $(dirname "$common_dir"))" ;;
+esac
+\```
+
+- **"main"** → continue to Tier 0.
+- **"worktree …"** → **stop**. Tell the user:
+
+  > I'm running in a Claude Code worktree at `<pwd>`. /debug-local needs to drive the locally running app and write temp test files that survive — neither works from a worktree. Re-invoke me without `isolation: "worktree"`, or run me from the main repo at `<main_path>`.
+
 ## Tier 0 — Reproduce in your head
 
 Get a precise description from the user. Three questions, no skipping:

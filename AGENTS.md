@@ -39,6 +39,25 @@ These are non-negotiable. CI enforces them. Do not bypass.
 8. **Conform to `ARCHITECTURE.md`.** All new implementations and fixes follow the per-package layout, layering, and "when to use what" rules in [`ARCHITECTURE.md`](ARCHITECTURE.md). If a constraint there blocks something legitimate, raise it as a question — don't silently bypass.
 9. **Keep `/prepare-local` current.** If a change adds or modifies a local-dev requirement (a new docker service, a new required env var, a new system dep, a new port, a new init step), update `.claude/commands/prepare-local.md` in the same PR. A fresh checkout running `/prepare-local` must always end with a working `npm run dev`.
 10. **Micro-commits.** Multi-layer changes are split into atomic commits in this order: **spec → test → code (by layer).** See [Commit discipline](#commit-discipline) below. The PR HEAD must be green; intermediate commits may be red (the test commit is often red against missing implementation — that's the TDD evidence).
+11. **Commands that produce gitignored side-effects run in the main checkout, not a worktree.** `.env.local`, local Docker volumes, dev caches — none of these propagate from a Claude Code worktree back to the main repo (they're gitignored). `/prepare-local` and `/debug-local` must detect worktree mode at the start and refuse, with a message pointing the user at the main repo path. Commit-producing commands (`/new-feature`, `/change-feature`, `/change-architecture`, `/new-invariant`) can run in worktrees because their output lands via PR.
+
+### Worktree detection (canonical pre-flight)
+
+When a command's hard rule requires the main checkout, run this check at the very top:
+
+```bash
+common_dir=$(git rev-parse --git-common-dir)
+case "$common_dir" in
+  ".git" | "$(pwd)/.git") echo "main" ;;
+  *) echo "worktree (main is $(dirname "$common_dir"))" ;;
+esac
+```
+
+If the result is "worktree", **stop immediately** and tell the user:
+
+> I'm running in a Claude Code worktree at `<pwd>`. This command writes files that are gitignored (`.env.local`, etc.) and won't propagate back to the main repo. Re-invoke me without `isolation: "worktree"`, or run me from the main checkout at `<main_path>`.
+
+Do not attempt to write absolute paths outside the worktree — the sandbox typically blocks it, and even when it doesn't, the implicit cross-tree write is confusing. Surface, instruct, stop.
 
 ## Commit discipline
 

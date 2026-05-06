@@ -8,6 +8,27 @@ A bring-up checklist. **Idempotent** — safe to run repeatedly. After this pass
 
 If you find that a tool the project needs is missing from this checklist, that means a recent change added a dependency without updating this command. Add the check here, flag it to the user, then re-run.
 
+## Step 0 — Pre-flight: must run in the main checkout
+
+Per AGENTS.md hard rule #11: this command writes `.env.local` files (gitignored) and brings up shared docker state. None of that propagates from a Claude Code worktree back to the main repo, so running here in a worktree silently leaves the user's main checkout untouched.
+
+Run the canonical worktree detection from `AGENTS.md` first:
+
+\```bash
+common_dir=$(git rev-parse --git-common-dir)
+case "$common_dir" in
+".git" | "$(pwd)/.git") echo "main" ;;
+  *) echo "worktree (main is $(dirname "$common_dir"))" ;;
+esac
+\```
+
+- **"main"** → continue to Step 1.
+- **"worktree …"** → **stop**. Tell the user:
+
+  > I'm running in a Claude Code worktree at `<pwd>`. /prepare-local writes `.env.local` (gitignored) and configures shared Docker state — neither follows back to your main checkout. Re-invoke me without `isolation: "worktree"`, or run me from the main repo at `<main_path>`.
+
+  Do not try to write absolute paths into the main checkout from inside the worktree — the sandbox typically blocks it, and the implicit cross-tree write is confusing even when it doesn't.
+
 ## Step 1 — Prerequisites
 
 Verify the user has the system tools we depend on. Probe each; if missing, tell the user how to install and **stop**.

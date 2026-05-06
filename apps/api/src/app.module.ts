@@ -6,9 +6,11 @@ import { HealthController } from "./health.controller.js";
 
 @Module({
   imports: [
-    // In dev, loads apps/api/.env (cwd is apps/api/ when npm run dev:api runs).
-    // In prod, no .env file is loaded — vars come from the host's process env.
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: ".env" }),
+    // Local dev loads apps/api/.env.local (preferred) and falls back to .env
+    // when only the legacy file exists. Cwd is apps/api/ when npm run dev:api
+    // runs, so the relative paths resolve correctly. In prod, no .env file is
+    // loaded — vars come from the host's process env.
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: [".env.local", ".env"] }),
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

@@ -8,9 +8,10 @@ Prereqs: **Node ≥ 20**, **Docker Desktop** (for Mongo).
 
 ```bash
 npm install
-cp .env.example .env   # fill in real values
-npm run db:up          # start MongoDB + Mongo Express in Docker
-npm run dev            # API on :3001, web on :5173
+cp apps/api/.env.example apps/api/.env   # backend secrets (Mongo, AI keys)
+cp apps/web/.env.example apps/web/.env   # frontend build-time config
+npm run db:up                            # start MongoDB + Mongo Express in Docker
+npm run dev                              # API on :3001, web on :5173
 ```
 
 Open the app at http://localhost:5173. Browse the database at http://localhost:8181.
@@ -45,6 +46,30 @@ npm run e2e                # Layer 3: Playwright (TODO)
 - **Adding a feature?** Read [`INVARIANTS.md`](INVARIANTS.md) and use `/new-invariant`.
 - **What's next?** Read [`TASKS.md`](TASKS.md).
 - **Why is it like this?** Read [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## Environment files
+
+Per-app, never shared. Backend secrets must not reach the frontend bundle.
+
+| File            | Loaded by                     | What lives here                                                                    |
+| --------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
+| `apps/api/.env` | NestJS ConfigModule (runtime) | `MONGO_URI`, `ANTHROPIC_API_KEY`, OAuth secrets, session keys — server-only        |
+| `apps/web/.env` | Vite (build time)             | `VITE_API_URL` and other `VITE_*` vars that get **inlined into the public bundle** |
+
+`apps/api/.env.example` and `apps/web/.env.example` are committed templates. Real `.env` files are gitignored and never travel with builds.
+
+## Deployment
+
+Each app deploys to a different surface:
+
+- **Backend (`apps/api`)** → a runtime host (Render, Fly.io, Railway, AWS ECS, etc.). Set `apps/api/.env` values via the platform's secret manager. No `.env` file in the build.
+- **Frontend (`apps/web`)** → a static host (Vercel, Netlify, Cloudflare Pages). Set `VITE_*` vars in the platform's build environment — they're inlined at build time.
+- **MongoDB** → MongoDB Atlas (or self-hosted). Replace `MONGO_URI` with the production connection string in the API's secret manager.
+
+In production, `VITE_API_URL` is either:
+
+- the absolute API URL (cross-origin) — requires `WEB_ORIGIN` set on the API for CORS, **or**
+- `/api` (same origin) — requires a reverse proxy / CDN edge function routing `/api/*` to the backend.
 
 ## Stack
 

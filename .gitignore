@@ -15,7 +15,13 @@ coverage/
 playwright-report/
 test-results/
 
+# Temporary repros from /debug-local — never commit
+# Promote to tests/invariants/<category>/ via /new-invariant or discard
+tests/_scratch/
+
 # Env / secrets — NEVER commit
+# Patterns are unanchored, so they cover apps/api/.env, apps/web/.env, etc.
+# .env.example is the only exception (the committed template).
 .env
 .env.*
 !.env.example

@@ -52,13 +52,27 @@ When adding a feature:
 
 Use `/new-invariant` for guided invariant authoring.
 
+## Slash commands
+
+The `.claude/commands/` directory encodes workflows so the procedure survives across sessions and agents. Use them — they exist precisely so day-100 work follows the same shape as day-1 work.
+
+| Command           | When to use                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/new-invariant`  | Define invariants for a feature (the spec step). Stops after `INVARIANTS.md` is updated and tests are stubbed red.                          |
+| `/new-feature`    | Implement a feature end-to-end. Calls `/new-invariant` internally, then libs-first implementation, verify, manual exercise, PR.             |
+| `/change-feature` | Modify an existing feature. Audits affected invariants, requires sign-off before removing any rule, prevents adjacent-feature regressions.  |
+| `/debug-local`    | Diagnose a reported issue. Tiered: invariants first → local repro → temp Playwright → fix → **promote the repro to a permanent invariant.** |
+| `/verify`         | Run `npm run verify` and produce a tight summary of failures.                                                                               |
+| `/pick-task`      | Autonomous loop driver: pick the top item from `TASKS.md` Ready and run the new-feature workflow. Used by the daily auto-PR cron (later).   |
+
 ## Local development
 
 Stateful infra runs in Docker; the apps run on the host.
 
 ```bash
 npm install
-cp .env.example .env
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
 npm run db:up        # start mongo + mongo-express
 npm run dev          # api (:3001) + web (:5173) in parallel
 ```
@@ -66,6 +80,27 @@ npm run dev          # api (:3001) + web (:5173) in parallel
 Mongo Express UI at http://localhost:8181 — useful for verifying that a feature actually wrote what it claimed to.
 
 `npm run db:reset` nukes the dev volume — use it when a schema change makes existing dev data inconsistent.
+
+## Environment files (strict separation)
+
+| File            | Read by            | Allowed contents                                                                          |
+| --------------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| `apps/api/.env` | NestJS at runtime  | Server-only secrets: `MONGO_URI`, `ANTHROPIC_API_KEY`, OAuth client secrets, session keys |
+| `apps/web/.env` | Vite at build time | `VITE_*` config inlined into the public bundle. **No secrets, ever.**                     |
+
+**Never share env values between the two files.** If a backend secret leaked into `apps/web/.env`, Vite could inline it into the public JS bundle and ship it to every browser. The split is a safety boundary, not a stylistic choice.
+
+When adding a new env var, ask: does any user-agent ever need to see this? If no → goes in `apps/api/.env.example`. If yes → it's not a secret; goes in `apps/web/.env.example` with a `VITE_` prefix.
+
+## Deployment shape (forward-looking)
+
+The repo is structured for two deploy surfaces:
+
+- **API → runtime host** (Render / Fly / Railway / ECS). Real env vars come from the platform's secret manager. The `.env` file does not exist in production.
+- **Web → static host** (Vercel / Netlify / Cloudflare Pages). `VITE_*` vars are set in the platform's build settings and inlined at build time. The static bundle is then served from CDN.
+- **Mongo → managed** (Atlas) or self-hosted; `MONGO_URI` lives only in the API's secret manager.
+
+CORS in `apps/api/src/main.ts` reads `WEB_ORIGIN` — set it to the deployed web origin in prod. Set `VITE_API_URL` in the web's deploy env to either the absolute API URL or `/api` (if behind a same-origin proxy).
 
 ## Verification pipeline
 

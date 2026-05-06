@@ -163,7 +163,7 @@ Stop at the first blocker; don't continue probing past a hard failure.
 
 - **Idempotent.** Two runs in a row produce the same green result and don't break anything.
 - **Read-only on user files.** Don't overwrite an existing `.env.local` or `.env`. Don't `npm install --force`. Don't `docker compose down -v` (that wipes data).
-- **Respect the deny list.** Editing `.env.local` (or `.env`) directly is denied; this command only ever **copies** from `.env.example` via Bash `cp` when the target is missing.
+- **Respect the deny list.** `.env.local` is editable for the port-write in 3b only — never edit it for any other reason. `.env`, `.env.development`, `.env.production`, `.env.test` are denied entirely; copying from `.env.example` via Bash `cp` is the only allowed way to seed a new `.env.local`.
 - **No silent fixes.** If a probe fails, surface it. Don't auto-install Node, don't auto-start Docker Desktop. Surface, instruct, stop.
 
 ## Watch out for

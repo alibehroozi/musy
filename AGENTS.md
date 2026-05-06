@@ -38,6 +38,75 @@ These are non-negotiable. CI enforces them. Do not bypass.
 7. **Privacy:** user listening history and identifiers never leak across users, never appear in third-party logs, and never reach LLM prompts unless the prompt explicitly requires them and the call site is annotated with the reason.
 8. **Conform to `ARCHITECTURE.md`.** All new implementations and fixes follow the per-package layout, layering, and "when to use what" rules in [`ARCHITECTURE.md`](ARCHITECTURE.md). If a constraint there blocks something legitimate, raise it as a question — don't silently bypass.
 9. **Keep `/prepare-local` current.** If a change adds or modifies a local-dev requirement (a new docker service, a new required env var, a new system dep, a new port, a new init step), update `.claude/commands/prepare-local.md` in the same PR. A fresh checkout running `/prepare-local` must always end with a working `npm run dev`.
+10. **Micro-commits.** Multi-layer changes are split into atomic commits in this order: **spec → test → code (by layer).** See [Commit discipline](#commit-discipline) below. The PR HEAD must be green; intermediate commits may be red (the test commit is often red against missing implementation — that's the TDD evidence).
+
+## Commit discipline
+
+When a change touches multiple layers (spec, tests, code), commit each layer separately in a strict order. The history becomes reviewable layer-by-layer, individual layers can be reverted independently, and TDD evidence is visible in the log.
+
+### Order
+
+| Step | Commit type                                                                                    | Contents                                                                                                               | Allowed to be red?                                                                                                |
+| ---- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1    | `spec:` or `arch(spec):`                                                                       | `INVARIANTS.md` and/or `ARCHITECTURE.md`                                                                               | n/a (no runtime)                                                                                                  |
+| 2    | `test(<scope>):`                                                                               | New / changed tests in `tests/` or `*.test.ts` next to code                                                            | **Yes** — tests against missing implementation are expected red                                                   |
+| 3+   | `feat(<scope>):` / `change(<scope>):` / `fix(<scope>):` / `refactor(<scope>):` / `arch(code):` | Implementation, **split by layer** when it spans more than one — `contracts` → `api-core` / `web-core` → `api` / `web` | **No** — each implementation commit should leave verify in a defensible state, even if all tests aren't green yet |
+
+Final commit on the branch must be `npm run verify` green.
+
+### Scopes (the `<scope>` in commit messages)
+
+- `contracts` — `libs/shared/contracts/`
+- `api-core` — `libs/api/core/`
+- `web-core` — `libs/web/core/`
+- `api` — `apps/api/`
+- `web` — `apps/web/`
+- A domain name (`auth`, `users`, `taste`) — when the change is tightly scoped to one feature module
+
+### When micro-commits are NOT required
+
+Single-commit is fine when the change is one of:
+
+- A typo or small wording fix in docs / comments
+- A config tweak (single `package.json`, `tsconfig.json`, `.env.example` line)
+- A trivial single-file fix that doesn't cross spec/test/code boundaries
+- A pure refactor with no spec or test changes
+
+When in doubt, err toward more granular. Two small commits are easier to review than one with two unrelated changes.
+
+### Example sequences
+
+**Adding a feature** (most common, via `/new-feature`):
+
+```
+1. spec: add <feature> invariants (DATA-02, API-01, SEC-01)
+2. test(invariants): stub <feature> tests it.todo
+3. feat(contracts): add <feature> Zod schemas
+4. feat(api-core): add <feature> pure validators / transformers
+5. feat(api): add <feature> module (controller, service, repository, schema)
+6. feat(web-core): add <feature> fetcher
+7. feat(web): add <feature> page + components
+```
+
+Steps 3–7 may collapse if a layer isn't touched. Tests in step 2 turn from `it.todo` into real assertions either inline with the code commit that makes them passable, or in a dedicated `test(<scope>):` commit before its layer.
+
+**Architecture change** (via `/change-architecture`):
+
+```
+1. arch(spec): introduce repository-per-collection pattern
+2. arch(code): migrate users module to new layout
+3. arch(code): migrate auth module to new layout
+```
+
+**Bug fix** (via `/debug-local`):
+
+```
+1. spec: add SEC-04 — owner-scope on /me/playlists
+2. test(invariants): SEC-04 fails against current code
+3. fix(api): scope getPlaylists query by req.user.id
+```
+
+The test commit being red is the proof the fix actually catches the regression.
 
 ## Invariant workflow
 

@@ -1,0 +1,130 @@
+# Auto-implement next pending feature
+#
+# Triggers:
+#   - push to main → after every merge, kicks off the next feature.
+#   - workflow_dispatch → manual run; can pass an explicit feature path.
+#
+# Concurrency is single-track: one auto-feature run at a time so two
+# agents don't race on the same pending-epic file.
+#
+# Output: a PR. The human gate is PR review — there is no human in the
+# loop during the run itself.
+
+name: Auto-implement next pending feature
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      feature_path:
+        description: "Optional: explicit pending-epics/.../NN-<slug>.md path. Leave blank to auto-pick the lowest-numbered pending feature."
+        required: false
+        type: string
+
+concurrency:
+  group: auto-feature
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Bring up MongoDB (matches /prepare-local step 4)
+        run: docker compose up -d mongo
+
+      - name: Wait for Mongo healthy
+        run: |
+          until docker compose ps --format "{{.Name}} {{.Status}}" | grep -q "musy-mongo .*healthy"; do
+            sleep 2
+          done
+
+      - name: Seed CI .env.local files
+        # CI never has user-set values; write the same shape /prepare-local does.
+        run: |
+          cat > apps/api/.env.local <<EOF
+          NODE_ENV=development
+          API_PORT=3001
+          WEB_ORIGIN=http://localhost:5173
+          MONGO_URI=mongodb://localhost:27117/musy
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY=
+          EOF
+          cat > apps/web/.env.local <<EOF
+          VITE_API_URL=/api
+          VITE_API_TARGET=http://localhost:3001
+          VITE_WEB_PORT=5173
+          EOF
+
+      - name: Configure git author for autonomous commits
+        run: |
+          git config user.name "claude-code[bot]"
+          git config user.email "claude-code-bot@users.noreply.github.com"
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
+          prompt: |
+            You're running in CI under GitHub Actions. No human is at the
+            other end during this run — the PR review is the human gate.
+
+            ## Your job
+            Implement one pending feature from `pending-epics/` and open a PR.
+
+            ## Algorithm
+            1. If the input `${{ github.event.inputs.feature_path }}` is non-empty,
+               that's the feature file. Use it directly.
+            2. Otherwise, find the lowest-numbered file under
+               `pending-epics/*/features/NN-*.md` whose YAML frontmatter has
+               `status: pending`. Sort by epic name first, then numeric prefix.
+               If nothing is pending, print a summary and exit cleanly — do
+               not commit.
+            3. Run `/new-feature <that path>` exactly as
+               `.claude/commands/new-feature.md` specifies. The pending-epic
+               file is already approved — frontmatter `status: pending` IS the
+               approval. Skip the interactive "wait for sign-off" pauses in
+               steps 1, 2, and 3; the answers are in the file. Install the
+               deps the file's "Tooling" section names; if you discover the
+               feature genuinely needs deps the file didn't anticipate, add
+               them and explain in the relevant code commit's body — the PR
+               review is the gate.
+            4. Follow the micro-commit discipline (AGENTS.md hard rule #10) —
+               spec → tests → code by layer.
+            5. Open the PR via `gh pr create` using GITHUB_TOKEN. Title
+               `task: <short title>`; body lists the commit sequence, the new
+               invariant IDs, the source pending-epic feature file path, and
+               confirms `npm run verify` is green at the branch HEAD.
+            6. Per /new-feature step 11, mark the feature file
+               `status: done` with `implemented-in-pr: <url>` in a final docs
+               commit. If every feature in the epic is now done, also flip
+               EPIC.md's status in the same commit.
+
+            ## Hard constraints in CI (on top of AGENTS.md hard rules)
+            - **Never weaken a test to make CI green.** If the suite goes
+              red, fix the source — same rule as interactive mode.
+            - **No `.github/workflows/` edits.** AGENTS.md hard rule #6.
+            - **`npm run verify` must be green** at the branch HEAD before
+              you push and open the PR.
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

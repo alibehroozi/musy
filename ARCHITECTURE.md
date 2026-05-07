@@ -16,13 +16,14 @@ A function that does pure data transformation belongs in `libs/api/core/` or `li
 
 ## Workspace map
 
-| Path                     | Role                                                                       | Allowed dependencies                                               |
-| ------------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `apps/api/`              | NestJS HTTP service. Side effects: HTTP, Mongo, AI provider calls, logging | NestJS, Mongoose, `@moc/contracts`, `@moc/api-core`, provider SDKs |
-| `apps/web/`              | React PWA. Side effects: DOM, fetch, Service Worker, browser storage       | React, Vite, `@moc/contracts`, `@moc/web-core`                     |
-| `libs/shared/contracts/` | Zod schemas shared FE↔BE                                                   | Zod only                                                           |
-| `libs/api/core/`         | Pure backend logic                                                         | `@moc/contracts` only — **no NestJS, no Mongoose, no I/O**         |
-| `libs/web/core/`         | Pure frontend logic                                                        | `@moc/contracts` only — **no React, no DOM, no JSX**               |
+| Path                      | Role                                                                          | Allowed dependencies                                                           |
+| ------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `apps/api/`               | NestJS HTTP service. Side effects: HTTP, Mongo, AI provider calls, logging    | NestJS, Mongoose, `@moc/contracts`, `@moc/api-core`, provider SDKs             |
+| `apps/web/`               | React PWA. Side effects: DOM, fetch, Service Worker, browser storage          | React, Vite, Tailwind, `@moc/contracts`, `@moc/web-core`, `@moc/design-system` |
+| `libs/shared/contracts/`  | Zod schemas shared FE↔BE                                                      | Zod only                                                                       |
+| `libs/api/core/`          | Pure backend logic                                                            | `@moc/contracts` only — **no NestJS, no Mongoose, no I/O**                     |
+| `libs/web/core/`          | Pure frontend logic                                                           | `@moc/contracts` only — **no React, no DOM, no JSX**                           |
+| `libs/web/design-system/` | Visual design system: tokens (CSS vars via Tailwind v4 `@theme`) + components | React, Tailwind. **No app imports.** Shipped as `@moc/design-system`.          |
 
 If a lib reaches for something outside its allowed deps, the feature is in the wrong place. Move it.
 
@@ -230,9 +231,12 @@ When a need looks contextual but fails one of the three:
 
 ### Styling
 
-- Global resets in `index.css`
-- Per-component styles: inline `style={{}}` for now; we'll adopt CSS modules at first non-trivial component
-- **No CSS-in-JS libraries** until we have a measured reason
+- **Tailwind v4** is the styling layer. Utilities resolve to design-system tokens defined in `@moc/design-system`'s `theme.css` (a Tailwind v4 `@theme` block).
+- **Tokens, not raw values.** `bg-primary`, `text-text-muted`, `rounded-md`, `p-4` — never `bg-[#5e2e92]` or arbitrary one-offs. If a value isn't in the token set, add it to the design system first; don't shortcut.
+- **Components compose via Tailwind utilities.** Inline `style={{}}` is reserved for truly dynamic values (computed positions, animation transforms). No CSS Modules. No CSS-in-JS libraries.
+- **App-level CSS is one file.** `apps/web/src/index.css` does only: `@import "tailwindcss";`, `@import "@moc/design-system/theme.css";`, and global resets. No per-feature CSS files.
+
+See [`DESIGN.md`](DESIGN.md) for the full token reference and component catalog.
 
 ### Data fetching
 
@@ -294,11 +298,58 @@ Custom React hooks belong in `apps/web/src/hooks/` or `apps/web/src/features/<na
 
 ---
 
+## libs/web/design-system
+
+Visual design system: tokens + components, exported as `@moc/design-system`.
+
+### Folder structure
+
+```
+libs/web/design-system/
+├── package.json
+├── tsconfig.json
+├── vite.config.ts            # for Ladle
+├── vitest.config.ts
+├── .ladle/
+│   └── config.mjs
+├── test/
+│   └── setup.ts              # @testing-library/jest-dom registration
+└── src/
+    ├── index.ts              # re-exports every component
+    ├── styles/
+    │   ├── theme.css         # @theme — tokens (CSS vars + Tailwind utilities)
+    │   └── index.css         # @import "tailwindcss"; @import "./theme.css";
+    └── components/
+        └── <Name>/
+            ├── <Name>.tsx
+            ├── <Name>.test.tsx
+            └── <Name>.stories.tsx
+```
+
+### Rules
+
+- **Tokens are the source of truth for visual style.** Every numeric or color value in a component resolves to a token (`bg-primary`, `p-4`, `rounded-md`). Never hard-code colors or pixel values.
+- **No app imports.** The design system depends on React + Tailwind only. It must build standalone (Ladle confirms this) — if it can't, an app-level concern leaked in.
+- **Self-contained tests.** `npm --workspace libs/web/design-system run test` runs only the DS component tests. They never depend on app state.
+- **Stories are mandatory for new components.** A component without a `<Name>.stories.tsx` isn't done. Ladle is the visual review tool.
+- **One component per folder.** Plus its test and story. Sub-components for composition (e.g. `<Tabs.Root>`) live next to the primary in the same folder.
+- **API surface is small.** Components expose semantic variants (`primary` | `secondary` | `ghost`), not raw style props. If you find yourself adding `colorOverride`, `customRadius`, etc., the design system needs more tokens — go fix tokens, don't escape them.
+
+### Stories (Ladle)
+
+`npm --workspace libs/web/design-system run stories` opens Ladle on `http://localhost:61000`. Stories live alongside components and are auto-discovered by file name (`*.stories.tsx`). Ladle reuses the package's `vite.config.ts`, which loads `@tailwindcss/vite`.
+
+### Adding a component
+
+Use `/design-system`. Don't shortcut by hand-rolling components into `apps/web` then "moving them later" — that pattern accumulates duplicate visual logic.
+
+---
+
 ## Cross-cutting rules
 
 ### Imports
 
-- Workspace packages always via aliases: `@moc/contracts`, `@moc/api-core`, `@moc/web-core`. **Never `../../../libs/...`.**
+- Workspace packages always via aliases: `@moc/contracts`, `@moc/api-core`, `@moc/web-core`, `@moc/design-system`. **Never `../../../libs/...`.**
 - No barrel files inside `apps/` (causes Vite/Nest to over-bundle). Barrels are fine in `libs/*/src/index.ts`.
 - Type-only imports use `import type {...}` — TS strips them, smaller output
 

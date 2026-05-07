@@ -1,8 +1,8 @@
 # Auto-implement next pending feature
 #
-# Triggers:
-#   - push to main → after every merge, kicks off the next feature.
-#   - workflow_dispatch → manual run; can pass an explicit feature path.
+# Trigger: workflow_dispatch only — you decide when to run it (Actions tab
+# or `gh workflow run`). Optional input lets you target a specific feature
+# path; blank picks the lowest-numbered pending feature.
 #
 # Concurrency is single-track: one auto-feature run at a time so two
 # agents don't race on the same pending-epic file.
@@ -13,8 +13,6 @@
 name: Auto-implement next pending feature
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       feature_path:
@@ -80,9 +78,12 @@ jobs:
           git config user.email "claude-code-bot@users.noreply.github.com"
 
       - name: Run Claude Code
+        # OAuth token (Pro / Max subscription billing) instead of an API key.
+        # Generate locally with `claude setup-token`, store as the
+        # `CLAUDE_CODE_OAUTH_TOKEN` repository secret.
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
           prompt: |
             You're running in CI under GitHub Actions. No human is at the

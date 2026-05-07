@@ -9,3 +9,6 @@ export type { ButtonProps, ButtonVariant, ButtonSize } from "./components/Button
 
 export { Icon } from "./components/Icon/Icon.js";
 export type { IconProps, IconName } from "./components/Icon/Icon.js";
+
+export { BottomNav } from "./components/BottomNav/BottomNav.js";
+export type { BottomNavProps, BottomNavTab } from "./components/BottomNav/BottomNav.js";

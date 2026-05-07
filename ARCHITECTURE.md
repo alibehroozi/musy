@@ -407,14 +407,14 @@ The mix is deliberately multi-provider because a single-cloud free-tier story (e
 
 ### Rollback
 
-- **API**: Cloud Run keeps every revision. `gcloud run services update-traffic moc-api --to-revisions=<previous-revision>=100 --region=<region>` rolls traffic back instantly.
+- **API**: Cloud Run keeps every revision. `gcloud run services update-traffic musy-api --to-revisions=<previous-revision>=100 --region=<region>` rolls traffic back instantly.
 - **Web**: Cloudflare Pages keeps every deployment. Pages dashboard → Deployments → "Rollback to this deployment".
 
 Neither rollback path requires touching the repo.
 
 ### Web ↔ API connection
 
-The web reaches the API via an absolute URL pinned at build time. `VITE_API_URL` is a GitHub secret holding the Cloud Run service URL (e.g. `https://moc-api-xxxxxxx-uc.a.run.app`); Vite inlines it into the built bundle. The API's `WEB_ORIGIN` env var (read by `apps/api/src/main.ts`) is set on the Cloud Run service to the Pages URL (`https://moc.pages.dev` or a custom domain) so CORS allows it.
+The web reaches the API via an absolute URL pinned at build time. `VITE_API_URL` is a GitHub secret holding the Cloud Run service URL (e.g. `https://musy-api-xxxxxxx-uc.a.run.app`); Vite inlines it into the built bundle. The API's `WEB_ORIGIN` env var (read by `apps/api/src/main.ts`) is set on the Cloud Run service to the Pages URL (`https://musy.pages.dev` or a custom domain) so CORS allows it.
 
 This is a **pin-after-bootstrap** model — Cloud Run service URLs are not predictable until the first deploy, so the very first web deploy fails until `VITE_API_URL` is set. Documented in [`DEPLOY.md`](DEPLOY.md). A Cloudflare Pages Function proxy that would have made `VITE_API_URL=/api` constant was considered and rejected: pinning a URL is one extra GitHub secret, while the proxy adds runtime hops, code, and a Pages Functions free-tier dependency.
 

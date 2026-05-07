@@ -14,7 +14,7 @@ If `npm run verify` is green in CI, the API container is built, pushed to Google
 
 - **API** — Cloud Run keeps every revision:
   ```bash
-  gcloud run services update-traffic moc-api \
+  gcloud run services update-traffic musy-api \
     --to-revisions=<previous-revision>=100 \
     --region=<region>
   ```
@@ -40,11 +40,11 @@ For Google Cloud you must add a payment method to enable Cloud Run. **Cloud Run 
 
 ### 2. MongoDB Atlas — create the cluster
 
-1. Create a project (e.g. `moc`).
-2. **Build a Database** → **M0 (Free)** → pick a region close to your Cloud Run region (`us-central1` ↔ N. Virginia or Iowa).
+1. Create a project (e.g. `musy`).
+2. **Build a Database** → **M0 (Free)** → pick a region close to your Cloud Run region (`europe-north2` ↔ N. Virginia or Iowa).
 3. **Database Access** → add a database user with a strong random password. Save the password — Atlas will not show it again.
 4. **Network Access** → add `0.0.0.0/0`. Cloud Run egress IPs are dynamic; security relies on the strong password + database user permissions, not IP allowlisting.
-5. **Connect** → **Drivers** → copy the connection string. Replace `<password>` and append the database name: `mongodb+srv://<user>:<password>@<host>/moc?retryWrites=true&w=majority`. **Save this — it is your `MONGO_URI`.**
+5. **Connect** → **Drivers** → copy the connection string. Replace `<password>` and append the database name: `mongodb+srv://<user>:<password>@<host>/musy?retryWrites=true&w=majority`. **Save this — it is your `MONGO_URI`.**
 
 ### 3. Google Cloud — set up Cloud Run
 
@@ -52,31 +52,31 @@ Install gcloud first: https://cloud.google.com/sdk/docs/install.
 
 ```bash
 gcloud auth login
-gcloud projects create moc-prod --name=moc
-gcloud config set project moc-prod
+gcloud projects create musy-prod --name=musy
+gcloud config set project musy-prod
 
 # Link a billing account (required to enable Cloud Run)
-gcloud beta billing projects link moc-prod \
+gcloud beta billing projects link musy-prod \
   --billing-account=<your-billing-account-id>
 
 gcloud services enable \
   run.googleapis.com \
   artifactregistry.googleapis.com
 
-gcloud artifacts repositories create moc \
+gcloud artifacts repositories create musy \
   --repository-format=docker \
-  --location=us-central1 \
-  --description="moc API container images"
+  --location=europe-north2 \
+  --description="musy API container images"
 ```
 
 Create a deploy service account and JSON key:
 
 ```bash
-gcloud iam service-accounts create moc-deployer \
-  --display-name="moc deploy from GitHub Actions"
+gcloud iam service-accounts create musy-deployer \
+  --display-name="musy deploy from GitHub Actions"
 
 PROJECT_ID=$(gcloud config get-value project)
-SA_EMAIL="moc-deployer@${PROJECT_ID}.iam.gserviceaccount.com"
+SA_EMAIL="musy-deployer@${PROJECT_ID}.iam.gserviceaccount.com"
 
 for role in run.admin artifactregistry.writer iam.serviceAccountUser; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
@@ -90,18 +90,18 @@ gcloud iam service-accounts keys create gcp-key.json \
 
 **Open `gcp-key.json`, copy the entire JSON content, then `rm gcp-key.json`.** That JSON is your `GCP_SERVICE_ACCOUNT_KEY` — it is a long-lived credential and must never be committed.
 
-Save: `GCP_PROJECT_ID` (`moc-prod`) and `GCP_REGION` (`us-central1`).
+Save: `GCP_PROJECT_ID` (`musy-prod`) and `GCP_REGION` (`europe-north2`).
 
 ### 4. Cloudflare — set up Pages
 
-1. **Workers & Pages** → **Create application** → **Pages** → **Create using direct upload**. Name the project `moc`. Do not connect the Git integration — it would create a parallel deploy path that ignores `npm run verify`.
+1. **Workers & Pages** → **Create application** → **Pages** → **Create using direct upload**. Name the project `musy`. Do not connect the Git integration — it would create a parallel deploy path that ignores `npm run verify`.
 2. From any dashboard page sidebar, copy your **Account ID** — this is `CLOUDFLARE_ACCOUNT_ID`.
 3. **My Profile** → **API Tokens** → **Create Token** → **Custom token**:
    - Permission: `Account` → `Cloudflare Pages` → `Edit`
    - Account Resources: include your account
    - Save the token — this is `CLOUDFLARE_API_TOKEN`.
 
-The default production URL is `https://moc.pages.dev`. **This is your `WEB_ORIGIN` value.**
+The default production URL is `https://musy.pages.dev`. **This is your `WEB_ORIGIN` value.**
 
 ### 5. Set GitHub Actions secrets
 
@@ -110,8 +110,8 @@ Repository **Settings → Secrets and variables → Actions → New repository s
 | Secret                    | Value                                                         | From    |
 | ------------------------- | ------------------------------------------------------------- | ------- |
 | `GCP_SERVICE_ACCOUNT_KEY` | full JSON contents of `gcp-key.json`                          | step 3  |
-| `GCP_PROJECT_ID`          | e.g. `moc-prod`                                               | step 3  |
-| `GCP_REGION`              | e.g. `us-central1`                                            | step 3  |
+| `GCP_PROJECT_ID`          | e.g. `musy-prod`                                              | step 3  |
+| `GCP_REGION`              | e.g. `europe-north2`                                          | step 3  |
 | `CLOUDFLARE_API_TOKEN`    | from API Tokens                                               | step 4  |
 | `CLOUDFLARE_ACCOUNT_ID`   | from sidebar                                                  | step 4  |
 | `VITE_API_URL`            | **leave blank for now** — set in step 7 once API URL is known | (later) |
@@ -122,7 +122,7 @@ Repository **Settings → Secrets and variables → Actions → New repository s
 git push origin main
 ```
 
-In the **Actions** tab, the `deploy-api` job builds the container and rolls it out. When it succeeds, the job log includes the Cloud Run service URL — looks like `https://moc-api-xxxxxxx-uc.a.run.app`. Copy this — it is your `API_URL`.
+In the **Actions** tab, the `deploy-api` job builds the container and rolls it out. When it succeeds, the job log includes the Cloud Run service URL — looks like `https://musy-api-xxxxxxx-uc.a.run.app`. Copy this — it is your `API_URL`.
 
 The `deploy-web` job will fail at this point because `VITE_API_URL` is unset. Expected; resolved in step 8.
 
@@ -131,28 +131,28 @@ The `deploy-web` job will fail at this point because `VITE_API_URL` is unset. Ex
 ```bash
 SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")
 
-gcloud run services update moc-api --region=us-central1 \
-  --set-env-vars="^@^WEB_ORIGIN=https://moc.pages.dev@API_PORT=8080@GOOGLE_REDIRECT_URI=<API_URL>/api/auth/google/callback"
+gcloud run services update musy-api --region=europe-north2 \
+  --set-env-vars="^@^WEB_ORIGIN=https://musy.pages.dev@API_PORT=8080@GOOGLE_REDIRECT_URI=<API_URL>/api/auth/google/callback"
 ```
 
 Sensitive values are best stored in **Google Secret Manager** and referenced from the Cloud Run service:
 
 ```bash
-echo -n "<your MONGO_URI>" | gcloud secrets create moc-mongo-uri --data-file=-
-echo -n "$SESSION_SECRET"  | gcloud secrets create moc-session-secret --data-file=-
-echo -n "<google client id>"     | gcloud secrets create moc-google-client-id --data-file=-
-echo -n "<google client secret>" | gcloud secrets create moc-google-client-secret --data-file=-
+echo -n "<your MONGO_URI>" | gcloud secrets create musy-mongo-uri --data-file=-
+echo -n "$SESSION_SECRET"  | gcloud secrets create musy-session-secret --data-file=-
+echo -n "<google client id>"     | gcloud secrets create musy-google-client-id --data-file=-
+echo -n "<google client secret>" | gcloud secrets create musy-google-client-secret --data-file=-
 
 # Grant the Cloud Run runtime service account access to these secrets
-RUNTIME_SA="$(gcloud projects describe moc-prod --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
-for secret in moc-mongo-uri moc-session-secret moc-google-client-id moc-google-client-secret; do
+RUNTIME_SA="$(gcloud projects describe musy-prod --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
+for secret in musy-mongo-uri musy-session-secret musy-google-client-id musy-google-client-secret; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --member="serviceAccount:$RUNTIME_SA" \
     --role="roles/secretmanager.secretAccessor"
 done
 
-gcloud run services update moc-api --region=us-central1 \
-  --update-secrets="MONGO_URI=moc-mongo-uri:latest,SESSION_SECRET=moc-session-secret:latest,GOOGLE_CLIENT_ID=moc-google-client-id:latest,GOOGLE_CLIENT_SECRET=moc-google-client-secret:latest"
+gcloud run services update musy-api --region=europe-north2 \
+  --update-secrets="MONGO_URI=musy-mongo-uri:latest,SESSION_SECRET=musy-session-secret:latest,GOOGLE_CLIENT_ID=musy-google-client-id:latest,GOOGLE_CLIENT_SECRET=musy-google-client-secret:latest"
 ```
 
 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` come from your OAuth 2.0 client at https://console.cloud.google.com/apis/credentials. Add `<API_URL>/api/auth/google/callback` to **Authorized redirect URIs** in that screen.
@@ -163,7 +163,7 @@ In GitHub **Settings → Secrets**, set `VITE_API_URL` to `<API_URL>`. Then in t
 
 ### 9. Verify end-to-end
 
-- `https://moc.pages.dev` — SPA loads
+- `https://musy.pages.dev` — SPA loads
 - `<API_URL>/health` — returns 200
 - Sign-in flow — Google OAuth redirects through API back to web
 
@@ -180,8 +180,8 @@ In GitHub **Settings → Secrets**, set `VITE_API_URL` to `<API_URL>`. Then in t
 
 ## Custom domains (later)
 
-- **Web**: Pages → Custom domains → add e.g. `moc.example.com`. Cloudflare provisions the cert. Update `WEB_ORIGIN` on Cloud Run to the new domain.
-- **API**: Cloud Run → service → "Manage Custom Domains" → add e.g. `api.moc.example.com`. Update `VITE_API_URL` (GitHub secret) and `GOOGLE_REDIRECT_URI` (Cloud Run env) accordingly, plus the OAuth client's authorized redirect URIs.
+- **Web**: Pages → Custom domains → add e.g. `musy.example.com`. Cloudflare provisions the cert. Update `WEB_ORIGIN` on Cloud Run to the new domain.
+- **API**: Cloud Run → service → "Manage Custom Domains" → add e.g. `api.musy.example.com`. Update `VITE_API_URL` (GitHub secret) and `GOOGLE_REDIRECT_URI` (Cloud Run env) accordingly, plus the OAuth client's authorized redirect URIs.
 
 ## Hard rules
 

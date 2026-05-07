@@ -11,6 +11,7 @@ describe("DATA-01: Every User document has a non-empty id (uuid v4) and unique, 
     const valid = {
       id: "550e8400-e29b-41d4-a716-446655440000",
       email: "alice@example.com",
+      googleId: "117851234567890123456",
       createdAt: new Date().toISOString(),
     };
     expect(() => User.parse(valid)).not.toThrow();

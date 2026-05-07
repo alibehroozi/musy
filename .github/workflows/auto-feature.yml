@@ -30,6 +30,11 @@ on:
         options:
           - "claude-sonnet-4-6"
           - "claude-opus-4-7"
+      debug:
+        description: "Verbose mode: stream Claude's tool I/O, model thinking, and per-step diagnostics. Off for cron runs."
+        required: false
+        default: false
+        type: boolean
   schedule:
     # Every 5 hours, on the hour: 00:00, 05:00, 10:00, 15:00, 20:00 UTC.
     # Matches Claude Pro's session window so each run starts fresh.
@@ -113,11 +118,16 @@ jobs:
         # Model: dispatched value if set, else sonnet-4-6 default (also
         # used for scheduled runs — workflow_dispatch inputs are empty
         # for cron triggers).
+        # Debug: when the manual `debug` input is true, pass --verbose to
+        # Claude Code (full tool I/O + thinking) and surface API logs.
+        # For full Actions runner debug, also set repo-level secret/var
+        # ACTIONS_STEP_DEBUG=true (one-time, applies to all workflows).
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           model: ${{ github.event.inputs.model || 'claude-sonnet-4-6' }}
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
+          claude_args: ${{ github.event.inputs.debug == 'true' && '--verbose' || '' }}
           prompt: |
             You're running in CI under GitHub Actions. No human is at the
             other end during this run — the PR review is the human gate.
@@ -162,3 +172,5 @@ jobs:
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Verbose Anthropic SDK logs when debug is on. Harmless when off.
+          ANTHROPIC_LOG: ${{ github.event.inputs.debug == 'true' && 'debug' || '' }}

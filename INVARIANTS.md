@@ -31,6 +31,7 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | ID      | Invariant                                                                            | Severity |
 | ------- | ------------------------------------------------------------------------------------ | -------- |
 | DATA-01 | Every `User` document has a non-empty `id` (uuid v4) and a unique, lowercase `email` | Critical |
+| DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)    | Critical |
 
 **Test files:** `tests/invariants/data/users.test.ts`
 
@@ -44,19 +45,34 @@ _No invariants yet. Add when the first pure-logic function lands._
 
 ## API — HTTP contract
 
-_No invariants yet. First entry will typically be: "every error response matches the shared `ErrorResponse` Zod schema"._
+| ID     | Invariant                                                                                                                                                        | Severity |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| API-01 | Every error response from `apps/api` matches the shared `ErrorResponse` Zod schema                                                                               | Critical |
+| API-02 | `GET /api/auth/me` returns 401 + `ErrorResponse` with no/invalid session cookie; returns 200 + a body matching the `User` Zod schema with a valid session cookie | Critical |
+
+**Test files:** `tests/invariants/api/auth.test.ts`
 
 ---
 
 ## UI — DOM / rendering, checkable in jsdom
 
-_No invariants yet._
+| ID    | Invariant                                                                                                                                                             | Severity |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| UI-01 | When `/api/auth/me` returns 401 the app shell renders an element with accessible name "Sign in with Google"; when it returns 200, the app shell renders the main view | High     |
+
+**Test files:** `tests/invariants/ui/auth.test.ts`
 
 ---
 
 ## SEC — authorization and credential hygiene
 
-_No invariants yet. First entries will typically be: "GET /me returns 401 without a valid session", "no response body contains a secret-shaped string"._
+| ID     | Invariant                                                                                                                                                                       | Severity |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line    | Critical |
+| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                             | Critical |
+| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`) return 401 without a valid session cookie | Critical |
+
+**Test files:** `tests/invariants/sec/auth.test.ts`
 
 ---
 

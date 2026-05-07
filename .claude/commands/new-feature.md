@@ -9,7 +9,7 @@ The user describes a feature they want built. Your job is to take it from descri
 The user can describe the feature in two ways:
 
 - **Free-form** in chat (e.g. "add a sign-in flow with Google").
-- **Pointing at a pending-epic feature file** (e.g. "implement `.claude/pending-epics/auth/features/01-sign-in-google.md`"). When this happens, that file IS the spec — read it whole and use it as the input to every subsequent step:
+- **Pointing at a pending-epic feature file** (e.g. "implement `pending-epics/auth/features/01-sign-in-google.md`"). When this happens, that file IS the spec — read it whole and use it as the input to every subsequent step:
   - "Product description" → the feature description for the rest of this command
   - "Suggested invariants" → seeds for `/new-invariant`'s exploration
   - "DS components used / missing" → answers step 3 directly
@@ -68,7 +68,7 @@ The user can describe the feature in two ways:
 
 10. **Update `/prepare-local` if local-dev requirements changed.** Did this feature add a new docker service, a new required env var, a new system dep, a new port, or a new init step? If yes, commit `chore(setup): update /prepare-local for <reason>` separately. If no, skip.
 
-11. **Mark the pending-epic feature file done (if applicable).** If this run consumed a `.claude/pending-epics/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` in the same commit.
+11. **Mark the pending-epic feature file done (if applicable).** If this run consumed a `pending-epics/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` in the same commit.
 
 12. **Open PR** against `main` with title `task: <short title>`. Body lists:
 

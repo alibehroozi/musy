@@ -77,6 +77,6 @@ All tools open-source or within free tiers as of 2026-05-07:
 
 ## Implementation hint for future agents
 
-Each feature file under `./features/` is self-contained. Run `/new-feature .claude/pending-epics/search/features/NN-<slug>.md` to start that feature. Implement features strictly in order — later features depend on the data shapes, contracts, and UI scaffolding established by earlier ones.
+Each feature file under `./features/` is self-contained. Run `/new-feature pending-epics/search/features/NN-<slug>.md` to start that feature. Implement features strictly in order — later features depend on the data shapes, contracts, and UI scaffolding established by earlier ones.
 
 Before features 1, 3, and 5, run `/design-system` for each missing component listed under that feature's "DS components required but missing" section.

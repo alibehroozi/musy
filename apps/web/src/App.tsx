@@ -1,30 +1,23 @@
-import { Typography } from "@moc/design-system";
-import { useAuth } from "./hooks/useAuth.js";
-import { SignInPage } from "./features/auth/SignInPage.js";
+import { useNavigate, useLocation } from "react-router-dom";
+import { BottomNav, type BottomNavTab } from "@moc/design-system";
+import { AppRoutes } from "./routes.js";
+
+const NAV_TABS: BottomNavTab[] = [
+  { id: "explore", label: "Explore", icon: "compass", href: "/explore" },
+  { id: "taste", label: "Taste", icon: "heart", href: "/taste" },
+  { id: "search", label: "Search", icon: "search", href: "/search" },
+];
 
 export function App(): JSX.Element {
-  const { state } = useAuth();
-
-  if (state.status === "loading") {
-    return (
-      <main
-        className="min-h-screen flex items-center justify-center p-8"
-        aria-busy="true"
-        aria-live="polite"
-      >
-        <Typography variant="body">Loading…</Typography>
-      </main>
-    );
-  }
-
-  if (state.status === "unauthenticated") {
-    return <SignInPage />;
-  }
+  const navigate = useNavigate();
+  const location = useLocation();
 
   return (
-    <main className="max-w-3xl mx-auto p-8 flex flex-col gap-4">
-      <Typography variant="h1">musy</Typography>
-      <Typography variant="body">Music app with AI-powered taste processing.</Typography>
-    </main>
+    <div className="flex flex-col min-h-screen">
+      <div className="flex-1 pb-16">
+        <AppRoutes />
+      </div>
+      <BottomNav tabs={NAV_TABS} activePath={location.pathname} onNavigate={navigate} />
+    </div>
   );
 }

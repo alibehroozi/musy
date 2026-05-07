@@ -11,6 +11,7 @@
       "Bash(npm run dev:*)",
       "Bash(npm run build)",
       "Bash(npm install)",
+      "Bash(npm install *)",
       "Bash(git status)",
       "Bash(git diff*)",
       "Bash(git log*)",

@@ -1,0 +1,56 @@
+# Build context exclusions for apps/api/Dockerfile.
+# Note: paths are relative to the build context root (the repo root, since the
+# workflow builds with `docker build -f apps/api/Dockerfile .`).
+
+# Dependencies — installed inside the image
+node_modules
+**/node_modules
+
+# Build / test artifacts
+**/dist
+**/.vitest
+coverage
+playwright-report
+test-results
+**/*.tsbuildinfo
+
+# Env / secrets — never enter the image
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local dev infra
+docker-compose.yml
+.husky
+.git
+.github
+.claude
+
+# Tests — not needed at runtime, kept out to shrink image and avoid leaking fixtures
+tests
+**/test
+**/*.test.ts
+**/*.spec.ts
+**/*.stories.tsx
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs and ephemeral
+*.log
+npm-debug.log*
+
+# Docs not needed at runtime
+README.md
+ARCHITECTURE.md
+DEPLOY.md
+DESIGN.md
+INVARIANTS.md
+AGENTS.md
+CLAUDE.md

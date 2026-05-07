@@ -6,9 +6,20 @@ description: Implement a new feature end-to-end with TDD discipline
 
 The user describes a feature they want built. Your job is to take it from description to "PR open and verified" with the invariant-first workflow.
 
+The user can describe the feature in two ways:
+
+- **Free-form** in chat (e.g. "add a sign-in flow with Google").
+- **Pointing at a pending-epic feature file** (e.g. "implement `.claude/pending-epics/auth/features/01-sign-in-google.md`"). When this happens, that file IS the spec — read it whole and use it as the input to every subsequent step:
+  - "Product description" → the feature description for the rest of this command
+  - "Suggested invariants" → seeds for `/new-invariant`'s exploration
+  - "DS components used / missing" → answers step 3 directly
+  - "Tooling" → answers step 2 directly
+  - "Acceptance criteria" → manual-exercise checklist before opening the PR
+  - When done, set the file's frontmatter `status: done` and add `implemented-in-pr: <url>`. Don't delete it — it's historical record.
+
 ## Sequence (do in order, do not skip)
 
-1. **Confirm the scope.** Restate the feature in one sentence and confirm with the user. If it's bigger than a single PR, propose a split before proceeding. Don't push past ambiguous scope.
+1. **Confirm the scope.** Restate the feature in one sentence and confirm with the user. If a pending-epic file was passed, restate from its "Product description". If it's bigger than a single PR, propose a split before proceeding. Don't push past ambiguous scope.
 
 2. **Tooling check (terse).** Before branching:
    - List capabilities this feature needs that the codebase doesn't already cover (auth? email? rate-limit? embeddings? caching? scheduling?)
@@ -57,7 +68,9 @@ The user describes a feature they want built. Your job is to take it from descri
 
 10. **Update `/prepare-local` if local-dev requirements changed.** Did this feature add a new docker service, a new required env var, a new system dep, a new port, or a new init step? If yes, commit `chore(setup): update /prepare-local for <reason>` separately. If no, skip.
 
-11. **Open PR** against `main` with title `task: <short title>`. Body lists:
+11. **Mark the pending-epic feature file done (if applicable).** If this run consumed a `.claude/pending-epics/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` in the same commit.
+
+12. **Open PR** against `main` with title `task: <short title>`. Body lists:
 
 - The commit sequence (spec → test → code by layer)
 - The new invariant IDs

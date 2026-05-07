@@ -1,11 +1,14 @@
 # Auto-implement next pending feature
 #
-# Trigger: workflow_dispatch only — you decide when to run it (Actions tab
-# or `gh workflow run`). Optional input lets you target a specific feature
-# path; blank picks the lowest-numbered pending feature.
+# Triggers:
+#   - workflow_dispatch — manual run from Actions tab or `gh workflow run`.
+#     Inputs let you target a specific feature path and pick a model.
+#   - schedule — every 5 hours (matches Claude Pro's rolling session
+#     window so each run starts with a fresh quota).
 #
 # Concurrency is single-track: one auto-feature run at a time so two
-# agents don't race on the same pending-epic file.
+# agents don't race on the same pending-epic file. If a scheduled run
+# fires while a manual one is still going, the scheduled run queues.
 #
 # Output: a PR. The human gate is PR review — there is no human in the
 # loop during the run itself.
@@ -19,6 +22,18 @@ on:
         description: "Optional: explicit pending-epics/.../NN-<slug>.md path. Leave blank to auto-pick the lowest-numbered pending feature."
         required: false
         type: string
+      model:
+        description: "Model. Sonnet 4.6 is the default — cheaper on Pro quota, fast enough for most features. Switch to Opus 4.7 for tricky / large features."
+        required: false
+        default: "claude-sonnet-4-6"
+        type: choice
+        options:
+          - "claude-sonnet-4-6"
+          - "claude-opus-4-7"
+  schedule:
+    # Every 5 hours, on the hour: 00:00, 05:00, 10:00, 15:00, 20:00 UTC.
+    # Matches Claude Pro's session window so each run starts fresh.
+    - cron: "0 */5 * * *"
 
 concurrency:
   group: auto-feature
@@ -81,9 +96,13 @@ jobs:
         # OAuth token (Pro / Max subscription billing) instead of an API key.
         # Generate locally with `claude setup-token`, store as the
         # `CLAUDE_CODE_OAUTH_TOKEN` repository secret.
+        # Model: dispatched value if set, else sonnet-4-6 default (also
+        # used for scheduled runs — workflow_dispatch inputs are empty
+        # for cron triggers).
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          model: ${{ github.event.inputs.model || 'claude-sonnet-4-6' }}
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
           prompt: |
             You're running in CI under GitHub Actions. No human is at the

@@ -18,7 +18,7 @@ export function BottomNav({ tabs, activePath, onNavigate }: BottomNavProps): JSX
   return (
     <nav
       aria-label="Main navigation"
-      className="fixed bottom-0 left-0 right-0 bg-surface border-t border-border"
+      className="fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-border"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="flex h-16">
@@ -30,8 +30,8 @@ export function BottomNav({ tabs, activePath, onNavigate }: BottomNavProps): JSX
               href={tab.href}
               aria-current={isActive ? "page" : undefined}
               className={[
-                "flex flex-col items-center justify-center flex-1 gap-1",
-                isActive ? "text-primary" : "text-text-muted",
+                "flex flex-col items-center justify-center flex-1 gap-1 transition-colors duration-200",
+                isActive ? "text-text" : "text-text-muted",
               ].join(" ")}
               onClick={(e) => {
                 e.preventDefault();

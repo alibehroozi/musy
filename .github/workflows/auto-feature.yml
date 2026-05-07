@@ -64,6 +64,13 @@ jobs:
           node-version: "22"
           cache: npm
 
+      - name: Suppress npm interactive prompts
+        # Some npm prompts (audit summary, funding banner) ignore CI=true
+        # and slow / hang the install. Disable explicitly.
+        run: |
+          npm config set fund false
+          npm config set audit false
+
       - run: npm ci
 
       - name: Bring up MongoDB (matches /prepare-local step 4)
@@ -160,6 +167,16 @@ jobs:
             You're running in CI under GitHub Actions. No human is at the
             other end during this run — the PR review is the human gate.
 
+            ## CI override on slash-command pauses (read first, applies to everything below)
+            Every "wait for sign-off", "stop and wait", "stop and ask",
+            "get user approval", "loop until approved", or similar pause
+            instruction inside any `.claude/commands/*.md` is **auto-
+            approved** when running under this workflow. The pending-epic
+            feature file is the user's pre-recorded answer to those
+            questions: scope, tooling, design-system check, invariants,
+            acceptance criteria. Proceed without pausing. If you find
+            yourself about to wait for input, stop and proceed instead.
+
             ## Your job
             Implement one pending feature from `pending-epics/` and open a PR.
 
@@ -171,22 +188,34 @@ jobs:
                `status: pending`. Sort by epic name first, then numeric prefix.
                If nothing is pending, print a summary and exit cleanly — do
                not commit.
-            3. Run `/new-feature <that path>` exactly as
-               `.claude/commands/new-feature.md` specifies. The pending-epic
-               file is already approved — frontmatter `status: pending` IS the
-               approval. Skip the interactive "wait for sign-off" pauses in
-               steps 1, 2, and 3; the answers are in the file. Install the
-               deps the file's "Tooling" section names; if you discover the
-               feature genuinely needs deps the file didn't anticipate, add
-               them and explain in the relevant code commit's body — the PR
-               review is the gate.
+            3. Run `/new-feature <that path>` per `.claude/commands/new-feature.md`.
+               Apply the CI override above to every pause. Install the deps
+               the file's "Tooling" section names; if you discover the feature
+               genuinely needs deps the file didn't anticipate, add them and
+               explain in the relevant code commit's body — the PR review is
+               the gate.
             4. Follow the micro-commit discipline (AGENTS.md hard rule #10) —
                spec → tests → code by layer.
-            5. Open the PR via `gh pr create` using GITHUB_TOKEN. Title
-               `task: <short title>`; body lists the commit sequence, the new
-               invariant IDs, the source pending-epic feature file path, and
-               confirms `npm run verify` is green at the branch HEAD.
-            6. Per /new-feature step 11, mark the feature file
+            5. **Branch naming.** Use the slash command's recommended branch
+               name (e.g. `task-<slug>`). If `git ls-remote --heads origin
+               <branch>` returns the branch (a stale leftover from a prior
+               run), suffix yours with `-r${{ github.run_id }}` to make it
+               unique. Never force-push to an existing branch.
+            6. **Verify only at branch HEAD, not per commit.** The micro-
+               commit discipline allows intermediate commits to be red
+               (especially the test commit before implementation). Run
+               `npm run verify` ONCE — after the final code commit on the
+               branch, before `git push`. Per-commit verify is ~5x the
+               wallclock cost for no real safety gain (the discipline only
+               requires HEAD green).
+            7. Open the PR via `gh pr create` using GITHUB_TOKEN.
+               **Always pass `--title` and `--body` non-interactively** —
+               never let the command open an editor (it'll hang forever in
+               CI). Title `task: <short title>`; body lists the commit
+               sequence, the new invariant IDs, the source pending-epic
+               feature file path, and confirms `npm run verify` is green
+               at the branch HEAD.
+            8. Per /new-feature step 11, mark the feature file
                `status: done` with `implemented-in-pr: <url>` in a final docs
                commit. If every feature in the epic is now done, also flip
                EPIC.md's status in the same commit.
@@ -196,7 +225,7 @@ jobs:
               red, fix the source — same rule as interactive mode.
             - **No `.github/workflows/` edits.** AGENTS.md hard rule #6.
             - **`npm run verify` must be green** at the branch HEAD before
-              you push and open the PR.
+              you push and open the PR. Once. Not after every commit.
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

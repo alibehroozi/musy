@@ -27,6 +27,8 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
    - Open-source first; propose paid/proprietary only when open-source options are clearly worse — and say why
    - **Stop and wait for user approval** before adding any dep
 
+4.5. **Design system check (web changes only).** If the change introduces or modifies UI elements, read [`DESIGN.md`](../../DESIGN.md) and check the catalog. Missing component → run `/design-system` first. Missing variant on an existing component → also `/design-system`. Skip for backend-only changes.
+
 5. **Branch.** `git checkout -b change-<slug>`.
 
 6. **Run `/new-invariant` for new properties the change introduces.** This produces commits 1 and 2 of the sequence (spec, then test stubs).

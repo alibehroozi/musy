@@ -1,0 +1,4 @@
+/* Entry point that wires Tailwind + design-system tokens. Apps and Ladle
+ * import this once at their root. */
+@import "tailwindcss";
+@import "./theme.css";

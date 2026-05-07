@@ -22,7 +22,9 @@
       "@moc/api-core": ["libs/api/core/src/index.ts"],
       "@moc/api-core/*": ["libs/api/core/src/*"],
       "@moc/web-core": ["libs/web/core/src/index.ts"],
-      "@moc/web-core/*": ["libs/web/core/src/*"]
+      "@moc/web-core/*": ["libs/web/core/src/*"],
+      "@moc/design-system": ["libs/web/design-system/src/index.ts"],
+      "@moc/design-system/*": ["libs/web/design-system/src/*"]
     }
   }
 }

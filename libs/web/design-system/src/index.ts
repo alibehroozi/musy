@@ -6,3 +6,6 @@ export type { TypographyProps, TypographyVariant } from "./components/Typography
 
 export { Button } from "./components/Button/Button.js";
 export type { ButtonProps, ButtonVariant, ButtonSize } from "./components/Button/Button.js";
+
+export { Icon } from "./components/Icon/Icon.js";
+export type { IconProps, IconName } from "./components/Icon/Icon.js";

@@ -185,15 +185,20 @@ Mongo Express UI at http://localhost:8181 — useful for verifying that a featur
 
 When adding a new env var, ask: does any user-agent ever need to see this? If no → goes in `apps/api/.env.example`. If yes → it's not a secret; goes in `apps/web/.env.example` with a `VITE_` prefix.
 
-## Deployment shape (forward-looking)
+## Deployment
 
-The repo is structured for two deploy surfaces:
+The app auto-deploys on push to `main`, gated on `npm run verify` (Layer 1 + Layer 2 + gitleaks) passing in CI:
 
-- **API → runtime host** (Render / Fly / Railway / ECS). Real env vars come from the platform's secret manager. No `.env*` file in production.
-- **Web → static host** (Vercel / Netlify / Cloudflare Pages). `VITE_*` vars are set in the platform's build settings and inlined at build time. The static bundle is then served from CDN.
-- **Mongo → managed** (Atlas) or self-hosted; `MONGO_URI` lives only in the API's secret manager.
+- **Web** → **Cloudflare Pages** (free tier) — `apps/web/dist/` static bundle
+- **API** → **Google Cloud Run** (free monthly grant) — container built from `apps/api/Dockerfile`
+- **Database** → **MongoDB Atlas M0** (free, 512MB) — single shared cluster
+- **File storage** → **Cloudflare R2** (free 10GB, $0 egress) — reserved for when uploads land
 
-CORS in `apps/api/src/main.ts` reads `WEB_ORIGIN` — set it to the deployed web origin in prod. Set `VITE_API_URL` in the web's deploy env to either the absolute API URL or `/api` (if behind a same-origin proxy).
+Runtime API secrets (`MONGO_URI`, `SESSION_SECRET`, OAuth credentials, etc.) live on the Cloud Run service. CI auth secrets (Cloudflare API token, GCP service account key) live in GitHub Actions secrets. **No `.env*` file ever ships in production.**
+
+CORS in `apps/api/src/main.ts` reads `WEB_ORIGIN` — set on Cloud Run to the Pages URL. `VITE_API_URL` is a GitHub secret holding the Cloud Run URL; Vite inlines it into the web bundle at build time.
+
+See [`ARCHITECTURE.md` § Deployment](ARCHITECTURE.md) for the full shape and [`DEPLOY.md`](DEPLOY.md) for one-time bootstrap.
 
 ## Verification pipeline
 

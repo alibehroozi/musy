@@ -118,22 +118,43 @@ jobs:
         # Model: dispatched value if set, else sonnet-4-6 default (also
         # used for scheduled runs — workflow_dispatch inputs are empty
         # for cron triggers).
-        # Debug: when the manual `debug` input is true, three things turn on:
-        #   - claude_args: --verbose → full tool I/O + model thinking
-        #   - show_full_output: true → un-hides the action's SDK-wrapped
-        #     output (default-hidden as the action's "security" posture).
-        #     Without this, the runner log just says
-        #     "Running Claude Code via SDK (full output hidden for security)"
-        #     even when --verbose is set internally.
-        #   - ANTHROPIC_LOG=debug (in env block below) → SDK logs raw HTTP
-        # For full Actions runner debug, also set repo-level secret/var
-        # ACTIONS_STEP_DEBUG=true (one-time, applies to all workflows).
+        # claude_args breakdown:
+        #
+        #   --dangerously-skip-permissions  (always, CI only)
+        #     The project's .claude/settings.json has narrow Bash patterns
+        #     tuned for interactive use (e.g. `Bash(npm install)` matches
+        #     the bare command but not `npm install --workspace apps/web
+        #     react-router-dom`). In CI there's no human to approve the
+        #     prompt, so anything outside the exact-match allowlist hangs
+        #     forever or aborts. This flag tells Claude Code to skip
+        #     permission gating entirely. Safe in CI because:
+        #       - the runner is ephemeral
+        #       - GITHUB_TOKEN scopes are constrained by the workflow's
+        #         `permissions:` block above
+        #       - the PR review is the human gate on actual changes
+        #     Never set this for local / interactive runs.
+        #
+        #   --verbose  (when debug is on)
+        #     Full tool I/O + model reasoning instead of just the
+        #     high-level summary.
+        #
+        # Companion knobs:
+        #   show_full_output: true → un-hides the action's SDK-wrapped
+        #     output (it's hidden by default for "security" — that's why
+        #     `Running Claude Code via SDK (full output hidden for
+        #     security)` shows up in non-debug runs)
+        #   ANTHROPIC_LOG=debug (env block below) → SDK logs raw HTTP
+        #
+        # For full Actions runner debug (every step's command + env
+        # expansion), also set repo-level variable ACTIONS_STEP_DEBUG=true
+        # under Settings → Secrets and variables → Actions → Variables.
+        # One-time, applies to every workflow on the repo.
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           model: ${{ github.event.inputs.model || 'claude-sonnet-4-6' }}
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
-          claude_args: ${{ github.event.inputs.debug == 'true' && '--verbose' || '' }}
+          claude_args: --dangerously-skip-permissions ${{ github.event.inputs.debug == 'true' && '--verbose' || '' }}
           show_full_output: ${{ github.event.inputs.debug == 'true' }}
           prompt: |
             You're running in CI under GitHub Actions. No human is at the

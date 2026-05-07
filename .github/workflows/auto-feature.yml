@@ -71,8 +71,18 @@ jobs:
           done
 
       - name: Seed CI .env.local files
-        # CI never has user-set values; write the same shape /prepare-local does.
+        # CI has no user-set values; write the same shape /prepare-local does.
+        # SESSION_SECRET is generated per run because:
+        #   - apps/api boots via getOrThrow("SESSION_SECRET") (auth module
+        #     init), so leaving it blank crashes any test that boots the API.
+        #   - sessions don't need to survive across CI runs, so a fresh
+        #     value each run is fine and avoids needing a GitHub secret.
+        # GOOGLE_* are dummies — auth.service.ts looks them up lazily,
+        # so dummies satisfy boot. CI tests mock the OAuth flow; if any
+        # test ever hits real Google with these dummies, it'll fail loudly
+        # with an HTTP error from Google rather than a missing-env crash.
         run: |
+          SESSION_SECRET="$(openssl rand -hex 48)"
           cat > apps/api/.env.local <<EOF
           NODE_ENV=development
           API_PORT=3001
@@ -80,6 +90,10 @@ jobs:
           MONGO_URI=mongodb://localhost:27117/musy
           ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY=
+          GOOGLE_CLIENT_ID=ci-dummy
+          GOOGLE_CLIENT_SECRET=ci-dummy
+          GOOGLE_REDIRECT_URI=http://localhost:5173/api/auth/google/callback
+          SESSION_SECRET=${SESSION_SECRET}
           EOF
           cat > apps/web/.env.local <<EOF
           VITE_API_URL=/api

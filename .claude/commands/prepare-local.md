@@ -99,12 +99,20 @@ Use `Write` (whole file) when `.env.local` is missing; use `Edit` (per-key) when
 
 **Keys this command seeds but doesn't overwrite.** Written once on file creation; preserved on subsequent runs so the user can edit freely.
 
-| File                  | Seeded keys                                                                                                 |
-| --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `apps/api/.env.local` | `NODE_ENV=development`, `MONGO_URI=mongodb://localhost:27117/musy`, `ANTHROPIC_API_KEY=`, `OPENAI_API_KEY=` |
-| `apps/web/.env.local` | `VITE_API_URL=/api`                                                                                         |
+| File                  | Seeded keys                                                                                                                                                                                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/.env.local` | `NODE_ENV=development`, `MONGO_URI=mongodb://localhost:27117/musy`, `ANTHROPIC_API_KEY=`, `OPENAI_API_KEY=`, `GOOGLE_CLIENT_ID=`, `GOOGLE_CLIENT_SECRET=`, `GOOGLE_REDIRECT_URI=http://localhost:<web_port>/api/auth/google/callback`, `SESSION_SECRET=<freshly generated random bytes>` |
+| `apps/web/.env.local` | `VITE_API_URL=/api`                                                                                                                                                                                                                                                                      |
 
-**Fresh-write content** (when the file does not exist) — the `Write` tool's `content` field, with `<api_port>` and `<web_port>` substituted:
+For `SESSION_SECRET`, generate a fresh value at file creation:
+
+\```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+\```
+
+For `GOOGLE_REDIRECT_URI`, default to `http://localhost:<web_port>/api/auth/google/callback` so it tracks the resolved web port. The user is responsible for registering the same URI in Google Cloud Console (Authorized redirect URIs).
+
+**Fresh-write content** (when the file does not exist) — the `Write` tool's `content` field, with `<api_port>`, `<web_port>`, and `<session_secret>` substituted:
 
 `apps/api/.env.local`:
 
@@ -114,7 +122,9 @@ Use `Write` (whole file) when `.env.local` is missing; use `Edit` (per-key) when
 
 # Owned keys (rewritten on every run): API_PORT, WEB_ORIGIN
 
-# Seeded keys (preserved if you edit them): MONGO_URI, ANTHROPIC_API_KEY, OPENAI_API_KEY
+# Seeded keys (preserved if you edit them): MONGO_URI, ANTHROPIC_API_KEY, OPENAI_API_KEY,
+
+# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, SESSION_SECRET
 
 NODE_ENV=development
 API_PORT=<api_port>
@@ -122,6 +132,10 @@ WEB_ORIGIN=http://localhost:<web_port>
 MONGO_URI=mongodb://localhost:27117/musy
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:<web_port>/api/auth/google/callback
+SESSION_SECRET=<session_secret>
 \```
 
 `apps/web/.env.local`:
@@ -148,9 +162,11 @@ If a legacy `apps/api/.env` or `apps/web/.env` exists from before the convention
 Read the resulting `.env.local` files and report:
 
 - Blank `MONGO_URI` (required) → error
+- Blank `SESSION_SECRET` (required for the API to start; should never be blank since `/prepare-local` generates it on file creation) → error, and instruct the user to delete the line so the next run regenerates it
+- Blank `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` (required for sign-in to actually work; the API still boots without them) → warn, and tell the user to register an OAuth 2.0 Client ID at https://console.cloud.google.com/apis/credentials with the `GOOGLE_REDIRECT_URI` from this file as the Authorized redirect URI, then paste the values into `apps/api/.env.local`
 - Blank optional keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) → list as follow-ups the user fills when the relevant feature lands
 
-Don't error on optional blanks; warn.
+Don't error on the OAuth-credential warnings; the user may legitimately be running prepare-local before they've created the OAuth client.
 
 ## Step 4 — Bring up infrastructure
 

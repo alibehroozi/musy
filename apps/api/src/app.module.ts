@@ -1,8 +1,12 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { MongooseModule } from "@nestjs/mongoose";
+import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { UsersModule } from "./modules/users/users.module.js";
+import { AuthModule } from "./modules/auth/auth.module.js";
 import { HealthController } from "./health.controller.js";
+import { AllExceptionsFilter } from "./common/all-exceptions.filter.js";
+import { AuthGuard } from "./common/auth.guard.js";
 
 @Module({
   imports: [
@@ -18,7 +22,12 @@ import { HealthController } from "./health.controller.js";
       }),
     }),
     UsersModule,
+    AuthModule,
   ],
   controllers: [HealthController],
+  providers: [
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_GUARD, useClass: AuthGuard },
+  ],
 })
 export class AppModule {}

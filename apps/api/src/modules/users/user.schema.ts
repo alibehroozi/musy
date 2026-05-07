@@ -5,6 +5,7 @@ export const USER_MODEL = "User";
 export interface UserDocument extends Document {
   id: string;
   email: string;
+  googleId: string;
   createdAt: Date;
 }
 
@@ -16,6 +17,13 @@ export const UserSchemaDefinition = new Schema<UserDocument>(
       required: true,
       unique: true,
       lowercase: true,
+      trim: true,
+      index: true,
+    },
+    googleId: {
+      type: String,
+      required: true,
+      unique: true,
       trim: true,
       index: true,
     },

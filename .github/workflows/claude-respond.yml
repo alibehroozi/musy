@@ -1,0 +1,117 @@
+# Claude PR responder
+#
+# Triggers when the repo OWNER (you) writes `@claude ...` in:
+#   - a PR / issue conversation comment
+#   - an inline code review comment ("Files changed" tab → comment on a line)
+#   - a PR review submission body
+#
+# `author_association == 'OWNER'` is the gate: only your comments fire the
+# workflow. Comments from other contributors / bots / drive-by mentions
+# are ignored. Add 'COLLABORATOR' or 'MEMBER' to the list later if you
+# want to share the trigger.
+#
+# The action automatically:
+#   - checks out the PR's branch (not main)
+#   - reads the comment body as the prompt
+#   - has tool access to read the PR diff and reply in-thread
+#   - pushes follow-up commits to the same branch
+
+name: Claude PR responder
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  respond:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && github.event.comment.author_association == 'OWNER') ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && github.event.comment.author_association == 'OWNER') ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && github.event.review.author_association == 'OWNER')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Suppress npm interactive prompts
+        run: |
+          npm config set fund false
+          npm config set audit false
+
+      - run: npm ci
+
+      - name: Bring up MongoDB
+        run: docker compose up -d mongo
+
+      - name: Wait for Mongo healthy
+        run: |
+          until docker compose ps --format "{{.Name}} {{.Status}}" | grep -q "musy-mongo .*healthy"; do
+            sleep 2
+          done
+
+      - name: Seed CI .env.local files
+        # Same shape as auto-feature.yml. SESSION_SECRET regenerated per run
+        # (no continuity needed). GOOGLE_* are dummies — tests mock OAuth.
+        run: |
+          SESSION_SECRET="$(openssl rand -hex 48)"
+          cat > apps/api/.env.local <<EOF
+          NODE_ENV=development
+          API_PORT=3001
+          WEB_ORIGIN=http://localhost:5173
+          MONGO_URI=mongodb://localhost:27117/musy
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY=
+          GOOGLE_CLIENT_ID=ci-dummy
+          GOOGLE_CLIENT_SECRET=ci-dummy
+          GOOGLE_REDIRECT_URI=http://localhost:5173/api/auth/google/callback
+          SESSION_SECRET=${SESSION_SECRET}
+          EOF
+          cat > apps/web/.env.local <<EOF
+          VITE_API_URL=/api
+          VITE_API_TARGET=http://localhost:3001
+          VITE_WEB_PORT=5173
+          EOF
+
+      - name: Configure git author for autonomous commits
+        run: |
+          git config user.name "claude-code[bot]"
+          git config user.email "claude-code-bot@users.noreply.github.com"
+
+      - name: Run Claude Code
+        # Same auth as auto-feature: Pro OAuth token + the Claude Code
+        # GitHub App. The action auto-detects the trigger event and reads
+        # the comment / review body as the prompt — no `prompt:` input
+        # needed for this responder pattern.
+        #
+        # claude_args: --dangerously-skip-permissions for the same reason
+        # as auto-feature (no human to approve permission prompts in CI).
+        # show_full_output: true so the runner log shows what Claude
+        # actually did in response to your comment.
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          model: "claude-sonnet-4-6"
+          allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
+          claude_args: --dangerously-skip-permissions
+          show_full_output: true
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

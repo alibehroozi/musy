@@ -384,6 +384,63 @@ Use `/design-system`. Don't shortcut by hand-rolling components into `apps/web` 
 
 ---
 
+## Deployment
+
+The app deploys on every push to `main`, gated on the verify pipeline passing. There is no separate staging environment — `main` is the deployed version.
+
+### Surfaces
+
+| Surface                    | Provider             | Free tier (always)                            | What's deployed                                           |
+| -------------------------- | -------------------- | --------------------------------------------- | --------------------------------------------------------- |
+| Web bundle                 | **Cloudflare Pages** | Unlimited bandwidth, 500 builds/mo            | `apps/web/dist/` (static SPA + PWA assets)                |
+| API runtime                | **Google Cloud Run** | 2M req + 360k GiB-sec + 180k vCPU-sec / month | API container built from `apps/api/Dockerfile`            |
+| Database                   | **MongoDB Atlas M0** | 512MB shared cluster                          | One shared cluster, one `moc` database                    |
+| File storage (when needed) | **Cloudflare R2**    | 10GB storage, **$0 egress always**            | Reserved — no buckets created until a feature requires it |
+
+The mix is deliberately multi-provider because a single-cloud free-tier story (e.g. all-Azure) loses on file storage egress charges past the 12-month free window, and Cosmos-as-Mongo introduces compatibility surface area for nothing in return.
+
+### Trigger and gating
+
+- `deploy-api` and `deploy-web` jobs in [.github/workflows/verify.yml](.github/workflows/verify.yml) run only on `push` to `main`, with `needs: [gitleaks, layer-1-build, layer-2-invariants]`. A red verify means no deploy.
+- PR pushes do not deploy — verify only.
+- The two deploy jobs are independent: API can succeed while web fails (or vice versa). Each is idempotent — re-running the same SHA produces the same result.
+
+### Rollback
+
+- **API**: Cloud Run keeps every revision. `gcloud run services update-traffic musy-api --to-revisions=<previous-revision>=100 --region=<region>` rolls traffic back instantly.
+- **Web**: Cloudflare Pages keeps every deployment. Pages dashboard → Deployments → "Rollback to this deployment".
+
+Neither rollback path requires touching the repo.
+
+### Web ↔ API connection
+
+The web reaches the API via an absolute URL pinned at build time. `VITE_API_URL` is a GitHub secret holding the Cloud Run service URL (e.g. `https://musy-api-xxxxxxx-uc.a.run.app`); Vite inlines it into the built bundle. The API's `WEB_ORIGIN` env var (read by `apps/api/src/main.ts`) is set on the Cloud Run service to the Pages URL (`https://musy.pages.dev` or a custom domain) so CORS allows it.
+
+This is a **pin-after-bootstrap** model — Cloud Run service URLs are not predictable until the first deploy, so the very first web deploy fails until `VITE_API_URL` is set. Documented in [`DEPLOY.md`](DEPLOY.md). A Cloudflare Pages Function proxy that would have made `VITE_API_URL=/api` constant was considered and rejected: pinning a URL is one extra GitHub secret, while the proxy adds runtime hops, code, and a Pages Functions free-tier dependency.
+
+### Build artifacts
+
+- **API**: multi-stage [`apps/api/Dockerfile`](apps/api/Dockerfile) builds the workspace (npm ci at the root), compiles `apps/api`, prunes to production deps, and produces a small `node:22-alpine` image. The image is pushed to Google Artifact Registry; Cloud Run deploys the latest tag.
+- **Web**: `npm run build --workspace apps/web` produces `apps/web/dist/`. The Cloudflare Pages action uploads the directory directly. Pages handles atomic swap; no CDN cache invalidation step.
+
+### Secrets
+
+Live in three places, never in the repo:
+
+| Secret                                                                                                                              | Lives in                               | Used by                                |
+| ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------- |
+| `GCP_SERVICE_ACCOUNT_KEY`, `GCP_PROJECT_ID`, `GCP_REGION`                                                                           | GitHub Actions secrets                 | API deploy job (build + push + deploy) |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `VITE_API_URL`                                                                     | GitHub Actions secrets                 | Web deploy job (build + upload)        |
+| `MONGO_URI`, `SESSION_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `WEB_ORIGIN`, `ANTHROPIC_API_KEY` | Cloud Run service env / Secret Manager | API at runtime                         |
+
+Runtime API config lives on Cloud Run rather than in GitHub for two reasons: the deploy workflow has no need to know it, and rotated values never have to round-trip through CI logs.
+
+### Bootstrap
+
+First-time setup is a multi-step manual sequence (account creation → resource provisioning → secret setting → first deploy). It is documented end-to-end in [`DEPLOY.md`](DEPLOY.md). Day-to-day deploys after bootstrap are just `git push origin main`.
+
+---
+
 ## Why these rules and not others
 
 Brief notes on trade-offs we've already made.
@@ -435,6 +492,5 @@ The principle: pick when the first feature needs it. Premature decisions in an A
 - **AI provider choice** — pin when the first taste-processing feature lands
 - **Server-state library** — TanStack Query is the default; pin when the first multi-component shared fetch arrives
 - **Component styling** — CSS modules vs vanilla — pin at first non-trivial component
-- **Deployment target** — pin when ready to push past local + CI
 - **Caching layer (Redis, etc.)** — add when we feel pain
 - **Lint-enforced architecture rules** — `eslint-plugin-import` `no-restricted-imports` could enforce the layer/import rules above mechanically. Deferred until we feel a violation slip through.

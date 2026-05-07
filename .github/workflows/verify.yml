@@ -106,6 +106,7 @@ jobs:
           image: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/musy/api:${{ github.sha }}
           region: ${{ secrets.GCP_REGION }}
           flags: --allow-unauthenticated --port=8080
+          timeout: 2m10s
 
   deploy-web:
     name: "Deploy Web → Cloudflare Pages"

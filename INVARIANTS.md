@@ -56,11 +56,13 @@ _No invariants yet. Add when the first pure-logic function lands._
 
 ## UI — DOM / rendering, checkable in jsdom
 
-| ID    | Invariant                                                                                                                                                             | Severity |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| UI-01 | When `/api/auth/me` returns 401 the app shell renders an element with accessible name "Sign in with Google"; when it returns 200, the app shell renders the main view | High     |
+| ID    | Invariant                                                                                                                                                | Severity |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| UI-01 | The app shell renders a routed bottom navigation for all users regardless of authentication state; the sign-in flow is not shown at the root shell level | High     |
+| UI-02 | The bottom navigation is visible on every routed page (`/explore`, `/taste`, `/search`, and the not-found fallback) regardless of authentication state   | High     |
+| UI-03 | Exactly one bottom-nav tab carries `aria-current="page"` at any time, matching the current route path                                                    | High     |
 
-**Test files:** `tests/invariants/ui/auth.test.ts`
+**Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`
 
 ---
 
@@ -98,13 +100,21 @@ _No invariants yet. Examples:_
 
 ## PWA — installability and offline behavior
 
-_No invariants yet._
+| ID     | Invariant                                                                                                                                                | Severity |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| PWA-01 | Refreshing the browser on `/explore`, `/taste`, or `/search` rehydrates to the same route — the matching bottom-nav tab is highlighted after rehydration | High     |
+
+**Test files:** `tests/invariants/pwa/routing.test.ts` (Layer 3 — Playwright, stubs pending)
 
 ---
 
 ## BROWSER — verified by Layer 3 (Playwright)
 
-_No invariants yet._
+| ID         | Invariant                                                                                                                                                                             | Severity |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| BROWSER-01 | On a 375×667 mobile viewport, each bottom-nav tab has a touch target ≥ 44×44 px and the nav applies `env(safe-area-inset-bottom)` so no content is occluded by the iOS home indicator | High     |
+
+**Test files:** `tests/invariants/browser/bottom-nav.test.ts` (Layer 3 — Playwright, stubs pending)
 
 ---
 

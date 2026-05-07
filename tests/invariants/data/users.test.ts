@@ -11,6 +11,7 @@ describe("DATA-01: Every User document has a non-empty id (uuid v4) and unique, 
     const valid = {
       id: "550e8400-e29b-41d4-a716-446655440000",
       email: "alice@example.com",
+      googleId: "117851234567890123456",
       createdAt: new Date().toISOString(),
     };
     expect(() => User.parse(valid)).not.toThrow();
@@ -57,5 +58,38 @@ describe("DATA-01: Every User document has a non-empty id (uuid v4) and unique, 
 
   it("UserId rejects non-uuid", () => {
     expect(() => UserId.parse("abc")).toThrow();
+  });
+});
+
+describe("DATA-02: Every User document has a non-empty, unique googleId (the Google sub claim)", () => {
+  it("a valid User with googleId parses cleanly", () => {
+    const valid = {
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      email: "alice@example.com",
+      googleId: "117851234567890123456",
+      createdAt: new Date().toISOString(),
+    };
+    expect(() => User.parse(valid)).not.toThrow();
+  });
+
+  it("rejects User without googleId", () => {
+    expect(() =>
+      User.parse({
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        email: "alice@example.com",
+        createdAt: new Date().toISOString(),
+      }),
+    ).toThrow();
+  });
+
+  it("rejects User with empty googleId", () => {
+    expect(() =>
+      User.parse({
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        email: "alice@example.com",
+        googleId: "",
+        createdAt: new Date().toISOString(),
+      }),
+    ).toThrow();
   });
 });

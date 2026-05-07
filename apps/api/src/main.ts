@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { ConfigService } from "@nestjs/config";
+import { RequestMethod } from "@nestjs/common";
+import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module.js";
 
 async function bootstrap(): Promise<void> {
@@ -13,6 +15,12 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: webOrigin.split(",").map((s) => s.trim()),
     credentials: true,
+  });
+  app.use(cookieParser());
+  // /health stays at the root for liveness probes; everything else lives
+  // under /api so the web's /api proxy reaches it untouched.
+  app.setGlobalPrefix("api", {
+    exclude: [{ path: "health", method: RequestMethod.GET }],
   });
   await app.listen(port);
   console.log(`[musy/api] listening on :${port}`);

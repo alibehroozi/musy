@@ -1,6 +1,8 @@
 # musy
 
-Music app with AI-powered taste processing. Installable PWA. Maintained entirely by AI agents.
+Open-source music app with AI-powered taste processing. Installable PWA. Maintained entirely by AI agents.
+
+Here until full production: https://musy.behroozi.dev
 
 ## Quick start
 

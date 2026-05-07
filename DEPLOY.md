@@ -41,7 +41,7 @@ For Google Cloud you must add a payment method to enable Cloud Run. **Cloud Run 
 ### 2. MongoDB Atlas — create the cluster
 
 1. Create a project (e.g. `musy`).
-2. **Build a Database** → **M0 (Free)** → pick a region close to your Cloud Run region (`europe-north2` ↔ N. Virginia or Iowa).
+2. **Build a Database** → **M0 (Free)** → pick a region close to your Cloud Run region (`europe-north1` ↔ N. Virginia or Iowa).
 3. **Database Access** → add a database user with a strong random password. Save the password — Atlas will not show it again.
 4. **Network Access** → add `0.0.0.0/0`. Cloud Run egress IPs are dynamic; security relies on the strong password + database user permissions, not IP allowlisting.
 5. **Connect** → **Drivers** → copy the connection string. Replace `<password>` and append the database name: `mongodb+srv://<user>:<password>@<host>/musy?retryWrites=true&w=majority`. **Save this — it is your `MONGO_URI`.**
@@ -65,7 +65,7 @@ gcloud services enable \
 
 gcloud artifacts repositories create musy \
   --repository-format=docker \
-  --location=europe-north2 \
+  --location=europe-north1 \
   --description="musy API container images"
 ```
 
@@ -90,7 +90,7 @@ gcloud iam service-accounts keys create gcp-key.json \
 
 **Open `gcp-key.json`, copy the entire JSON content, then `rm gcp-key.json`.** That JSON is your `GCP_SERVICE_ACCOUNT_KEY` — it is a long-lived credential and must never be committed.
 
-Save: `GCP_PROJECT_ID` (`musy-prod`) and `GCP_REGION` (`europe-north2`).
+Save: `GCP_PROJECT_ID` (`musy-prod`) and `GCP_REGION` (`europe-north1`).
 
 ### 4. Cloudflare — set up Pages
 
@@ -111,7 +111,7 @@ Repository **Settings → Secrets and variables → Actions → New repository s
 | ------------------------- | ------------------------------------------------------------- | ------- |
 | `GCP_SERVICE_ACCOUNT_KEY` | full JSON contents of `gcp-key.json`                          | step 3  |
 | `GCP_PROJECT_ID`          | e.g. `musy-prod`                                              | step 3  |
-| `GCP_REGION`              | e.g. `europe-north2`                                          | step 3  |
+| `GCP_REGION`              | e.g. `europe-north1`                                          | step 3  |
 | `CLOUDFLARE_API_TOKEN`    | from API Tokens                                               | step 4  |
 | `CLOUDFLARE_ACCOUNT_ID`   | from sidebar                                                  | step 4  |
 | `VITE_API_URL`            | **leave blank for now** — set in step 7 once API URL is known | (later) |
@@ -131,7 +131,7 @@ The `deploy-web` job will fail at this point because `VITE_API_URL` is unset. Ex
 ```bash
 SESSION_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")
 
-gcloud run services update musy-api --region=europe-north2 \
+gcloud run services update musy-api --region=europe-north1 \
   --set-env-vars="^@^WEB_ORIGIN=https://musy.pages.dev@API_PORT=8080@GOOGLE_REDIRECT_URI=<API_URL>/api/auth/google/callback"
 ```
 
@@ -151,7 +151,7 @@ for secret in musy-mongo-uri musy-session-secret musy-google-client-id musy-goog
     --role="roles/secretmanager.secretAccessor"
 done
 
-gcloud run services update musy-api --region=europe-north2 \
+gcloud run services update musy-api --region=europe-north1 \
   --update-secrets="MONGO_URI=musy-mongo-uri:latest,SESSION_SECRET=musy-session-secret:latest,GOOGLE_CLIENT_ID=musy-google-client-id:latest,GOOGLE_CLIENT_SECRET=musy-google-client-secret:latest"
 ```
 

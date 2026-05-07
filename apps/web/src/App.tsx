@@ -13,8 +13,8 @@ export function App(): JSX.Element {
   const location = useLocation();
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <div className="flex-1 pb-16">
+    <div className="fixed inset-0 flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto">
         <AppRoutes />
       </div>
       <BottomNav tabs={NAV_TABS} activePath={location.pathname} onNavigate={navigate} />

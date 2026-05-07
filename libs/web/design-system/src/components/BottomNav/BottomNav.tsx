@@ -18,7 +18,7 @@ export function BottomNav({ tabs, activePath, onNavigate }: BottomNavProps): JSX
   return (
     <nav
       aria-label="Main navigation"
-      className="fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-border"
+      className="bg-surface border-t border-border"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="flex h-16">

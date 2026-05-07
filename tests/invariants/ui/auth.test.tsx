@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
+import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "../../../apps/web/src/contexts/AuthContext.js";
 import { App } from "../../../apps/web/src/App.js";
 
@@ -32,7 +33,17 @@ function mockMe(status: number, body: unknown): void {
   }) as typeof globalThis.fetch;
 }
 
-describe("UI-01: app shell gates the main view on /api/auth/me", () => {
+function renderApp(initialPath = "/search") {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("UI-01: app shell renders routed bottom nav for all users regardless of auth state", () => {
   const originalFetch = globalThis.fetch;
   beforeEach(() => {
     cleanup();
@@ -42,61 +53,21 @@ describe("UI-01: app shell gates the main view on /api/auth/me", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("renders an element with accessible name 'Sign in with Google' when /api/auth/me returns 401", async () => {
+  it("renders the bottom navigation when /api/auth/me returns 401 (anonymous user)", async () => {
     mockMe(401, { error: { code: "unauthorized", message: "no session" } });
-    render(
-      <AuthProvider>
-        <App />
-      </AuthProvider>,
-    );
+    renderApp();
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
-    });
-  });
-
-  it("renders the main shell (no sign-in button) when /api/auth/me returns 200", async () => {
-    mockMe(200, VALID_USER);
-    render(
-      <AuthProvider>
-        <App />
-      </AuthProvider>,
-    );
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "musy" })).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
     });
     expect(screen.queryByRole("button", { name: "Sign in with Google" })).toBeNull();
   });
 
-  it("clicking 'Sign in with Google' navigates the browser to /api/auth/google", async () => {
-    mockMe(401, { error: { code: "unauthorized", message: "no session" } });
-
-    // jsdom doesn't allow assigning to window.location.href directly; spy on
-    // the assignment via a property descriptor swap.
-    const hrefSpy = vi.fn();
-    const originalLocation = window.location;
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: {
-        ...originalLocation,
-        set href(v: string) {
-          hrefSpy(v);
-        },
-      },
+  it("renders the bottom navigation when /api/auth/me returns 200 (authenticated user)", async () => {
+    mockMe(200, VALID_USER);
+    renderApp();
+    await waitFor(() => {
+      expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
     });
-
-    render(
-      <AuthProvider>
-        <App />
-      </AuthProvider>,
-    );
-    const button = await screen.findByRole("button", { name: "Sign in with Google" });
-    button.click();
-    expect(hrefSpy).toHaveBeenCalledTimes(1);
-    expect(hrefSpy.mock.calls[0]?.[0]).toMatch(/\/api\/auth\/google$/);
-
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: originalLocation,
-    });
+    expect(screen.queryByRole("button", { name: "Sign in with Google" })).toBeNull();
   });
 });

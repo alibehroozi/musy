@@ -1,7 +1,8 @@
 ---
 epic: search
-status: pending
+status: done
 estimated-invariants: 4
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/3
 ---
 
 # Feature 01: App shell — router + bottom nav

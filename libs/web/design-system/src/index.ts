@@ -3,3 +3,6 @@
 
 export { Typography } from "./components/Typography/Typography.js";
 export type { TypographyProps, TypographyVariant } from "./components/Typography/Typography.js";
+
+export { Button } from "./components/Button/Button.js";
+export type { ButtonProps, ButtonVariant, ButtonSize } from "./components/Button/Button.js";

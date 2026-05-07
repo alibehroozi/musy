@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
 
@@ -14,6 +15,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
+      tailwindcss(),
       VitePWA({
         registerType: "autoUpdate",
         includeAssets: ["favicon.ico"],
@@ -30,10 +32,23 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     resolve: {
-      alias: {
-        "@moc/contracts": path.resolve(__dirname, "../../libs/shared/contracts/src/index.ts"),
-        "@moc/web-core": path.resolve(__dirname, "../../libs/web/core/src/index.ts"),
-      },
+      // Exact-match regex so e.g. `@moc/design-system/theme.css` falls
+      // through to the package's exports map (string-form aliases prefix-
+      // match and would resolve to `<src/index.ts>/theme.css`).
+      alias: [
+        {
+          find: /^@moc\/contracts$/,
+          replacement: path.resolve(__dirname, "../../libs/shared/contracts/src/index.ts"),
+        },
+        {
+          find: /^@moc\/web-core$/,
+          replacement: path.resolve(__dirname, "../../libs/web/core/src/index.ts"),
+        },
+        {
+          find: /^@moc\/design-system$/,
+          replacement: path.resolve(__dirname, "../../libs/web/design-system/src/index.ts"),
+        },
+      ],
     },
     server: {
       port: webPort,

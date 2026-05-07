@@ -1,3 +1,8 @@
+/* Tailwind v4 + design-system tokens. Per ARCHITECTURE.md, app-level CSS
+ * is one file: imports + global resets only. Per-feature CSS is forbidden. */
+@import "tailwindcss";
+@import "@moc/design-system/theme.css";
+
 :root {
   color-scheme: dark light;
   font-family: ui-sans-serif, system-ui, sans-serif;
@@ -5,12 +10,6 @@
 
 body {
   margin: 0;
-  background: #0f0f10;
-  color: #f4f4f5;
-}
-
-main {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 2rem 1rem;
+  background: var(--color-bg);
+  color: var(--color-text);
 }

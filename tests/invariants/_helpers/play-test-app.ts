@@ -15,6 +15,8 @@ import { UsersService } from "../../../apps/api/src/modules/users/users.service.
 import { PlayController } from "../../../apps/api/src/modules/play/play.controller.js";
 import { PlayService } from "../../../apps/api/src/modules/play/play.service.js";
 import { PlayRepository } from "../../../apps/api/src/modules/play/play.repository.js";
+import { InterestScoresRepository } from "../../../apps/api/src/modules/play/interest-scores.repository.js";
+import { ListeningEventsRepository } from "../../../apps/api/src/modules/play/listening-events.repository.js";
 import { AudiusStreamClient } from "../../../apps/api/src/modules/play/providers/audius-stream.client.js";
 import { SoundCloudStreamClient } from "../../../apps/api/src/modules/play/providers/soundcloud-stream.client.js";
 import { PlayRateLimiterGuard } from "../../../apps/api/src/modules/play/play-rate-limiter.guard.js";
@@ -55,6 +57,46 @@ export class FakePlayRepository {
   }
 }
 
+export class FakeInterestScoresRepository {
+  upserted: Array<{
+    userId: string;
+    source: string;
+    externalId: string;
+    snapshot: SongSnapshot;
+    rawEventType: "started" | "completed";
+  }> = [];
+
+  async upsert(
+    userId: string,
+    source: string,
+    externalId: string,
+    snapshot: SongSnapshot,
+    rawEventType: "started" | "completed",
+  ): Promise<void> {
+    this.upserted.push({ userId, source, externalId, snapshot, rawEventType });
+  }
+}
+
+export class FakeListeningEventsRepository {
+  inserted: Array<{
+    userId: string;
+    source: string;
+    externalId: string;
+    eventType: "started" | "completed";
+    elapsedMs: number;
+  }> = [];
+
+  async insert(
+    userId: string,
+    source: string,
+    externalId: string,
+    eventType: "started" | "completed",
+    elapsedMs: number,
+  ): Promise<void> {
+    this.inserted.push({ userId, source, externalId, eventType, elapsedMs });
+  }
+}
+
 export class FakeAudiusStreamClient {
   resolvedTrackId: string | null = null;
   shouldFail = false;
@@ -90,6 +132,8 @@ export class FakeSoundCloudStreamClient {
 }
 
 const fakePlayRepoToken = Symbol.for("test:fake-play-repo");
+const fakeInterestScoresToken = Symbol.for("test:fake-interest-scores-repo");
+const fakeListeningEventsToken = Symbol.for("test:fake-listening-events-repo");
 const fakeAudiusToken = Symbol.for("test:fake-audius-stream");
 const fakeSoundCloudToken = Symbol.for("test:fake-soundcloud-stream");
 const fakeUsersToken = Symbol.for("test:fake-users-repo-play");
@@ -135,6 +179,26 @@ const fakeUsersToken = Symbol.for("test:fake-users-repo-play");
       inject: [fakePlayRepoToken],
     },
     {
+      provide: fakeInterestScoresToken,
+      useFactory: () => new FakeInterestScoresRepository(),
+    },
+    {
+      provide: InterestScoresRepository,
+      useFactory: (fake: FakeInterestScoresRepository) =>
+        fake as unknown as InterestScoresRepository,
+      inject: [fakeInterestScoresToken],
+    },
+    {
+      provide: fakeListeningEventsToken,
+      useFactory: () => new FakeListeningEventsRepository(),
+    },
+    {
+      provide: ListeningEventsRepository,
+      useFactory: (fake: FakeListeningEventsRepository) =>
+        fake as unknown as ListeningEventsRepository,
+      inject: [fakeListeningEventsToken],
+    },
+    {
       provide: fakeAudiusToken,
       useFactory: () => new FakeAudiusStreamClient(),
     },
@@ -161,8 +225,11 @@ class TestPlayModule {}
 export interface PlayTestAppHandle {
   app: INestApplication;
   repo: FakePlayRepository;
+  interestScores: FakeInterestScoresRepository;
+  listeningEvents: FakeListeningEventsRepository;
   audius: FakeAudiusStreamClient;
   soundcloud: FakeSoundCloudStreamClient;
+  authService: AuthService;
   env: typeof PLAY_TEST_ENV;
 }
 
@@ -175,8 +242,20 @@ export async function buildPlayTestApp(): Promise<PlayTestAppHandle> {
   await app.init();
 
   const repo = app.get<FakePlayRepository>(fakePlayRepoToken);
+  const interestScores = app.get<FakeInterestScoresRepository>(fakeInterestScoresToken);
+  const listeningEvents = app.get<FakeListeningEventsRepository>(fakeListeningEventsToken);
   const audius = app.get<FakeAudiusStreamClient>(fakeAudiusToken);
   const soundcloud = app.get<FakeSoundCloudStreamClient>(fakeSoundCloudToken);
+  const authService = app.get(AuthService);
 
-  return { app, repo, audius, soundcloud, env: PLAY_TEST_ENV };
+  return {
+    app,
+    repo,
+    interestScores,
+    listeningEvents,
+    audius,
+    soundcloud,
+    authService,
+    env: PLAY_TEST_ENV,
+  };
 }

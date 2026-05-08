@@ -2,3 +2,12 @@
  * import this once at their root. */
 @import "tailwindcss";
 @import "./theme.css";
+
+/*
+ * Tell Tailwind v4 where to look for class names. Without this, Ladle
+ * stories render unstyled — the auto-scan at the package root misses
+ * the component & story source, so `bg-primary`, `text-text-muted` etc.
+ * are never generated. apps/web has its own index.css and runs its own
+ * Tailwind scan; the design-system never reaches outside its own tree.
+ */
+@source "../components/**/*.{ts,tsx}";

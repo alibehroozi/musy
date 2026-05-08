@@ -3,6 +3,12 @@
 @import "tailwindcss";
 @import "@moc/design-system/theme.css";
 
+/* Tailwind v4's auto-scan starts at the apps/web project root and never
+ * follows into the workspace; without this directive, classes used only
+ * inside DS components (e.g. `border-t` on BottomNav) silently get
+ * purged from the bundle and the corresponding visuals break. */
+@source "../../../libs/web/design-system/src/components/**/*.{ts,tsx}";
+
 :root {
   color-scheme: dark light;
   font-family: ui-sans-serif, system-ui, sans-serif;

@@ -20,9 +20,16 @@ export default defineConfig({
   // expect threshold below; tighten if needed.
   expect: {
     toHaveScreenshot: {
-      // Pixel diff threshold — 0.01 (1%) absorbs anti-aliasing noise.
-      // Drop to 0 once we know the natural floor.
+      // Max ratio of differing pixels — 0.01 (1%) absorbs anti-aliasing
+      // noise across page chrome.
       maxDiffPixelRatio: 0.01,
+      // Per-pixel YIQ threshold (pixelmatch). Default is 0.2, which
+      // absorbs ~9 RGB-pt drift on dark colors — i.e. an entire
+      // bg-bg ↔ bg-surface swap (oklch 18% ↔ 22%) goes undetected
+      // because no pixel ever crosses the per-pixel bar. Tightened
+      // to 0.05 so dark-mode token regressions actually fail the
+      // snapshot.
+      threshold: 0.05,
     },
   },
   reporter: process.env.CI ? "github" : "list",

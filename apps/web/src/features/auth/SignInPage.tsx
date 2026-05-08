@@ -1,5 +1,4 @@
-import { Button, Typography } from "@moc/design-system";
-import { GoogleIcon } from "./components/GoogleIcon.js";
+import { Button, Icon, Typography } from "@moc/design-system";
 import { GOOGLE_LOGIN_URL } from "./api.js";
 
 const SIGN_IN_LABEL = "Sign in with Google";
@@ -22,7 +21,7 @@ export function SignInPage(): JSX.Element {
         }}
         aria-label={SIGN_IN_LABEL}
       >
-        <GoogleIcon />
+        <Icon name="google-brand" size={20} />
         <span>{SIGN_IN_LABEL}</span>
       </Button>
     </main>

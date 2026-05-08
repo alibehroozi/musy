@@ -3,7 +3,7 @@ import { SearchResponse, HistoryResponse } from "@moc/contracts";
 
 /**
  * Feature 04: Search history (per-user, infinite scroll, deduped).
- * Source: pending-epics/search/features/04-search-history.md.
+ * Source: product-specs/search/features/04-search-history.md.
  *
  * One screenshot per visible state change in the spec's User behavior:
  *  - 2. Authenticated user with zero entries → still suggestions

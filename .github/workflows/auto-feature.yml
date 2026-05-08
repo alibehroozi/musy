@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       feature_path:
-        description: "Optional: explicit pending-epics/.../NN-<slug>.md path. Leave blank to auto-pick the lowest-numbered pending feature."
+        description: "Optional: explicit product-specs/.../NN-<slug>.md path. Leave blank to auto-pick the lowest-numbered pending feature."
         required: false
         type: string
       model:
@@ -89,7 +89,12 @@ jobs:
         # the OS-level libs Playwright needs on the runner. Cached across
         # runs by setup-node's npm cache plus Playwright's own cache dir
         # is short-lived; this step takes ~30s on a cold cache, ~5s warm.
-        run: npx playwright install chromium --with-deps
+        # Run via the apps/web workspace because @playwright/test is pinned
+        # to 1.47.x there (matches lost-pixel's playwright-core@1.47.2). With
+        # that pin, npm doesn't hoist `playwright` to the root .bin dir, so
+        # `npx playwright` from the repo root fails with `playwright: not
+        # found`. `npm exec --workspace apps/web` resolves it correctly.
+        run: npm exec --workspace apps/web -- playwright install chromium --with-deps
 
       - name: Bring up MongoDB (matches /prepare-local step 4)
         run: docker compose up -d mongo
@@ -196,7 +201,7 @@ jobs:
             yourself about to wait for input, stop and proceed instead.
 
             ## Your job
-            Implement one pending feature from `pending-epics/`, **driving
+            Implement one pending feature from `product-specs/`, **driving
             a draft PR that grows commit-by-commit** so a human (or the
             next run, if this one dies) can see exactly where you are.
 
@@ -208,7 +213,7 @@ jobs:
             non-empty, that's the feature file. Use it directly and skip
             ahead to Step 2.
 
-            Otherwise, iterate over `pending-epics/*/features/NN-*.md`
+            Otherwise, iterate over `product-specs/*/features/NN-*.md`
             whose YAML frontmatter has `status: pending`, sorted by epic
             name first then numeric prefix. For each candidate, derive
             the slash-command's recommended branch name (e.g.

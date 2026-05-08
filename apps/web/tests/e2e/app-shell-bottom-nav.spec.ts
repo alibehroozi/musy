@@ -3,7 +3,7 @@ import { HistoryResponse } from "@moc/contracts";
 
 /**
  * Feature 01: App shell — router + bottom navigation.
- * Source: pending-epics/search/features/01-app-shell-bottom-nav.md.
+ * Source: product-specs/search/features/01-app-shell-bottom-nav.md.
  *
  * Each screenshot tracks one numbered step in the spec's User behavior
  * section, plus its named failure modes and viewport requirements.

@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "verify": "npm run lint && npm run typecheck && npm run test",
+    "verify:visual": "npm run test:visual:ds && npm run test:visual:web",
     "typecheck": "tsc --noEmit -p tsconfig.json && npm --workspaces --if-present run typecheck",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -23,6 +24,10 @@
     "test:invariants": "vitest run tests/invariants",
     "test:api": "npm --workspace apps/api run test",
     "test:ds": "npm --workspace libs/web/design-system run test",
+    "test:visual:ds": "npm --workspace libs/web/design-system run test:visual",
+    "test:visual:ds:update": "npm --workspace libs/web/design-system run test:visual:update",
+    "test:visual:web": "npm --workspace apps/web run test:visual",
+    "test:visual:web:update": "npm --workspace apps/web run test:visual:update",
     "build": "npm --workspaces --if-present run build",
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",

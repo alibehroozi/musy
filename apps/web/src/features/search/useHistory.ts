@@ -54,25 +54,39 @@ export function useHistory(): UseHistoryResult {
     fetchFirst();
   }, [fetchFirst]);
 
+  // loadMore only flips loadingMore=true; the actual fetch fires from
+  // the effect below. Side-effects must NEVER live inside a setState
+  // updater — React StrictMode double-invokes updaters, which would
+  // double-fetch and append the same page twice.
   const loadMore = useCallback(() => {
     setHistoryState((prev) => {
       if (!prev.nextCursor || prev.loadingMore) return prev;
-      const cursor = prev.nextCursor;
-      getSearchHistory(cursor)
-        .then((data) => {
-          setHistoryState((s) => ({
-            ...s,
-            entries: [...s.entries, ...data.entries],
-            nextCursor: data.nextCursor,
-            loadingMore: false,
-          }));
-        })
-        .catch(() => {
-          setHistoryState((s) => ({ ...s, loadingMore: false }));
-        });
       return { ...prev, loadingMore: true };
     });
   }, []);
+
+  useEffect(() => {
+    if (!historyState.loadingMore || !historyState.nextCursor) return;
+    const cursor = historyState.nextCursor;
+    let cancelled = false;
+    getSearchHistory(cursor)
+      .then((data) => {
+        if (cancelled) return;
+        setHistoryState((s) => ({
+          ...s,
+          entries: [...s.entries, ...data.entries],
+          nextCursor: data.nextCursor,
+          loadingMore: false,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHistoryState((s) => ({ ...s, loadingMore: false }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [historyState.loadingMore, historyState.nextCursor]);
 
   return {
     entries: historyState.entries,

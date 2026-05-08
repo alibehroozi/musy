@@ -1,17 +1,17 @@
 ---
-description: Plan an epic — interview, explore, break into features, write self-contained feature specs under pending-epics/
+description: Plan an epic — interview, explore, break into features, write self-contained feature specs under product-specs/
 ---
 
 # Epic plan
 
 The user has a broad idea for an epic — something bigger than a single `/new-feature` PR. Your job: turn that vision into a structured plan made of self-contained feature specs that `/new-feature` can pick up and ship one at a time.
 
-The output is **`pending-epics/<epic-slug>/`**, committed to the repo. Future sessions read it; nothing is gitignored.
+The output is **`product-specs/<epic-slug>/`**, committed to the repo. Future sessions read it; nothing is gitignored.
 
 ## Output shape
 
 ```
-pending-epics/<epic-slug>/
+product-specs/<epic-slug>/
 ├── EPIC.md                 # vision, why, feature list, tooling decisions, costs
 └── features/
     ├── 01-<slug>.md        # ready-for-/new-feature spec

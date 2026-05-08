@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Inject } from "@nestjs/common";
 import type { SearchResponse, SearchResult, ProviderName } from "@moc/contracts";
 import { dedupeAndMerge, withTimeout, computeQueryHash, normalizeQuery } from "@moc/api-core";
 import { AudiusClient } from "./providers/audius.client.js";
@@ -14,11 +14,11 @@ export class SearchService {
   private readonly logger = new Logger(SearchService.name);
 
   constructor(
-    private readonly audius: AudiusClient,
-    private readonly deezer: DeezerClient,
-    private readonly radioBrowser: RadioBrowserClient,
-    private readonly genius: GeniusClient,
-    private readonly repository: SearchRepository,
+    @Inject(AudiusClient) private readonly audius: AudiusClient,
+    @Inject(DeezerClient) private readonly deezer: DeezerClient,
+    @Inject(RadioBrowserClient) private readonly radioBrowser: RadioBrowserClient,
+    @Inject(GeniusClient) private readonly genius: GeniusClient,
+    @Inject(SearchRepository) private readonly repository: SearchRepository,
   ) {}
 
   async search(rawQuery: string): Promise<SearchResponse> {

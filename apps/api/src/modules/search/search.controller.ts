@@ -4,6 +4,7 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Inject,
   Post,
   UseGuards,
 } from "@nestjs/common";
@@ -14,7 +15,7 @@ import { SearchRateLimiterGuard } from "./search-rate-limiter.guard.js";
 
 @Controller("search")
 export class SearchController {
-  constructor(private readonly searchService: SearchService) {}
+  constructor(@Inject(SearchService) private readonly searchService: SearchService) {}
 
   @Public()
   @Post()

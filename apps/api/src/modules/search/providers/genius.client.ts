@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Inject } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { TrackResult } from "@moc/contracts";
 import { normalizeGeniusHit, type RawGeniusHit } from "@moc/api-core";
@@ -11,7 +11,7 @@ export class GeniusClient {
   private readonly logger = new Logger(GeniusClient.name);
   private readonly accessToken: string;
 
-  constructor(config: ConfigService) {
+  constructor(@Inject(ConfigService) config: ConfigService) {
     // Fail fast at startup if the token is absent — search will be broken otherwise
     this.accessToken = config.getOrThrow<string>("GENIUS_ACCESS_TOKEN");
   }

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Inject } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { TrackResult } from "@moc/contracts";
 import { normalizeAudiusTrack, type RawAudiusTrack } from "@moc/api-core";
@@ -11,7 +11,7 @@ export class AudiusClient {
   private readonly logger = new Logger(AudiusClient.name);
   private readonly appName: string;
 
-  constructor(config: ConfigService) {
+  constructor(@Inject(ConfigService) config: ConfigService) {
     this.appName = config.get<string>("AUDIUS_APP_NAME", "moc");
   }
 

@@ -52,6 +52,30 @@ export const SearchResponse = z.object({
 });
 export type SearchResponse = z.infer<typeof SearchResponse>;
 
+export const SongSnapshot = z.object({
+  title: z.string(),
+  artist: z.string(),
+  coverUrl: z.string().url().optional(),
+  year: z.number().int().optional(),
+  durationSec: z.number().int().optional(),
+  kind: z.enum(["track", "station"]),
+});
+export type SongSnapshot = z.infer<typeof SongSnapshot>;
+
+export const ExploredEventRequest = z.object({
+  source: ProviderName,
+  externalId: z.string().min(1),
+  snapshot: SongSnapshot,
+});
+export type ExploredEventRequest = z.infer<typeof ExploredEventRequest>;
+
+export const SavedEventRequest = z.object({
+  source: ProviderName,
+  externalId: z.string().min(1),
+  snapshot: SongSnapshot,
+});
+export type SavedEventRequest = z.infer<typeof SavedEventRequest>;
+
 export const HistoryEntry = z.object({
   id: z.string().min(1),
   query: z.string(),

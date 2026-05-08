@@ -37,7 +37,7 @@ export function Icon({ name, size = 24, className }: IconProps): JSX.Element {
 
 interface BrandSvgProps {
   size: number;
-  className?: string;
+  className: string | undefined;
 }
 
 function GoogleBrandSvg({ size, className }: BrandSvgProps): JSX.Element {

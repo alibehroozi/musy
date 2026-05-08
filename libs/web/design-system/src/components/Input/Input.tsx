@@ -4,9 +4,10 @@ import { Search, X } from "lucide-react";
 export type InputVariant = "default" | "search";
 export type InputSize = "md" | "lg";
 
-export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
+export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "prefix"> {
   variant?: InputVariant;
   size?: InputSize;
+  /** Leading icon/node rendered inside the input on the left. Ignored when variant="search" (search icon is always shown). */
   prefix?: ReactNode;
   onClear?: () => void;
   label?: string;
@@ -47,7 +48,7 @@ export function Input({
     >
       <Search className={sz.icon} />
     </span>
-  ) : prefix ? (
+  ) : prefix !== undefined ? (
     <span
       aria-hidden
       className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
@@ -59,7 +60,7 @@ export function Input({
   const hasPrefixNode = prefixNode !== null;
 
   const clearBtn =
-    onClear && hasValue ? (
+    onClear !== undefined && hasValue ? (
       <button
         type="button"
         onClick={onClear}
@@ -85,7 +86,7 @@ export function Input({
 
   return (
     <div className="relative w-full">
-      {label && (
+      {label !== undefined && (
         <label htmlFor={id} className="sr-only">
           {label}
         </label>

@@ -4,9 +4,9 @@ interface TrackRowProps {
   variant: "track";
   title: string;
   artist: string;
-  year?: number;
-  duration?: number;
-  artworkUrl?: string;
+  year?: number | undefined;
+  duration?: number | undefined;
+  artworkUrl?: string | undefined;
   sourceBadge: string;
   trailing?: ReactNode;
 }
@@ -14,9 +14,9 @@ interface TrackRowProps {
 interface StationRowProps {
   variant: "station";
   name: string;
-  country?: string;
-  listenerCount?: number;
-  artworkUrl?: string;
+  country?: string | undefined;
+  listenerCount?: number | undefined;
+  artworkUrl?: string | undefined;
   sourceBadge: string;
   trailing?: ReactNode;
 }
@@ -29,8 +29,13 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function Artwork({ url, title }: { url?: string; title: string }): JSX.Element {
-  if (url) {
+interface ArtworkProps {
+  url?: string | undefined;
+  title: string;
+}
+
+function Artwork({ url, title }: ArtworkProps): JSX.Element {
+  if (url !== undefined) {
     return <img src={url} alt="" aria-hidden className="size-14 rounded object-cover shrink-0" />;
   }
   return (

@@ -21,9 +21,8 @@ function TrackRow({ result }: { result: TrackResult }): JSX.Element {
       variant="track"
       title={result.title}
       artist={result.artist}
-      year={undefined}
-      duration={result.duration}
-      artworkUrl={result.artworkUrl}
+      {...(result.duration !== undefined ? { duration: result.duration } : {})}
+      {...(result.artworkUrl !== undefined ? { artworkUrl: result.artworkUrl } : {})}
       sourceBadge={providerLabel(result.provider)}
     />
   );
@@ -34,8 +33,8 @@ function StationRow({ result }: { result: StationResult }): JSX.Element {
     <ResultRow
       variant="station"
       name={result.name}
-      country={result.country}
-      artworkUrl={result.favicon}
+      {...(result.country !== undefined ? { country: result.country } : {})}
+      {...(result.favicon !== undefined ? { artworkUrl: result.favicon } : {})}
       sourceBadge={providerLabel(result.provider)}
     />
   );

@@ -283,3 +283,26 @@ describe("UI-07: authenticated user with ≥1 history entry sees history list, n
     expect(screen.queryByTestId("history-list")).not.toBeInTheDocument();
   });
 });
+
+describe("UI-08: pressing Enter in the search input removes focus from it", () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    cleanup();
+    mockSearchWith(EMPTY_RESPONSE);
+  });
+  afterEach(() => {
+    cleanup();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("after Enter, document.activeElement is no longer the search input", () => {
+    renderSearchPage();
+    const input = screen.getByRole("textbox");
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(document.activeElement).not.toBe(input);
+  });
+});

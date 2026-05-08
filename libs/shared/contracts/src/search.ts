@@ -51,3 +51,17 @@ export const SearchResponse = z.object({
   cached: z.boolean(),
 });
 export type SearchResponse = z.infer<typeof SearchResponse>;
+
+export const HistoryEntry = z.object({
+  id: z.string().min(1),
+  query: z.string(),
+  lastSearchedAt: z.string().datetime(),
+  searchCount: z.number().int().positive(),
+});
+export type HistoryEntry = z.infer<typeof HistoryEntry>;
+
+export const HistoryResponse = z.object({
+  entries: z.array(HistoryEntry),
+  nextCursor: z.string().nullable(),
+});
+export type HistoryResponse = z.infer<typeof HistoryResponse>;

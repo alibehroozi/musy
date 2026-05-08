@@ -66,3 +66,41 @@ describe("PRIVACY-01: Outgoing provider requests carry only the query string; no
     }
   });
 });
+
+describe("PRIVACY-02: search_history content never leaves the database tier; providers are unaware of history", () => {
+  it("provider search methods accept only a query string — no history data forwarded", async () => {
+    // History is tracked in search.service.ts via the SearchHistoryRepository (DB-only).
+    // Provider clients receive only the query string. Structural check: search() still
+    // takes one string parameter (query) on each provider — any change adding history
+    // would add extra parameters here and break this test.
+    const { AudiusClient } =
+      await import("../../../apps/api/src/modules/search/providers/audius.client.js");
+    const { DeezerClient } =
+      await import("../../../apps/api/src/modules/search/providers/deezer.client.js");
+    const { RadioBrowserClient } =
+      await import("../../../apps/api/src/modules/search/providers/radio-browser.client.js");
+    const { GeniusClient } =
+      await import("../../../apps/api/src/modules/search/providers/genius.client.js");
+    expect(AudiusClient.prototype.search.length).toBe(1);
+    expect(DeezerClient.prototype.search.length).toBe(1);
+    expect(RadioBrowserClient.prototype.search.length).toBe(1);
+    expect(GeniusClient.prototype.search.length).toBe(1);
+  });
+
+  it("SearchHistoryRepository exposes only DB methods — no outgoing HTTP", async () => {
+    const { SearchHistoryRepository } =
+      await import("../../../apps/api/src/modules/search/search-history.repository.js");
+    const proto = SearchHistoryRepository.prototype as unknown as Record<string, unknown>;
+    // The repository must only have upsert and findByUser; no fetch/http methods
+    const ownMethods = Object.getOwnPropertyNames(proto).filter(
+      (k) => k !== "constructor" && typeof proto[k] === "function",
+    );
+    expect(ownMethods).toContain("upsert");
+    expect(ownMethods).toContain("findByUser");
+    // No fetch, axios, got, or similar HTTP methods
+    const httpNames = ownMethods.filter((m) =>
+      ["fetch", "get", "post", "request", "http"].some((kw) => m.toLowerCase().includes(kw)),
+    );
+    expect(httpNames).toHaveLength(0);
+  });
+});

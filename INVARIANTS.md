@@ -28,11 +28,12 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## DATA — data shape and integrity
 
-| ID      | Invariant                                                                                                                                                          | Severity |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
-| DATA-01 | Every `User` document has a non-empty `id` (uuid v4) and a unique, lowercase `email`                                                                               | Critical |
-| DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)                                                                                  | Critical |
-| DATA-03 | Every `search_cache` document has `expiresAt` set strictly after its creation time; the TTL index drops it at `expiresAt`; `queryHash` is unique in the collection | High     |
+| ID      | Invariant                                                                                                                                                                                                       | Severity |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| DATA-01 | Every `User` document has a non-empty `id` (uuid v4) and a unique, lowercase `email`                                                                                                                            | Critical |
+| DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)                                                                                                                               | Critical |
+| DATA-03 | Every `search_cache` document has `expiresAt` set strictly after its creation time; the TTL index drops it at `expiresAt`; `queryHash` is unique in the collection                                              | High     |
+| DATA-04 | `search_history` has a unique compound index `(userId, query)`; submitting the same normalized query twice for the same user creates exactly one document (dedupe at the DB level) and increments `searchCount` | High     |
 
 **Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`
 
@@ -53,12 +54,14 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## API — HTTP contract
 
-| ID     | Invariant                                                                                                                                                                                      | Severity |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| API-01 | Every error response from `apps/api` matches the shared `ErrorResponse` Zod schema                                                                                                             | Critical |
-| API-02 | `GET /api/auth/me` returns 401 + `ErrorResponse` with no/invalid session cookie; returns 200 + a body matching the `User` Zod schema with a valid session cookie                               | Critical |
-| API-03 | `POST /api/search` is publicly accessible (no session required); returns 400 + `ErrorResponse` when `q` is empty or missing                                                                    | Critical |
-| API-04 | `POST /api/search` always returns 200 with a body matching `SearchResponse` (`results`, `partial`, `failedProviders`, `cached`), even when all providers fail (`results: []`, `partial: true`) | Critical |
+| ID     | Invariant                                                                                                                                                                                            | Severity |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| API-01 | Every error response from `apps/api` matches the shared `ErrorResponse` Zod schema                                                                                                                   | Critical |
+| API-02 | `GET /api/auth/me` returns 401 + `ErrorResponse` with no/invalid session cookie; returns 200 + a body matching the `User` Zod schema with a valid session cookie                                     | Critical |
+| API-03 | `POST /api/search` is publicly accessible (no session required); returns 400 + `ErrorResponse` when `q` is empty or missing                                                                          | Critical |
+| API-04 | `POST /api/search` always returns 200 with a body matching `SearchResponse` (`results`, `partial`, `failedProviders`, `cached`), even when all providers fail (`results: []`, `partial: true`)       | Critical |
+| API-05 | `GET /api/search/history` requires a valid session cookie; returns 401 + `ErrorResponse` when no session is present                                                                                  | Critical |
+| API-06 | Cursor pagination on `GET /api/search/history` is stable: issuing the same cursor twice returns the same page of entries (no skipped or duplicated entries when the underlying data has not changed) | High     |
 
 **Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`
 
@@ -74,6 +77,7 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | UI-04 | When the search input is empty and there is no per-user history, the suggestions block ("Try: …") is visible in the results area                                                  | High     |
 | UI-05 | When a search request is in flight, a skeleton loading indicator is visible in the results area; previous results are replaced by the skeleton                                    | High     |
 | UI-06 | On a successful response with non-empty results, every result in the response is rendered as a `ResultRow`; track rows show title+artist and station rows show a "Live" indicator | High     |
+| UI-07 | When the authenticated user has ≥ 1 search history entry and the input is empty, the history list is visible in the results area and the static suggestions block is not rendered | High     |
 
 **Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`, `tests/invariants/ui/search.test.tsx`
 
@@ -87,6 +91,7 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                 | Critical |
 | SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`) return 401 without a valid session cookie | Critical |
 | SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                     | Critical |
+| SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                 | Critical |
 
 **Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`
 
@@ -94,9 +99,10 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## PRIVACY — data flow boundaries
 
-| ID         | Invariant                                                                                                                                                                                          | Severity |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| PRIVACY-01 | Outgoing HTTP requests to Audius, Deezer, Radio Browser, and Genius carry only the search query string; no user identifier, session token, or IP forwarding header is added by our aggregator code | Critical |
+| ID         | Invariant                                                                                                                                                                                                                        | Severity |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| PRIVACY-01 | Outgoing HTTP requests to Audius, Deezer, Radio Browser, and Genius carry only the search query string; no user identifier, session token, or IP forwarding header is added by our aggregator code                               | Critical |
+| PRIVACY-02 | `search_history` content (query strings and `userId` mappings) never leaves the database tier; the search aggregator (providers, cache) is entirely unaware of history — no history data reaches third-party APIs or LLM prompts | Critical |
 
 **Test files:** `tests/invariants/privacy/search.test.ts`
 

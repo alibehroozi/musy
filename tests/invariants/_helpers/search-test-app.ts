@@ -18,6 +18,7 @@ import {
   SearchRepository,
   type CachedSearchResult,
 } from "../../../apps/api/src/modules/search/search.repository.js";
+import { SearchHistoryRepository } from "../../../apps/api/src/modules/search/search-history.repository.js";
 import { AudiusClient } from "../../../apps/api/src/modules/search/providers/audius.client.js";
 import { DeezerClient } from "../../../apps/api/src/modules/search/providers/deezer.client.js";
 import { RadioBrowserClient } from "../../../apps/api/src/modules/search/providers/radio-browser.client.js";
@@ -95,7 +96,15 @@ export class FakeGeniusClient {
   }
 }
 
+export class FakeSearchHistoryRepository {
+  async upsert(_userId: string, _query: string): Promise<void> {}
+  async findByUser(_userId: string, _limit: number, _cursor?: string) {
+    return { entries: [], nextCursor: null };
+  }
+}
+
 const fakeSearchRepoToken = Symbol.for("test:fake-search-repo");
+const fakeHistoryRepoToken = Symbol.for("test:fake-history-repo-search");
 const fakeAudiusToken = Symbol.for("test:fake-audius");
 const fakeDeezerToken = Symbol.for("test:fake-deezer");
 const fakeRadioBrowserToken = Symbol.for("test:fake-radio-browser");
@@ -141,6 +150,15 @@ const fakeUsersToken = Symbol.for("test:fake-users-repo-search");
       provide: SearchRepository,
       useFactory: (fake: FakeSearchRepository) => fake as unknown as SearchRepository,
       inject: [fakeSearchRepoToken],
+    },
+    {
+      provide: fakeHistoryRepoToken,
+      useFactory: () => new FakeSearchHistoryRepository(),
+    },
+    {
+      provide: SearchHistoryRepository,
+      useFactory: (fake: FakeSearchHistoryRepository) => fake as unknown as SearchHistoryRepository,
+      inject: [fakeHistoryRepoToken],
     },
     {
       provide: fakeAudiusToken,

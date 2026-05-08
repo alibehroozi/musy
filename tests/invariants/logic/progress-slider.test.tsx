@@ -4,10 +4,13 @@
 //
 // Invariants verified here are listed in INVARIANTS.md under LOGIC-08.
 
-import { describe, it, expect, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, fireEvent, cleanup } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { ProgressSlider } from "@moc/design-system";
+
+beforeEach(() => cleanup());
+afterEach(() => cleanup());
 
 describe("LOGIC-08: ProgressSlider fires onScrub during drag and onScrubEnd once on pointer release", () => {
   it("onScrub fires on each pointermove while pointer is captured (during drag)", () => {

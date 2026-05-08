@@ -29,7 +29,8 @@ export function ProgressSlider({
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       dragging.current = true;
-      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+      // setPointerCapture may be absent in test environments (jsdom)
+      (e.currentTarget as HTMLDivElement).setPointerCapture?.(e.pointerId);
       const f = fractionAt(e.clientX);
       onScrub(f);
     },

@@ -69,28 +69,41 @@ The user can describe the feature in two ways:
 Rules:
 
 - **Always import from `./fixtures.js`, never directly from `@playwright/test`.** The shared fixture mocks auth universally — every test starts authenticated as `TEST_USER` (a stable fake account) so feature tests focus on the feature's behavior, not the sign-in dance. To test unauthenticated UX, override per `test.describe` with `test.use({ authed: false })`.
-- The auth fixture only mocks `/api/me`. Feature-specific endpoints (search, history, taste profile, …) are the test's responsibility — mock them with `page.route('**/api/<endpoint>', r => r.fulfill({ ... }))` inside each test or in a `test.beforeEach`.
+- **Mocked responses MUST be typed against `@moc/contracts` Zod schemas.** Use the `mockJsonRoute(page, urlGlob, schema, body, status?)` helper from `./fixtures.js` — it (1) parses `body` against `schema` at mock-write time so a typo surfaces as a clear Zod error instead of a confusing test failure later, and (2) keeps the mock shape locked to the wire format the API actually emits. For error responses, use `mockJsonError(page, urlGlob, status, error)` which builds an `ErrorResponse`-shaped body. **Never use bare `page.route(..., r => r.fulfill({ body: JSON.stringify({...}) }))`** with an untyped object literal — that's how mocks drift from the contract and tests pass against shapes the real API will never return.
+- The auth fixture only mocks `/api/me`. Feature-specific endpoints (search, history, taste profile, …) are the test's responsibility — mock them via `mockJsonRoute` inside each test or in a `test.beforeEach`. For genuine network failures (not HTTP errors), `page.route('**/api/...', r => r.abort())` is still correct — there's no body to type.
 - Use accessible selectors only (`page.getByRole`, `page.getByLabel`, `page.getByText`). **Never CSS selectors** — they couple the test to implementation, not behavior.
 - One spec file per feature (`apps/web/tests/e2e/<feature-slug>.spec.ts`), one `test.describe` block per feature.
 - Wait on observable state (`expect(page.getByText(...)).toBeVisible()`), not timers (`page.waitForTimeout`).
 - Snapshot fullPage only when layout matters end-to-end; prefer scoped element snapshots (`expect(page.getByRole('main')).toHaveScreenshot(...)`) when a header / nav is irrelevant to the feature.
 
-Pattern (note the import — `./fixtures.js`, not `@playwright/test`):
+Pattern (note the imports — `./fixtures.js` and the contract schemas, not `@playwright/test` and ad-hoc objects):
 
 ```ts
-import { test, expect } from "./fixtures.js";
+import { test, expect, mockJsonRoute, mockJsonError } from "./fixtures.js";
+import { SearchResponse } from "@moc/contracts";
 
 test.describe("search", () => {
   // Mock the feature's own API. Auth (/api/me) is already mocked by the
-  // fixture since `authed` defaults to true.
+  // fixture since `authed` defaults to true. The body literal is typed
+  // against SearchResponse and parsed at mock-write time — a typo here
+  // throws ZodError immediately instead of surfacing later as a UI bug.
   test.beforeEach(async ({ page }) => {
-    await page.route("**/api/search**", (r) =>
-      r.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ results: [{ id: "1", title: "Beatles" }] }),
-      }),
-    );
+    await mockJsonRoute(page, "**/api/search**", SearchResponse, {
+      results: [
+        {
+          type: "track",
+          id: "1",
+          title: "Hey Jude",
+          artist: "The Beatles",
+          provider: "deezer",
+          providerId: "deezer-1",
+          sources: ["deezer"],
+        },
+      ],
+      partial: false,
+      failedProviders: [],
+      cached: false,
+    });
   });
 
   test("empty state — initial visit", async ({ page }) => {
@@ -102,18 +115,31 @@ test.describe("search", () => {
     await page.goto("/search");
     await page.getByRole("searchbox").fill("the beatles");
     await page.getByRole("searchbox").press("Enter");
-    await expect(page.getByText(/Beatles/)).toBeVisible();
+    await expect(page.getByText(/Hey Jude/)).toBeVisible();
     await expect(page).toHaveScreenshot("search-results.png");
   });
 
-  test("network error — toast surfaces", async ({ page }) => {
-    // Override the beforeEach mock for just this test.
-    await page.route("**/api/search**", (r) => r.abort());
+  test("upstream provider error — surfaces in toast", async ({ page }) => {
+    // ErrorResponse-shaped 502; mockJsonError handles the schema part.
+    await mockJsonError(page, "**/api/search**", 502, {
+      code: "UPSTREAM_ERROR",
+      message: "Provider timed out",
+    });
     await page.goto("/search");
     await page.getByRole("searchbox").fill("anything");
     await page.getByRole("searchbox").press("Enter");
     await expect(page.getByRole("status")).toContainText(/error/i);
     await expect(page).toHaveScreenshot("search-error.png");
+  });
+
+  test("genuine network failure — offline indicator", async ({ page }) => {
+    // route.abort is fine here — no body to type.
+    await page.route("**/api/search**", (r) => r.abort());
+    await page.goto("/search");
+    await page.getByRole("searchbox").fill("anything");
+    await page.getByRole("searchbox").press("Enter");
+    await expect(page.getByRole("status")).toContainText(/offline/i);
+    await expect(page).toHaveScreenshot("search-offline.png");
   });
 
   // Unauthenticated variant — opt out of the default auth mock.

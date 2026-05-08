@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { useAuthContext } from "../../../contexts/AuthContext.js";
-import { GOOGLE_LOGIN_URL } from "../../auth/api.js";
+import { GOOGLE_LOGIN_URL, fetchMe } from "../../auth/api.js";
 
 interface SignInModalProps {
   open: boolean;
@@ -20,7 +20,7 @@ function GoogleIcon(): JSX.Element {
 }
 
 export function SignInModal({ open, onClose }: SignInModalProps): JSX.Element | null {
-  const { state } = useAuthContext();
+  const { state, refresh } = useAuthContext();
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -28,6 +28,19 @@ export function SignInModal({ open, onClose }: SignInModalProps): JSX.Element | 
       onClose();
     }
   }, [state.status, open, onClose]);
+
+  // Poll /auth/me while the modal is open so that when the user completes
+  // sign-in in the external browser and returns, the session is detected and
+  // the modal closes automatically.
+  useEffect(() => {
+    if (!open || state.status === "authenticated") return;
+    const id = setInterval(() => {
+      void fetchMe()
+        .then(() => { void refresh(); })
+        .catch(() => {});
+    }, 2000);
+    return () => clearInterval(id);
+  }, [open, state.status, refresh]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,10 +116,10 @@ export function SignInModal({ open, onClose }: SignInModalProps): JSX.Element | 
             </p>
           </div>
 
-          {/* Google button */}
+          {/* Google button — opens in system browser so PWA context is preserved */}
           <button
             type="button"
-            onClick={() => { window.location.href = GOOGLE_LOGIN_URL; }}
+            onClick={() => { window.open(GOOGLE_LOGIN_URL, "_blank", "noopener,noreferrer"); }}
             className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl py-3 px-4 text-gray-700 text-sm font-medium shadow-sm hover:bg-gray-50 hover:shadow-md active:scale-95 transition-all"
           >
             <GoogleIcon />

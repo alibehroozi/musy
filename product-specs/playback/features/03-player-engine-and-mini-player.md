@@ -1,6 +1,6 @@
 ---
 epic: playback
-status: pending
+status: done
 estimated-invariants: 7
 ---
 

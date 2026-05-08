@@ -21,6 +21,7 @@ function makeMockAudio() {
     pause: vi.fn(),
     currentTime: 0,
     duration: 240,
+    seekTo: vi.fn(),
     on: vi.fn((event, cb) => {
       if (!handlers[event]) handlers[event] = new Set();
       handlers[event].add(cb);

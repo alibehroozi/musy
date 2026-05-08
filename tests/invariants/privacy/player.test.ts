@@ -24,6 +24,7 @@ function makeMockAudio() {
     pause: vi.fn(),
     currentTime: 0,
     duration: 240,
+    seekTo: vi.fn(),
     on: vi.fn(() => () => undefined),
   };
   return { mock, getCapturedSrc: () => capturedSrc };

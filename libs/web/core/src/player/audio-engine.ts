@@ -10,6 +10,7 @@ export interface AudioInterface {
   pause(): void;
   readonly currentTime: number;
   readonly duration: number;
+  seekTo(seconds: number): void;
   on(event: "playing" | "ended" | "error" | "timeupdate", cb: () => void): () => void;
 }
 
@@ -90,6 +91,13 @@ export class AudioEngine {
       void this.audio.play().catch(() => {});
       this._state = { status: "playing", ctx: this._state.ctx };
       this._emitStateChange();
+    }
+  }
+
+  seekToFraction(fraction: number): void {
+    const dur = this.audio.duration;
+    if (dur > 0 && Number.isFinite(dur)) {
+      this.audio.seekTo(Math.max(0, Math.min(1, fraction)) * dur);
     }
   }
 

@@ -39,6 +39,9 @@ function makeAudioInterface(el: HTMLAudioElement): AudioInterface {
     get duration() {
       return el.duration;
     },
+    seekTo(seconds: number) {
+      el.currentTime = seconds;
+    },
     on(event, cb) {
       el.addEventListener(event, cb);
       return () => el.removeEventListener(event, cb);

@@ -1,6 +1,7 @@
+import { useContext } from "react";
 import { ResultRow } from "@moc/design-system";
 import type { SearchResponse, TrackResult, StationResult } from "@moc/contracts";
-import { usePlayerContext } from "../../player/PlayerProvider.js";
+import { PlayerContext } from "../../player/PlayerProvider.js";
 
 interface ResultsListProps {
   data: SearchResponse;
@@ -82,7 +83,9 @@ function StationRow({
 
 export function ResultsList({ data }: ResultsListProps): JSX.Element {
   const { results, partial, failedProviders } = data;
-  const { engineState, playSnapshot } = usePlayerContext();
+  const player = useContext(PlayerContext);
+  const engineState = player?.engineState ?? { status: "idle" as const };
+  const playSnapshot = player?.playSnapshot ?? (() => undefined);
 
   const currentId =
     engineState.status !== "idle"

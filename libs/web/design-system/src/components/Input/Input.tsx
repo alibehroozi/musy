@@ -1,5 +1,5 @@
 import { type InputHTMLAttributes, type ReactNode, useId } from "react";
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 
 export type InputVariant = "default" | "search";
 export type InputSize = "md" | "lg";
@@ -7,20 +7,29 @@ export type InputSize = "md" | "lg";
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "prefix"> {
   variant?: InputVariant;
   size?: InputSize;
-  /** Leading icon/node rendered inside the input on the left. Ignored when variant="search" (search icon is always shown). */
+  /** Leading icon/node rendered inside the input on the left. Not shown when variant="search". */
   prefix?: ReactNode;
   onClear?: () => void;
   label?: string;
 }
 
 const sizeClasses: Record<InputSize, { input: string; icon: string }> = {
-  md: { input: "px-3 py-2 text-md", icon: "size-4" },
-  lg: { input: "px-4 py-3 text-lg", icon: "size-5" },
+  md: { input: "px-4 py-2.5 text-md", icon: "size-4" },
+  lg: { input: "px-6 py-4 text-lg", icon: "size-5" },
 };
 
-const variantBase: Record<InputVariant, string> = {
-  default: "rounded-md",
-  search: "rounded-full",
+const variantStyles: Record<InputVariant, string> = {
+  default: [
+    "rounded-md",
+    "bg-surface border border-border",
+    "focus:outline-none focus:border-primary",
+  ].join(" "),
+  search: [
+    "rounded-full",
+    "bg-border border border-transparent",
+    "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
+    "font-medium",
+  ].join(" "),
 };
 
 export function Input({
@@ -41,21 +50,15 @@ export function Input({
   const hasValue = value !== undefined && value !== "";
   const sz = sizeClasses[size];
 
-  const prefixNode = isSearch ? (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-    >
-      <Search className={sz.icon} />
-    </span>
-  ) : prefix !== undefined ? (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-    >
-      {prefix}
-    </span>
-  ) : null;
+  const prefixNode =
+    !isSearch && prefix !== undefined ? (
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+      >
+        {prefix}
+      </span>
+    ) : null;
 
   const hasPrefixNode = prefixNode !== null;
 
@@ -72,13 +75,11 @@ export function Input({
     ) : null;
 
   const inputCls = [
-    "w-full bg-surface text-text placeholder:text-text-muted",
-    "border border-border focus:outline-none focus:border-primary",
-    "transition-colors",
-    variantBase[variant],
+    "w-full text-text placeholder:text-text-muted transition-colors",
+    variantStyles[variant],
     sz.input,
     hasPrefixNode ? (size === "lg" ? "pl-10" : "pl-9") : "",
-    clearBtn ? (size === "lg" ? "pr-10" : "pr-9") : "",
+    clearBtn ? (size === "lg" ? "pr-12" : "pr-9") : "",
     className,
   ]
     .filter(Boolean)

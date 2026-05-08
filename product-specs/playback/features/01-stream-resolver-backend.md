@@ -1,7 +1,8 @@
 ---
 epic: playback
-status: pending
+status: done
 estimated-invariants: 7
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/13
 ---
 
 # Feature 01: Stream resolver backend

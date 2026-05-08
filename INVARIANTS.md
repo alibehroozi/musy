@@ -49,8 +49,10 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | LOGIC-04 | The web-core `searchTracks` fetcher validates the API response against the `SearchResponse` Zod schema and throws a `ZodError` when the response body does not match the schema                                                                                                                                                                   | High     |
 | LOGIC-05 | The audio engine in `libs/web/core/player/` is a deterministic state machine: given an event sequence (`load`, `playing`, `ended`, `error`, `togglePlay`), the resulting `(currentTrack, isPlaying, errorState)` triple is identical on every run; the engine is fully exercisable against a mock `AudioInterface` with no real `<audio>` element | High     |
 | LOGIC-06 | The web-core `resolveAndPlay` function validates the `/play/resolve` response against the `ResolveResponse` Zod schema and throws `ZodError` when the shape does not match                                                                                                                                                                        | High     |
+| LOGIC-07 | The pure `formatProgress(currentMs, durationMs)` function in `libs/web/core/player/` is deterministic: given the same inputs it always produces the same `{ fraction, currentLabel, remainingLabel }` triple; edge cases — `durationMs` of 0, NaN, or Infinity, and `currentMs > durationMs` — all return a defined, non-throwing result          | High     |
+| LOGIC-08 | The `ProgressSlider` component fires `onScrub` on every `pointermove` while the pointer is captured (during drag) and fires `onScrubEnd` exactly once on `pointerup`; it never fires `onScrubEnd` during the drag phase                                                                                                                           | High     |
 
-**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/player.test.ts`
+**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/player.test.ts`, `tests/invariants/logic/format-progress.test.ts`, `tests/invariants/logic/progress-slider.test.tsx`
 
 ---
 
@@ -71,21 +73,23 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## UI — DOM / rendering, checkable in jsdom
 
-| ID    | Invariant                                                                                                                                                                                                   | Severity |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| UI-01 | The app shell renders a routed bottom navigation for all users regardless of authentication state; the sign-in flow is not shown at the root shell level                                                    | High     |
-| UI-02 | The bottom navigation is visible on every routed page (`/explore`, `/taste`, `/search`, and the not-found fallback) regardless of authentication state                                                      | High     |
-| UI-03 | Exactly one bottom-nav tab carries `aria-current="page"` at any time, matching the current route path                                                                                                       | High     |
-| UI-04 | When the search input is empty and there is no per-user history, the suggestions block ("Try: …") is visible in the results area                                                                            | High     |
-| UI-05 | When a search request is in flight, a skeleton loading indicator is visible in the results area; previous results are replaced by the skeleton                                                              | High     |
-| UI-06 | On a successful response with non-empty results, every result in the response is rendered as a `ResultRow`; track rows show title+artist and station rows show a "Live" indicator                           | High     |
-| UI-07 | When the authenticated user has ≥ 1 search history entry and the input is empty, the history list is visible in the results area and the static suggestions block is not rendered                           | High     |
-| UI-08 | Pressing Enter in the search input on `/search` removes focus from the input element (so the on-screen keyboard dismisses on touch devices); the active element after Enter is no longer the search input   | Medium   |
-| UI-09 | When a track is playing or paused mid-track (engine status is `playing` or `paused`), the mini-player is visible above the bottom nav; it is present on every routed page (`/explore`, `/taste`, `/search`) | High     |
-| UI-10 | When no track has ever been played (engine status is `idle`), no mini-player element is rendered in the DOM                                                                                                 | High     |
-| UI-11 | The currently-playing search result row has a `data-playing="true"` attribute on its artwork wrapper; all other rows do not have that attribute                                                             | High     |
+| ID    | Invariant                                                                                                                                                                                                                            | Severity |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| UI-01 | The app shell renders a routed bottom navigation for all users regardless of authentication state; the sign-in flow is not shown at the root shell level                                                                             | High     |
+| UI-02 | The bottom navigation is visible on every routed page (`/explore`, `/taste`, `/search`, and the not-found fallback) regardless of authentication state                                                                               | High     |
+| UI-03 | Exactly one bottom-nav tab carries `aria-current="page"` at any time, matching the current route path                                                                                                                                | High     |
+| UI-04 | When the search input is empty and there is no per-user history, the suggestions block ("Try: …") is visible in the results area                                                                                                     | High     |
+| UI-05 | When a search request is in flight, a skeleton loading indicator is visible in the results area; previous results are replaced by the skeleton                                                                                       | High     |
+| UI-06 | On a successful response with non-empty results, every result in the response is rendered as a `ResultRow`; track rows show title+artist and station rows show a "Live" indicator                                                    | High     |
+| UI-07 | When the authenticated user has ≥ 1 search history entry and the input is empty, the history list is visible in the results area and the static suggestions block is not rendered                                                    | High     |
+| UI-08 | Pressing Enter in the search input on `/search` removes focus from the input element (so the on-screen keyboard dismisses on touch devices); the active element after Enter is no longer the search input                            | Medium   |
+| UI-09 | When a track is playing or paused mid-track (engine status is `playing` or `paused`), the mini-player is visible above the bottom nav; it is present on every routed page (`/explore`, `/taste`, `/search`)                          | High     |
+| UI-10 | When no track has ever been played (engine status is `idle`), no mini-player element is rendered in the DOM                                                                                                                          | High     |
+| UI-11 | The currently-playing search result row has a `data-playing="true"` attribute on its artwork wrapper; all other rows do not have that attribute                                                                                      | High     |
+| UI-12 | When the mini-player is expanded, the now-playing overlay is rendered with `role="dialog"`, contains a visible close/collapse button, and the overlay is present in the DOM; when collapsed, the overlay is absent from the DOM      | High     |
+| UI-13 | For a station, the now-playing screen renders a `LIVE` indicator and both skip buttons are disabled (aria-disabled); it does **not** render a progress bar; for a track, it renders the progress bar and an enabled skip-back button | High     |
 
-**Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`, `tests/invariants/ui/search.test.tsx`, `tests/invariants/ui/player.test.tsx`
+**Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`, `tests/invariants/ui/search.test.tsx`, `tests/invariants/ui/player.test.tsx`, `tests/invariants/ui/now-playing.test.tsx`
 
 ---
 
@@ -127,11 +131,12 @@ _No invariants yet. Examples:_
 
 ## PWA — installability and offline behavior
 
-| ID     | Invariant                                                                                                                                                | Severity |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| PWA-01 | Refreshing the browser on `/explore`, `/taste`, or `/search` rehydrates to the same route — the matching bottom-nav tab is highlighted after rehydration | High     |
+| ID     | Invariant                                                                                                                                                                                                                                                            | Severity |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| PWA-01 | Refreshing the browser on `/explore`, `/taste`, or `/search` rehydrates to the same route — the matching bottom-nav tab is highlighted after rehydration                                                                                                             | High     |
+| PWA-02 | When playback is active and `navigator.mediaSession` is available, `mediaSession.metadata.title`, `.artist`, and `.artwork[0].src` reflect the current track's title, artist, and cover URL; action handlers for `play`, `pause`, and `previoustrack` are registered | High     |
 
-**Test files:** `tests/invariants/pwa/routing.test.ts` (Layer 3 — Playwright, stubs pending)
+**Test files:** `tests/invariants/pwa/routing.test.ts`, `tests/invariants/pwa/media-session.test.ts` (Layer 3 — Playwright, stubs pending)
 
 ---
 
@@ -142,8 +147,9 @@ _No invariants yet. Examples:_
 | BROWSER-01 | On a 375×667 mobile viewport, each bottom-nav tab has a touch target ≥ 44×44 px and the nav applies `env(safe-area-inset-bottom)` so no content is occluded by the iOS home indicator                                                                       | High     |
 | BROWSER-02 | On a 375×667 mobile viewport, the search input is visible at the top of the viewport without scrolling; results are scrollable below it; the bottom nav remains fixed and does not occlude the last result                                                  | High     |
 | BROWSER-03 | On a 375×667 mobile viewport, when the mini-player is visible, its play/pause and dismiss buttons each have a touch target ≥ 44×44 px; the page has no horizontal scroll; the last visible result row is not occluded by the mini-player + bottom nav stack | High     |
+| BROWSER-04 | On a 375×667 mobile viewport, the now-playing screen renders without horizontal scroll; the cover art is at least 240×240 px; the play/pause, skip-back, and skip-forward buttons each have a touch target ≥ 44×44 px                                       | High     |
 
-**Test files:** `tests/invariants/browser/bottom-nav.test.ts`, `tests/invariants/browser/search.test.ts`, `tests/invariants/browser/player.test.ts` (Layer 3 — Playwright, stubs pending)
+**Test files:** `tests/invariants/browser/bottom-nav.test.ts`, `tests/invariants/browser/search.test.ts`, `tests/invariants/browser/player.test.ts`, `tests/invariants/browser/now-playing.test.ts` (Layer 3 — Playwright, stubs pending)
 
 ---
 

@@ -1,9 +1,11 @@
-import { Compass, Heart, Search } from "lucide-react";
+import { Compass, Heart, HeartOff, Search, X } from "lucide-react";
 
 const ICON_MAP = {
   compass: Compass,
   heart: Heart,
+  "heart-off": HeartOff,
   search: Search,
+  x: X,
 } as const;
 
 export type IconName = keyof typeof ICON_MAP;

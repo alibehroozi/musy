@@ -18,3 +18,13 @@ export type { InputProps, InputVariant, InputSize } from "./components/Input/Inp
 
 export { ResultRow } from "./components/ResultRow/ResultRow.js";
 export type { ResultRowProps } from "./components/ResultRow/ResultRow.js";
+
+export { Modal } from "./components/Modal/Modal.js";
+export type { ModalProps } from "./components/Modal/Modal.js";
+
+export { IconButton } from "./components/IconButton/IconButton.js";
+export type {
+  IconButtonProps,
+  IconButtonVariant,
+  IconButtonSize,
+} from "./components/IconButton/IconButton.js";

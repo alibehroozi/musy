@@ -12,3 +12,9 @@ export type { IconProps, IconName } from "./components/Icon/Icon.js";
 
 export { BottomNav } from "./components/BottomNav/BottomNav.js";
 export type { BottomNavProps, BottomNavTab } from "./components/BottomNav/BottomNav.js";
+
+export { Input } from "./components/Input/Input.js";
+export type { InputProps, InputVariant, InputSize } from "./components/Input/Input.js";
+
+export { ResultRow } from "./components/ResultRow/ResultRow.js";
+export type { ResultRowProps } from "./components/ResultRow/ResultRow.js";

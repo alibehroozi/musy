@@ -45,8 +45,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | LOGIC-01 | The search aggregator's dedupe + merge function is deterministic: given the same list of provider results, it always produces the same output regardless of how many times it is called              | High     |
 | LOGIC-02 | The `withTimeout` helper resolves within `timeout + 100ms` even when the wrapped promise never settles                                                                                               | High     |
 | LOGIC-03 | Dedupe collapses results that share an ISRC, or whose normalized title + artist are within a Levenshtein distance of 3, into a single result whose `sources` array lists every contributing provider | High     |
+| LOGIC-04 | The web-core `searchTracks` fetcher validates the API response against the `SearchResponse` Zod schema and throws a `ZodError` when the response body does not match the schema                      | High     |
 
-**Test files:** `tests/invariants/logic/search.test.ts`
+**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`
 
 ---
 
@@ -65,13 +66,16 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## UI — DOM / rendering, checkable in jsdom
 
-| ID    | Invariant                                                                                                                                                | Severity |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| UI-01 | The app shell renders a routed bottom navigation for all users regardless of authentication state; the sign-in flow is not shown at the root shell level | High     |
-| UI-02 | The bottom navigation is visible on every routed page (`/explore`, `/taste`, `/search`, and the not-found fallback) regardless of authentication state   | High     |
-| UI-03 | Exactly one bottom-nav tab carries `aria-current="page"` at any time, matching the current route path                                                    | High     |
+| ID    | Invariant                                                                                                                                                                         | Severity |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| UI-01 | The app shell renders a routed bottom navigation for all users regardless of authentication state; the sign-in flow is not shown at the root shell level                          | High     |
+| UI-02 | The bottom navigation is visible on every routed page (`/explore`, `/taste`, `/search`, and the not-found fallback) regardless of authentication state                            | High     |
+| UI-03 | Exactly one bottom-nav tab carries `aria-current="page"` at any time, matching the current route path                                                                             | High     |
+| UI-04 | When the search input is empty and there is no per-user history, the suggestions block ("Try: …") is visible in the results area                                                  | High     |
+| UI-05 | When a search request is in flight, a skeleton loading indicator is visible in the results area; previous results are replaced by the skeleton                                    | High     |
+| UI-06 | On a successful response with non-empty results, every result in the response is rendered as a `ResultRow`; track rows show title+artist and station rows show a "Live" indicator | High     |
 
-**Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`
+**Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`, `tests/invariants/ui/search.test.tsx`
 
 ---
 
@@ -120,11 +124,12 @@ _No invariants yet. Examples:_
 
 ## BROWSER — verified by Layer 3 (Playwright)
 
-| ID         | Invariant                                                                                                                                                                             | Severity |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| BROWSER-01 | On a 375×667 mobile viewport, each bottom-nav tab has a touch target ≥ 44×44 px and the nav applies `env(safe-area-inset-bottom)` so no content is occluded by the iOS home indicator | High     |
+| ID         | Invariant                                                                                                                                                                                                  | Severity |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| BROWSER-01 | On a 375×667 mobile viewport, each bottom-nav tab has a touch target ≥ 44×44 px and the nav applies `env(safe-area-inset-bottom)` so no content is occluded by the iOS home indicator                      | High     |
+| BROWSER-02 | On a 375×667 mobile viewport, the search input is visible at the top of the viewport without scrolling; results are scrollable below it; the bottom nav remains fixed and does not occlude the last result | High     |
 
-**Test files:** `tests/invariants/browser/bottom-nav.test.ts` (Layer 3 — Playwright, stubs pending)
+**Test files:** `tests/invariants/browser/bottom-nav.test.ts`, `tests/invariants/browser/search.test.ts` (Layer 3 — Playwright, stubs pending)
 
 ---
 

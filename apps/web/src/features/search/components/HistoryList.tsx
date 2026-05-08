@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { HistoryEntry } from "@moc/contracts";
-import { ListItemButton } from "@moc/design-system";
+import { Icon, ListItemButton } from "@moc/design-system";
 
 const HISTORY_SKELETON_COUNT = 5;
 
@@ -21,25 +21,6 @@ export function HistorySkeleton(): JSX.Element {
         <SkeletonHistoryRow key={i} />
       ))}
     </div>
-  );
-}
-
-function ClockIcon(): JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
   );
 }
 
@@ -92,7 +73,7 @@ export function HistoryList({
           onClick={() => onSelect(entry.query)}
           leading={
             <span className="text-text-muted">
-              <ClockIcon />
+              <Icon name="clock" size={16} />
             </span>
           }
           trailing={

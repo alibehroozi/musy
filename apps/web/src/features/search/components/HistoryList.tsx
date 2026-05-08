@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { HistoryEntry } from "@moc/contracts";
+import { ListItemButton } from "@moc/design-system";
 
 const HISTORY_SKELETON_COUNT = 5;
 
@@ -86,26 +87,22 @@ export function HistoryList({
   return (
     <div data-testid="history-list">
       {entries.map((entry) => (
-        // TODO(ds): swap for a `ListItemButton` (or `Button` variant supporting
-        // full-width left-aligned rows) once /design-system adds it. The DS's
-        // current `Button` is `inline-flex items-center justify-center` —
-        // doesn't compose into a list row without heavy `!important`
-        // overrides. AGENTS.md hard rule #14 forbids new <button> in
-        // apps/web/; this preexisting one is tracked debt.
-        // eslint-disable-next-line no-restricted-syntax
-        <button
+        <ListItemButton
           key={entry.id}
           onClick={() => onSelect(entry.query)}
-          className="flex items-center gap-3 px-4 py-3 w-full hover:bg-surface/50 text-left"
+          leading={
+            <span className="text-text-muted">
+              <ClockIcon />
+            </span>
+          }
+          trailing={
+            <span className="text-xs text-text-muted">
+              {formatRelativeTime(entry.lastSearchedAt)}
+            </span>
+          }
         >
-          <span className="text-text-muted">
-            <ClockIcon />
-          </span>
-          <span className="flex-1 text-sm text-text">{entry.query}</span>
-          <span className="text-xs text-text-muted">
-            {formatRelativeTime(entry.lastSearchedAt)}
-          </span>
-        </button>
+          <span className="text-sm">{entry.query}</span>
+        </ListItemButton>
       ))}
       {hasMore && <div ref={sentinelRef} className="h-px" aria-hidden />}
     </div>

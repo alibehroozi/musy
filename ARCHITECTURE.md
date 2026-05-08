@@ -382,6 +382,26 @@ Use `/design-system`. Don't shortcut by hand-rolling components into `apps/web` 
 - Invariant tests live in `tests/invariants/<category>/` (mirrored from `INVARIANTS.md`)
 - E2E in `tests/e2e/` (Playwright); temporary repros in `tests/_scratch/` (gitignored)
 
+### Visual regression (Layer 3)
+
+Three concentric rings, cheap to expensive:
+
+| Ring                 | Tool                                              | What it catches                                                                                                       | When it runs                          |
+| -------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Layer 0 — lint       | `eslint-plugin-tailwindcss` `no-custom-classname` | "Left the design system" — `bg-[#abcdef]`, `mt-[7px]`, `text-[14px]`. Mechanical.                                     | Every commit (part of `npm run lint`) |
+| Layer 1 — components | **Lost Pixel** snapshotting Ladle stories         | Visible regressions in `Typography`, `Button`, `BottomNav`, etc. — hover states, padding, color drift between tokens. | Part of `npm run verify`              |
+| Layer 2 — pages      | **Playwright** `expect(page).toHaveScreenshot()`  | Integration regressions — components composed wrong, layout shifts, navigation visual states.                         | PR-only (slow)                        |
+
+**Baselines are committed PNGs.** They live in `.lostpixel/baseline/` (Layer 1) and next to the spec in `tests/e2e/<page>.spec.ts-snapshots/` (Layer 2). Both are tracked in git so the PR diff shows old vs. new image side-by-side.
+
+**Per AGENTS.md hard rule #12:** baseline regeneration is intentional, never blanket. When a snapshot fails:
+
+1. **Default conclusion**: code is wrong. Fix source, not baseline.
+2. **Only after deliberate analysis**: if the diff matches the change called for in the feature spec / `@claude` comment, regenerate the _specific_ failing snapshots. Never `--update` everything.
+3. The PR review is the human gate — reviewer sees both code diff and visual diff, can reject either.
+
+`/new-feature`, `/change-feature`, `/design-system`, and `/debug-local` all consume the visual layer the same way: the failure surfaces in `npm run verify`, the agent decides regenerate-vs-fix per the rule above, both code and PNGs land in the same PR.
+
 ---
 
 ## Deployment

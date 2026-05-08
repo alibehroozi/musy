@@ -1,41 +1,120 @@
-import { test as base, expect } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
+import type { ZodType } from "zod";
+import { ErrorResponse, User } from "@moc/contracts";
 
 /**
  * Universal Playwright fixtures for the music app.
  *
- * Auth is mocked by default — every test starts as `TEST_USER`, with
- * `/api/me` responding 200 + the user payload. This lets feature tests
- * focus on the feature's user behavior, not the sign-in dance.
+ * Two responsibilities:
+ *
+ *   1. **Auth** — every test starts authenticated as `TEST_USER`. `/api/me`
+ *      is intercepted to return 200 + the user payload by default. Test
+ *      unauthenticated UX with `test.use({ authed: false })` per
+ *      describe block.
+ *
+ *   2. **Typed mock helpers** — `mockJsonRoute` / `mockJsonError` build
+ *      route fulfillments from `@moc/contracts` Zod schemas. Schema-
+ *      backed mocks fail loudly (ZodError at mock-write time) when the
+ *      contract changes, instead of producing confusing test failures
+ *      against stale shapes. ARCHITECTURE.md and the slash commands
+ *      forbid bare `r.fulfill({ body: JSON.stringify(...) })` on JSON
+ *      responses for exactly this reason.
  *
  * Specs MUST import from this file, never directly from
- * `@playwright/test`. ARCHITECTURE.md and the slash commands enforce
- * the rule; ESLint can catch it later if it slips.
- *
- * To test unauthenticated UX (sign-in page, redirects, gates), set the
- * `authed` option to `false` for that test or describe block:
- *
- *     test.describe("sign-in flow", () => {
- *       test.use({ authed: false });
- *       test("redirects to /signin", async ({ page }) => { ... });
- *     });
- *
- * `TEST_USER` values are stable so snapshots referencing the user's
- * email or id are deterministic. The user does NOT exist in Mongo —
- * the mock short-circuits before the API ever sees the request. If a
- * test exercises an endpoint that reads the user from Mongo (rare in
- * Layer 2, common in integration tests), mock that endpoint too with
- * `page.route(...)` inside the test or a `beforeEach`.
+ * `@playwright/test`. The fixture only mocks `/api/me`; feature-
+ * specific endpoints (search, history, taste, …) stay the test's
+ * responsibility — mock them via `mockJsonRoute` in `beforeEach` or
+ * per-test.
  */
 
-export const TEST_USER = {
+// ────────────────────────────────────────────────────────────────────────
+// Test user
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Stable fake user. Validated against the `User` schema at module load
+ * so a contract change (e.g. a new required field) breaks the test
+ * suite at startup, not in the middle of a feature run.
+ *
+ * Does NOT exist in Mongo — the auth route mock short-circuits before
+ * any real backend call. Tests that exercise endpoints that read the
+ * user from Mongo must mock those too.
+ */
+export const TEST_USER: User = User.parse({
   id: "00000000-0000-4000-8000-000000000001",
   email: "test@musy.dev",
+  googleId: "google-test-000000000000",
   createdAt: "2026-01-01T00:00:00.000Z",
-};
+});
 
-const UNAUTH_BODY = {
+const UNAUTH_BODY: ErrorResponse = ErrorResponse.parse({
   error: { code: "UNAUTHENTICATED", message: "Not signed in" },
-};
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Typed mock helpers
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Mock a JSON route with a body validated against a Zod schema from
+ * `@moc/contracts`. The body is parsed before fulfilling; a shape
+ * mismatch throws ZodError synchronously, surfacing the typo at
+ * mock-write time.
+ *
+ * Use this for ALL successful (2xx) JSON responses. For error
+ * responses, prefer `mockJsonError` which builds an ErrorResponse-
+ * shaped body. For genuine network failure (no HTTP response at all),
+ * use `page.route(..., r => r.abort())` — there's no body to type.
+ *
+ * @example
+ *   import { SearchResponse } from "@moc/contracts";
+ *   await mockJsonRoute(page, "**\/api/search**", SearchResponse, {
+ *     results: [...],
+ *     partial: false,
+ *     failedProviders: [],
+ *     cached: false,
+ *   });
+ */
+export async function mockJsonRoute<T>(
+  page: Page,
+  url: string | RegExp,
+  schema: ZodType<T>,
+  body: T,
+  status = 200,
+): Promise<void> {
+  schema.parse(body);
+  await page.route(url, (route) =>
+    route.fulfill({
+      status,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+/**
+ * Mock a JSON error response shaped as `@moc/contracts` ErrorResponse.
+ * Same shape `AllExceptionsFilter` emits in prod, so tests exercise
+ * the same error rendering path the real backend produces.
+ *
+ * @example
+ *   await mockJsonError(page, "**\/api/search**", 502, {
+ *     code: "UPSTREAM_ERROR",
+ *     message: "Provider timed out",
+ *   });
+ */
+export async function mockJsonError(
+  page: Page,
+  url: string | RegExp,
+  status: number,
+  error: ErrorResponse["error"],
+): Promise<void> {
+  await mockJsonRoute(page, url, ErrorResponse, { error }, status);
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Test fixture
+// ────────────────────────────────────────────────────────────────────────
 
 interface AuthFixtures {
   /** Whether the test starts authenticated. Default: true. */

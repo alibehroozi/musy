@@ -156,10 +156,22 @@ jobs:
             - **#12 Visual baselines are sacred until proven intentional.**
               When `npm run verify:visual` fails (Lost Pixel for Ladle
               stories, Playwright for app pages), default conclusion is
-              code is wrong. Regenerate baselines (`test:visual:ds:update`
-              / `test:visual:web:update`) ONLY when the diff matches the
-              UI change the user's comment explicitly asked for.
-              Regenerate the *specific* failing baselines, never blanket.
+              code is wrong. Regenerate ONLY when the diff matches the UI
+              change the user's comment explicitly asked for, and ONLY
+              for the specific spec/story affected — **never** the
+              workspace-wide `:update` scripts (they overwrite every
+              drifted baseline at once, silently making any unrelated
+              regression the new "correct"). Targeted recipes:
+                - **Playwright:** `npm --workspace apps/web run
+                  test:visual:update -- tests/e2e/<spec>.spec.ts`
+                  (append `-g "<title>"` for finer scope).
+                - **Lost Pixel:** run a compare first
+                  (`npm run test:visual:ds || true`), inspect
+                  `libs/web/design-system/.lostpixel/difference/`,
+                  classify each entry as new / intended / unrelated, and
+                  `cp` only the specific
+                  `current/<story>--<variant>__*.png` files into
+                  `baseline/`. Unrelated drift = STOP, fix code.
               If unsure, fix the code, not the baseline.
             - **TDD.** Test before source when behavior changes. Fix
               source, never weaken tests.

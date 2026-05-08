@@ -74,6 +74,13 @@ Rules:
 - **Every `toHaveScreenshot(...)` is paired with `await expectAccessible(page)`** (per AGENTS.md hard rule #13). The a11y check fails the test on any contrast violation, missing label, invalid ARIA, etc. against WCAG AA. A failure on token-driven UI means the token pair is wrong — fix `theme.css` in `@moc/design-system`, not the test.
 - **No raw `<button>` / `<input>` / `<textarea>` / `<select>` in `apps/web/`** (AGENTS.md hard rule #14, enforced by ESLint). Use the matching `@moc/design-system` component. If the DS equivalent doesn't exist yet, that's a `/design-system` task first.
 - Use accessible selectors only (`page.getByRole`, `page.getByLabel`, `page.getByText`). **Never CSS selectors** — they couple the test to implementation, not behavior.
+- **Every UI lookup must resolve to a real target before you write it.** When a test introduces a `getByRole`, `getByLabel`, `getByText`, `getByPlaceholder`, or `getByTestId`, the literal string you're matching on must come from one of three verified places:
+  1. **`apps/web/` already on the branch** — `grep` the role's accessible name / text / testid in existing components and confirm a match.
+  2. **`@moc/design-system`** — the test is asserting on a DS component this feature uses, and the label flows through a known prop (e.g. `Button` rendering `children` you pass with that exact text).
+  3. **Your own pending `feat(web):` commit** — you're authoring the component now; the selector must match the literal string in the JSX you're about to write.
+
+  If none of the three — it's a hallucinated lookup. Fix the selector before writing the test, or write the source first. **A test that goes red on a typo'd selector is the most dangerous shape of red:** the same agent who wrote the typo is then tempted to "fix" the test instead of finding the mismatch. Catch it at authoring time, not at the verify step.
+
 - One spec file per feature (`apps/web/tests/e2e/<feature-slug>.spec.ts`), one `test.describe` block per feature.
 - Wait on observable state (`expect(page.getByText(...)).toBeVisible()`), not timers (`page.waitForTimeout`).
 - Snapshot fullPage only when layout matters end-to-end; prefer scoped element snapshots (`expect(page.getByRole('main')).toHaveScreenshot(...)`) when a header / nav is irrelevant to the feature.
@@ -160,7 +167,13 @@ test.describe("search", () => {
 });
 ```
 
-First run will fail (no baselines). On the first commit that adds the spec, run `npm run test:visual:web:update` and commit the resulting PNGs as part of the same `test(visual, web):` commit (so the PR shows the new spec + its baselines together).
+First run will fail (no baselines). On the first commit that adds the spec, generate baselines for **only the new spec** — never the workspace-wide bulk update, which would silently overwrite unrelated baselines for any drifted-but-not-yet-caught regression elsewhere:
+
+```bash
+npm --workspace apps/web run test:visual:update -- tests/e2e/<feature-slug>.spec.ts
+```
+
+(The npm script delegates to `playwright test --update-snapshots`; npm passes the spec path through, scoping the regen.) Commit the resulting PNGs as part of the same `test(visual, web):` commit (so the PR shows the new spec + its baselines together). For the surgical recipe when an _existing_ baseline is intentionally changing, see [`design-system.md`](./design-system.md) step 6.
 
 8. **Run verify** after each layer commit. `npm run verify` doesn't have to pass on every intermediate commit (test commits often run red against missing implementation), but **the final commit on the branch must be green**.
 
@@ -203,6 +216,8 @@ First run will fail (no baselines). On the first commit that adds the spec, run 
 - **Implementing before invariants.** If you find yourself writing code without a red test, stop. Go back to step 5.
 - **Drive-by changes.** A feature PR touches only what the feature requires. Refactors go in their own PRs.
 - **Skipping the manual exercise.** Type-checked + green tests means correct logic, not correct user experience. For UI features, click through it before calling done.
+- **Hallucinated test selectors.** Writing `getByRole('button', { name: 'Save changes' })` when the rendered button reads `Save` (or doesn't exist yet) gives you a red test — but red for the wrong reason. Per step 7a, every UI lookup must resolve to a real target in `apps/web/`, `@moc/design-system`, or your own pending `feat(web):` commit before the test is written. Catch the mismatch at authoring time, not at verify.
+- **Bulk visual `:update`.** Running `npm run test:visual:web:update` or `npm run test:visual:ds:update` rewrites every drifted baseline at once, including any drift caused by an unrelated regression — silently making it the new "correct." Always target only the spec / story this feature affected. Playwright takes a spec path through `npm --workspace apps/web run test:visual:update -- tests/e2e/<spec>.spec.ts`. Lost Pixel has no per-story flag — surgically copy the specific PNGs from `current/` to `baseline/` per [`design-system.md`](./design-system.md) step 6.
 - **Adding a new invariant section.** Categories in `INVARIANTS.md` are by constraint, never by feature. If nothing fits, the invariant is mis-phrased.
 - **Putting business logic in the controller, or HTTP in the service.** Re-check the layering table in `ARCHITECTURE.md` — every Nest file has exactly one role.
 - **Components creeping past their size cap, or contextifying single-subtree state.** Same — re-check the React rules in `ARCHITECTURE.md`.

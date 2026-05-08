@@ -34,11 +34,16 @@ Read [`DESIGN.md`](../../DESIGN.md) for the catalog and token reference, and the
 
    **Note on visual regression:** DS components do **NOT** need Playwright specs. Lost Pixel automatically snapshots every Ladle story across the configured breakpoints — your component + story already constitute the visual test. New / changed component → new / changed `<Name>.stories.tsx` → Lost Pixel snaps it on the next `verify:visual` run. Apply the regenerate-vs-fix decision tree (AGENTS.md hard rule #12) when those snapshots fail.
 
-6. **Run verify.**
+6. **Run verify — both flavors. Visual is mandatory for every DS change.**
    - `npm --workspace libs/web/design-system run test` for component tests
    - `npm --workspace libs/web/design-system run stories` to eyeball the story locally — at least skim each variant
-   - `npm run verify` at the root must be green at the branch HEAD
-   - `npm run test:visual:ds` to confirm the Lost Pixel snapshot reflects what you intend. On the first run for a new component or token, the test fails because no baseline exists — that's expected. Run `npm run test:visual:ds:update` to bootstrap baselines for the new story states, commit them as `feat(visual): regenerate baselines for <Name>`, and re-verify.
+   - `npm run verify` at the root must be green at the branch HEAD (Layer 1 + 2)
+   - `npm run verify:visual` — runs both `test:visual:ds` (Lost Pixel against Ladle stories) **and** `test:visual:web` (Playwright snapshots of apps/web pages). DS changes routinely cascade into apps/web — a token tweak or component restyling shifts every page that consumes it — so checking only the DS half lets app-level regressions through. **Always run the full `verify:visual`, never just `test:visual:ds`.**
+   - **First-run / regenerate flow:** if a snapshot fails, apply the regenerate-vs-fix decision tree (AGENTS.md hard rule #12). When the diff is intended:
+     - DS-side: `npm run test:visual:ds:update` regenerates Lost Pixel baselines under `libs/web/design-system/.lostpixel/baseline/`.
+     - Web-side: `npm run test:visual:web:update` regenerates Playwright snapshots under `apps/web/`.
+     - Commit only the snapshots that actually correspond to your change as `feat(visual): regenerate baselines for <Name>`. Never blanket-update unrelated snapshots — that masks real regressions.
+   - Re-run `npm run verify:visual` after regenerating to confirm green.
 
 7. **Update `/prepare-local` if local-dev requirements changed.** New devDeps that the design-system package needs (e.g. a Radix primitive) should be added to its package.json — `/prepare-local` itself usually doesn't need an update. If you added a new npm script the agent should run automatically, document it.
 
@@ -46,7 +51,7 @@ Read [`DESIGN.md`](../../DESIGN.md) for the catalog and token reference, and the
    - The component (or token) added/changed
    - The commit sequence
    - Any new dep, with the alternatives you considered
-   - Confirmation `npm run verify` is green at branch HEAD
+   - Confirmation `npm run verify` **and** `npm run verify:visual` are both green at branch HEAD
 
 ## Hard rules
 
@@ -55,6 +60,7 @@ Read [`DESIGN.md`](../../DESIGN.md) for the catalog and token reference, and the
 - **Story mandatory.** Every new component or variant has a Ladle story. A component without a `<Name>.stories.tsx` isn't done.
 - **Small API surface.** Variants are semantic (`primary` | `secondary` | `ghost`), not raw style props. Don't add `colorOverride` / `customRadius` / etc. — that's a token gap, fix tokens.
 - **Same micro-commit discipline as everything else.** Tokens → component+test+story → catalog. Don't bundle.
+- **`verify:visual` is non-negotiable.** Every `/design-system` PR must show `npm run verify:visual` green at HEAD. The DS-only check (`test:visual:ds`) is not enough — it misses app-level regressions when a token or shared component shifts. No exceptions, even for "tiny" tweaks.
 
 ## Watch out for
 

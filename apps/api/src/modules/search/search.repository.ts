@@ -4,7 +4,7 @@ import { Model } from "mongoose";
 import type { SearchResult, ProviderName } from "@moc/contracts";
 import { SEARCH_CACHE_MODEL, type SearchCacheDocument } from "./search-cache.schema.js";
 
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+export const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 export interface CachedSearchResult {
   results: SearchResult[];

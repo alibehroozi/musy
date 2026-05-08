@@ -28,29 +28,38 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## DATA — data shape and integrity
 
-| ID      | Invariant                                                                            | Severity |
-| ------- | ------------------------------------------------------------------------------------ | -------- |
-| DATA-01 | Every `User` document has a non-empty `id` (uuid v4) and a unique, lowercase `email` | Critical |
-| DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)    | Critical |
+| ID      | Invariant                                                                                                                                                          | Severity |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| DATA-01 | Every `User` document has a non-empty `id` (uuid v4) and a unique, lowercase `email`                                                                               | Critical |
+| DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)                                                                                  | Critical |
+| DATA-03 | Every `search_cache` document has `expiresAt` set strictly after its creation time; the TTL index drops it at `expiresAt`; `queryHash` is unique in the collection | High     |
 
-**Test files:** `tests/invariants/data/users.test.ts`
+**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`
 
 ---
 
 ## LOGIC — pure function contracts
 
-_No invariants yet. Add when the first pure-logic function lands._
+| ID       | Invariant                                                                                                                                                                                            | Severity |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| LOGIC-01 | The search aggregator's dedupe + merge function is deterministic: given the same list of provider results, it always produces the same output regardless of how many times it is called              | High     |
+| LOGIC-02 | The `withTimeout` helper resolves within `timeout + 100ms` even when the wrapped promise never settles                                                                                               | High     |
+| LOGIC-03 | Dedupe collapses results that share an ISRC, or whose normalized title + artist are within a Levenshtein distance of 3, into a single result whose `sources` array lists every contributing provider | High     |
+
+**Test files:** `tests/invariants/logic/search.test.ts`
 
 ---
 
 ## API — HTTP contract
 
-| ID     | Invariant                                                                                                                                                        | Severity |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| API-01 | Every error response from `apps/api` matches the shared `ErrorResponse` Zod schema                                                                               | Critical |
-| API-02 | `GET /api/auth/me` returns 401 + `ErrorResponse` with no/invalid session cookie; returns 200 + a body matching the `User` Zod schema with a valid session cookie | Critical |
+| ID     | Invariant                                                                                                                                                                                      | Severity |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| API-01 | Every error response from `apps/api` matches the shared `ErrorResponse` Zod schema                                                                                                             | Critical |
+| API-02 | `GET /api/auth/me` returns 401 + `ErrorResponse` with no/invalid session cookie; returns 200 + a body matching the `User` Zod schema with a valid session cookie                               | Critical |
+| API-03 | `POST /api/search` is publicly accessible (no session required); returns 400 + `ErrorResponse` when `q` is empty or missing                                                                    | Critical |
+| API-04 | `POST /api/search` always returns 200 with a body matching `SearchResponse` (`results`, `partial`, `failedProviders`, `cached`), even when all providers fail (`results: []`, `partial: true`) | Critical |
 
-**Test files:** `tests/invariants/api/auth.test.ts`
+**Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`
 
 ---
 
@@ -68,23 +77,24 @@ _No invariants yet. Add when the first pure-logic function lands._
 
 ## SEC — authorization and credential hygiene
 
-| ID     | Invariant                                                                                                                                                                       | Severity |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line    | Critical |
-| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                             | Critical |
-| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`) return 401 without a valid session cookie | Critical |
+| ID     | Invariant                                                                                                                                                                                           | Severity |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line                        | Critical |
+| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                 | Critical |
+| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`) return 401 without a valid session cookie | Critical |
+| SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                     | Critical |
 
-**Test files:** `tests/invariants/sec/auth.test.ts`
+**Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`
 
 ---
 
 ## PRIVACY — data flow boundaries
 
-_No invariants yet. Examples that will land early in this category:_
+| ID         | Invariant                                                                                                                                                                                          | Severity |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| PRIVACY-01 | Outgoing HTTP requests to Audius, Deezer, Radio Browser, and Genius carry only the search query string; no user identifier, session token, or IP forwarding header is added by our aggregator code | Critical |
 
-- _A recommendation API response never includes another user's listening history._
-- _User identifiers (email, real name, IP) never appear in prompts sent to LLM providers unless the call site is explicitly opted in._
-- _Telemetry events never contain raw track lists — only aggregated metrics._
+**Test files:** `tests/invariants/privacy/search.test.ts`
 
 ---
 

@@ -71,6 +71,8 @@ Rules:
 - **Always import from `./fixtures.js`, never directly from `@playwright/test`.** The shared fixture mocks auth universally — every test starts authenticated as `TEST_USER` (a stable fake account) so feature tests focus on the feature's behavior, not the sign-in dance. To test unauthenticated UX, override per `test.describe` with `test.use({ authed: false })`.
 - **Mocked responses MUST be typed against `@moc/contracts` Zod schemas.** Use the `mockJsonRoute(page, urlGlob, schema, body, status?)` helper from `./fixtures.js` — it (1) parses `body` against `schema` at mock-write time so a typo surfaces as a clear Zod error instead of a confusing test failure later, and (2) keeps the mock shape locked to the wire format the API actually emits. For error responses, use `mockJsonError(page, urlGlob, status, error)` which builds an `ErrorResponse`-shaped body. **Never use bare `page.route(..., r => r.fulfill({ body: JSON.stringify({...}) }))`** with an untyped object literal — that's how mocks drift from the contract and tests pass against shapes the real API will never return.
 - The auth fixture only mocks `/api/me`. Feature-specific endpoints (search, history, taste profile, …) are the test's responsibility — mock them via `mockJsonRoute` inside each test or in a `test.beforeEach`. For genuine network failures (not HTTP errors), `page.route('**/api/...', r => r.abort())` is still correct — there's no body to type.
+- **Every `toHaveScreenshot(...)` is paired with `await expectAccessible(page)`** (per AGENTS.md hard rule #13). The a11y check fails the test on any contrast violation, missing label, invalid ARIA, etc. against WCAG AA. A failure on token-driven UI means the token pair is wrong — fix `theme.css` in `@moc/design-system`, not the test.
+- **No raw `<button>` / `<input>` / `<textarea>` / `<select>` in `apps/web/`** (AGENTS.md hard rule #14, enforced by ESLint). Use the matching `@moc/design-system` component. If the DS equivalent doesn't exist yet, that's a `/design-system` task first.
 - Use accessible selectors only (`page.getByRole`, `page.getByLabel`, `page.getByText`). **Never CSS selectors** — they couple the test to implementation, not behavior.
 - One spec file per feature (`apps/web/tests/e2e/<feature-slug>.spec.ts`), one `test.describe` block per feature.
 - Wait on observable state (`expect(page.getByText(...)).toBeVisible()`), not timers (`page.waitForTimeout`).
@@ -79,7 +81,7 @@ Rules:
 Pattern (note the imports — `./fixtures.js` and the contract schemas, not `@playwright/test` and ad-hoc objects):
 
 ```ts
-import { test, expect, mockJsonRoute, mockJsonError } from "./fixtures.js";
+import { test, expect, mockJsonRoute, mockJsonError, expectAccessible } from "./fixtures.js";
 import { SearchResponse } from "@moc/contracts";
 
 test.describe("search", () => {
@@ -109,6 +111,7 @@ test.describe("search", () => {
   test("empty state — initial visit", async ({ page }) => {
     await page.goto("/search");
     await expect(page).toHaveScreenshot("search-empty.png");
+    await expectAccessible(page);
   });
 
   test("typing query and seeing results", async ({ page }) => {
@@ -117,6 +120,7 @@ test.describe("search", () => {
     await page.getByRole("searchbox").press("Enter");
     await expect(page.getByText(/Hey Jude/)).toBeVisible();
     await expect(page).toHaveScreenshot("search-results.png");
+    await expectAccessible(page);
   });
 
   test("upstream provider error — surfaces in toast", async ({ page }) => {
@@ -130,6 +134,7 @@ test.describe("search", () => {
     await page.getByRole("searchbox").press("Enter");
     await expect(page.getByRole("status")).toContainText(/error/i);
     await expect(page).toHaveScreenshot("search-error.png");
+    await expectAccessible(page);
   });
 
   test("genuine network failure — offline indicator", async ({ page }) => {
@@ -140,6 +145,7 @@ test.describe("search", () => {
     await page.getByRole("searchbox").press("Enter");
     await expect(page.getByRole("status")).toContainText(/offline/i);
     await expect(page).toHaveScreenshot("search-offline.png");
+    await expectAccessible(page);
   });
 
   // Unauthenticated variant — opt out of the default auth mock.

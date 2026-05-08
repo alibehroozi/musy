@@ -126,6 +126,17 @@ Component-level Vitest suites. Separate from the app's invariant tests so the de
 
 ---
 
+## Accessibility & contrast
+
+The token palette is the source of truth for what's "accessible." Two enforcement points keep the bar real:
+
+1. **WCAG AA contrast** is asserted on every Playwright page snapshot via `expectAccessible(page)` (axe-core under the hood). A failure on token-driven UI signals the **token pair is wrong**, not the test — fix `theme.css`, not the assertion. Per AGENTS.md hard rule #13.
+2. **Forbidden raw HTML in `apps/web/`** — `<button>`, `<input>`, `<textarea>`, `<select>` rejected at lint time. Use `Button`, `Input`, etc. from this package. The DS components own the accessible markup (correct roles, labels, focus states); apps consume them. Per AGENTS.md hard rule #14.
+
+When introducing a new color token, verify its contrast against the surfaces it's meant to sit on (background, surface, primary) before committing. The Tailwind utility `text-<color>` on `bg-<bg>` should hit ≥ 4.5:1 for normal text, ≥ 3:1 for large text. If a pair barely passes, choose differently — visual snapshots forgive small color drift; people don't.
+
+---
+
 ## When `/new-feature` calls into the design system
 
 `/new-feature`'s "Design system check" step (after the tooling check) inspects the feature's UI requirements against this catalog. If the feature needs a tooltip and the catalog doesn't list one, the agent stops and asks: _"Tooltip is identified as a design-system component and is missing — add to the design system first?"_ On approval, the missing components land as separate `feat(design-system, …):` commits **before** the feature commits.

@@ -48,6 +48,17 @@ These are non-negotiable. CI enforces them. Do not bypass.
 10. **Micro-commits.** Multi-layer changes are split into atomic commits in this order: **spec → test → code (by layer).** See [Commit discipline](#commit-discipline) below. The PR HEAD must be green; intermediate commits may be red (the test commit is often red against missing implementation — that's the TDD evidence).
 11. **Commands that produce gitignored side-effects run in the main checkout, not a worktree.** `.env.local`, local Docker volumes, dev caches — none of these propagate from a Claude Code worktree back to the main repo (they're gitignored). `/prepare-local` and `/debug-local` must detect worktree mode at the start and refuse, with a message pointing the user at the main repo path. Commit-producing commands (`/new-feature`, `/change-feature`, `/change-architecture`, `/new-invariant`) can run in worktrees because their output lands via PR.
 12. **Visual baselines are sacred until proven intentional.** When a Layer 3 visual snapshot test fails (Lost Pixel for design-system stories, Playwright for app pages), the **default conclusion is the code is wrong**, not the baseline. Regenerate baselines **only** when the diff is unambiguously the intended change called for in the feature spec / `@claude` comment. Regenerate the _specific_ failing snapshots — never blanket `update`. The PR diff includes both code and baseline PNGs so the human reviewer sees the visual change explicitly.
+13. **Text contrast meets WCAG AA on every page.** The visual snapshot proves what the page _looks like_; an a11y check proves it's _readable_. Every Playwright page snapshot is paired with `await expectAccessible(page)` from `./fixtures.js` — a thin axe-core wrapper that fails the test if the rendered page has any contrast violation (or other AA-level a11y issue). Tokens in `@moc/design-system`'s `theme.css` are the source of truth; a contrast failure on a token-driven UI signals the **token pair is wrong**, not the test — fix the token, not the assertion.
+14. **Forbidden raw HTML tags in `apps/web/`.** When a design-system equivalent exists, the raw element is forbidden — the lint rule rejects it at commit time. Today's list:
+
+    | Forbidden in `apps/web/` | Use instead                                          |
+    | ------------------------ | ---------------------------------------------------- |
+    | `<button>`               | `Button` from `@moc/design-system`                   |
+    | `<input>`                | `Input` from `@moc/design-system`                    |
+    | `<textarea>`             | not yet — adding `Textarea` is `/design-system` work |
+    | `<select>`               | not yet — adding `Select` is `/design-system` work   |
+
+    The rule does **not** apply to `libs/web/design-system/**/*` — that's where the raw HTML elements legitimately live (the components wrap them). Apps consume components; never reach for the raw tag. As DS equivalents land, the table and `eslint.config.mjs` rule grow together.
 
 ### Worktree detection (canonical pre-flight)
 

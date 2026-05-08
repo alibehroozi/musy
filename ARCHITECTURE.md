@@ -406,6 +406,10 @@ Three concentric rings, cheap to expensive:
 
 **Mocked responses are typed against `@moc/contracts`.** Use `mockJsonRoute(page, glob, schema, body)` / `mockJsonError(page, glob, status, error)` from the fixture rather than raw `r.fulfill({ body: JSON.stringify(...) })`. The helpers parse the body against the Zod schema at mock-write time, so a typo in the mock surfaces as a clear `ZodError` immediately instead of producing a confusing test failure later. When a contract schema in `@moc/contracts` legitimately changes (a field gets renamed, a property goes optional), mocks that referenced it fail loudly — exactly the drift signal that visual regression alone would miss because the mock was already shaped wrong.
 
+**Every page snapshot pairs with an a11y assertion** (per AGENTS.md hard rule #13). After `toHaveScreenshot(...)`, the spec calls `await expectAccessible(page)` from `./fixtures.js` — a thin axe-core wrapper that runs the WCAG AA ruleset against the live DOM and fails the test on any contrast violation, missing label, invalid ARIA, or similar. The visual snapshot proves the page **looks** right; the a11y assertion proves it's **readable**. Both gates pass or the PR doesn't merge. A contrast failure on token-driven UI is a signal the token pair is wrong — fix `theme.css`, not the test.
+
+**Raw HTML form elements are forbidden in `apps/web/`** when a design-system equivalent exists (per AGENTS.md hard rule #14). `<button>`, `<input>`, `<textarea>`, `<select>` are caught by `eslint-plugin`'s `no-restricted-syntax` against JSX opening elements — lint fails before the commit lands. The rule scopes to `apps/web/**`; `libs/web/design-system/**` keeps the raw tags (the components wrap them). When a feature wants a tag whose DS equivalent doesn't exist yet, that's a `/design-system` task **first**, not a one-off `<select>` in app code.
+
 ---
 
 ## Deployment

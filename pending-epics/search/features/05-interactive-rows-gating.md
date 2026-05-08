@@ -2,7 +2,7 @@
 epic: search
 status: done
 estimated-invariants: 7
-implemented-in-pr: https://github.com/alibehroozi/musy/pull/8
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/7
 ---
 
 # Feature 05: Interactive rows — explored, saved, sign-in gating

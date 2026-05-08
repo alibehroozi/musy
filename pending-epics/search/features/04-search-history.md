@@ -1,7 +1,8 @@
 ---
 epic: search
-status: pending
+status: done
 estimated-invariants: 6
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/6
 ---
 
 # Feature 04: Search history (per-user, infinite scroll, deduped)

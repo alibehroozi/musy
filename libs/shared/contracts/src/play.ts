@@ -25,3 +25,21 @@ export const ResolveResponse = z.object({
   expiresAt: z.string().datetime().nullable(),
 });
 export type ResolveResponse = z.infer<typeof ResolveResponse>;
+
+export const PlayEventSource = z.enum(["audius", "soundcloud", "radio-browser"]);
+export type PlayEventSource = z.infer<typeof PlayEventSource>;
+
+export const PlayStartedRequest = z.object({
+  source: PlayEventSource,
+  externalId: z.string().min(1),
+  snapshot: SongSnapshot,
+});
+export type PlayStartedRequest = z.infer<typeof PlayStartedRequest>;
+
+export const PlayCompletedRequest = z.object({
+  source: PlayEventSource,
+  externalId: z.string().min(1),
+  snapshot: SongSnapshot,
+  elapsedMs: z.number().int().nonnegative(),
+});
+export type PlayCompletedRequest = z.infer<typeof PlayCompletedRequest>;

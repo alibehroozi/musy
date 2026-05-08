@@ -18,13 +18,12 @@ export function SearchPage(): JSX.Element {
   return (
     <main className="flex flex-col h-full">
       {/* Sticky search input */}
-      <div className="sticky top-0 z-10 bg-bg px-4 pt-4 pb-3 border-b border-border">
+      <div className="sticky top-0 z-10 bg-bg px-3 pt-4 pb-3 border-b border-border">
         <Input
           variant="search"
           size="lg"
           placeholder="Search tracks, artists, stations…"
           value={query}
-          label="Search"
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onClear={clear}

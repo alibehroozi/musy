@@ -24,12 +24,7 @@ const variantStyles: Record<InputVariant, string> = {
     "bg-surface border border-border",
     "focus:outline-none focus:border-primary",
   ].join(" "),
-  search: [
-    "rounded-full",
-    "bg-border border border-transparent",
-    "focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20",
-    "font-medium",
-  ].join(" "),
+  search: "",
 };
 
 export function Input({
@@ -50,8 +45,51 @@ export function Input({
   const hasValue = value !== undefined && value !== "";
   const sz = sizeClasses[size];
 
+  if (isSearch) {
+    const clearBtn =
+      onClear !== undefined && hasValue ? (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear input"
+          className="flex-shrink-0 text-text-muted hover:text-text transition-colors p-1 -mr-1"
+        >
+          <X className={sz.icon} />
+        </button>
+      ) : null;
+
+    const containerCls = [
+      "w-full flex items-center gap-2",
+      size === "lg" ? "px-5 py-6 text-lg" : "px-4 py-4 text-md",
+      "rounded-2xl",
+      "bg-border border border-transparent",
+      "focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
+      "transition-colors",
+      className,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return (
+      <div className={containerCls}>
+        {label !== undefined && (
+          <label htmlFor={id} className="sr-only">
+            {label}
+          </label>
+        )}
+        <input
+          id={id}
+          value={value}
+          className="flex-1 min-w-0 bg-transparent outline-none text-text placeholder:text-text-muted font-medium"
+          {...rest}
+        />
+        {clearBtn}
+      </div>
+    );
+  }
+
   const prefixNode =
-    !isSearch && prefix !== undefined ? (
+    prefix !== undefined ? (
       <span
         aria-hidden
         className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
@@ -76,7 +114,7 @@ export function Input({
 
   const inputCls = [
     "w-full text-text placeholder:text-text-muted transition-colors",
-    variantStyles[variant],
+    variantStyles.default,
     sz.input,
     hasPrefixNode ? (size === "lg" ? "pl-10" : "pl-9") : "",
     clearBtn ? (size === "lg" ? "pr-12" : "pr-9") : "",

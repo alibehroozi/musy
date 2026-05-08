@@ -6,6 +6,7 @@ import { DeezerClient } from "./providers/deezer.client.js";
 import { RadioBrowserClient } from "./providers/radio-browser.client.js";
 import { GeniusClient } from "./providers/genius.client.js";
 import { SearchRepository } from "./search.repository.js";
+import { SearchHistoryRepository } from "./search-history.repository.js";
 
 const PROVIDER_TIMEOUT_MS = 2500;
 
@@ -19,11 +20,20 @@ export class SearchService {
     @Inject(RadioBrowserClient) private readonly radioBrowser: RadioBrowserClient,
     @Inject(GeniusClient) private readonly genius: GeniusClient,
     @Inject(SearchRepository) private readonly repository: SearchRepository,
+    @Inject(SearchHistoryRepository)
+    private readonly historyRepository: SearchHistoryRepository,
   ) {}
 
-  async search(rawQuery: string): Promise<SearchResponse> {
+  async search(rawQuery: string, userId?: string): Promise<SearchResponse> {
     const query = normalizeQuery(rawQuery);
     const hash = computeQueryHash(query);
+
+    // Best-effort history upsert — runs regardless of cache status
+    if (userId) {
+      this.historyRepository.upsert(userId, query).catch((err: unknown) => {
+        this.logger.warn(`History write failed: ${String(err)}`);
+      });
+    }
 
     const cached = await this.repository.findByHash(hash);
     if (cached) {

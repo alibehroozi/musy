@@ -6,6 +6,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import { buildPlayTestApp, type PlayTestAppHandle } from "../_helpers/play-test-app.js";
 
+const TEST_USER_ID = "550e8400-e29b-41d4-a716-446655440002";
+const TEST_GOOGLE_ID = "g_priv_test_117851234567890123456";
 const VALID_SNAPSHOT = { title: "Get Lucky", artist: "Daft Punk", kind: "track", durationSec: 249 };
 
 describe("PRIVACY-04: POST /play/started and POST /play/completed make no outgoing third-party HTTP requests; listening data stays within database tier", () => {
@@ -25,7 +27,7 @@ describe("PRIVACY-04: POST /play/started and POST /play/completed make no outgoi
     };
 
     try {
-      const token = h.authService.signSession({ uid: "user-1", gid: "g-1" });
+      const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
       await request(h.app.getHttpServer())
         .post("/api/play/started")
         .send({ source: "audius", externalId: "track-abc", snapshot: VALID_SNAPSHOT })
@@ -48,7 +50,7 @@ describe("PRIVACY-04: POST /play/started and POST /play/completed make no outgoi
     };
 
     try {
-      const token = h.authService.signSession({ uid: "user-1", gid: "g-1" });
+      const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
       await request(h.app.getHttpServer())
         .post("/api/play/completed")
         .send({

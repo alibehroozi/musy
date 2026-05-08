@@ -7,6 +7,8 @@ import request from "supertest";
 import { ErrorResponse } from "@moc/contracts";
 import { buildPlayTestApp, type PlayTestAppHandle } from "../_helpers/play-test-app.js";
 
+const TEST_USER_ID = "550e8400-e29b-41d4-a716-446655440000";
+const TEST_GOOGLE_ID = "g_test_117851234567890123456";
 const VALID_SNAPSHOT = { title: "Get Lucky", artist: "Daft Punk", kind: "track", durationSec: 249 };
 const VALID_STARTED_BODY = { source: "audius", externalId: "abc123", snapshot: VALID_SNAPSHOT };
 const VALID_COMPLETED_BODY = {
@@ -56,7 +58,7 @@ describe("API-09: POST /play/started and POST /play/completed require a valid se
 
   it("POST /play/started returns 204 with no body when authenticated and body is valid", async () => {
     h = await buildPlayTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g-user-1" });
+    const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/started")
       .send(VALID_STARTED_BODY)
@@ -68,7 +70,7 @@ describe("API-09: POST /play/started and POST /play/completed require a valid se
 
   it("POST /play/completed returns 204 with no body when authenticated and body is valid", async () => {
     h = await buildPlayTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g-user-1" });
+    const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/completed")
       .send(VALID_COMPLETED_BODY)
@@ -88,7 +90,7 @@ describe("API-10: Both endpoints validate body against Zod schemas; reject malfo
 
   it("POST /play/started returns 400 + ErrorResponse when source is missing", async () => {
     h = await buildPlayTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g-user-1" });
+    const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/started")
       .send({ externalId: "abc123", snapshot: VALID_SNAPSHOT })
@@ -100,7 +102,7 @@ describe("API-10: Both endpoints validate body against Zod schemas; reject malfo
 
   it("POST /play/started returns 400 + ErrorResponse when externalId is missing", async () => {
     h = await buildPlayTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g-user-1" });
+    const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/started")
       .send({ source: "audius", snapshot: VALID_SNAPSHOT })
@@ -112,7 +114,7 @@ describe("API-10: Both endpoints validate body against Zod schemas; reject malfo
 
   it("POST /play/started returns 400 + ErrorResponse when snapshot is malformed", async () => {
     h = await buildPlayTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g-user-1" });
+    const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/started")
       .send({ source: "audius", externalId: "abc123", snapshot: { title: "only title" } })
@@ -124,7 +126,7 @@ describe("API-10: Both endpoints validate body against Zod schemas; reject malfo
 
   it("POST /play/completed returns 400 + ErrorResponse when elapsedMs is negative", async () => {
     h = await buildPlayTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g-user-1" });
+    const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/completed")
       .send({ ...VALID_COMPLETED_BODY, elapsedMs: -1 })
@@ -136,7 +138,7 @@ describe("API-10: Both endpoints validate body against Zod schemas; reject malfo
 
   it("POST /play/completed returns 400 + ErrorResponse when elapsedMs is missing", async () => {
     h = await buildPlayTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g-user-1" });
+    const token = h.authService.signSession({ uid: TEST_USER_ID, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/completed")
       .send({ source: "audius", externalId: "abc123", snapshot: VALID_SNAPSHOT })
@@ -148,8 +150,8 @@ describe("API-10: Both endpoints validate body against Zod schemas; reject malfo
 
   it("a userId field in the request body is ignored — the record uses the session userId, not the body userId", async () => {
     h = await buildPlayTestApp();
-    const sessionUserId = "session-user-id";
-    const token = h.authService.signSession({ uid: sessionUserId, gid: "g-user-1" });
+    const sessionUserId = TEST_USER_ID;
+    const token = h.authService.signSession({ uid: sessionUserId, gid: TEST_GOOGLE_ID });
     const res = await request(h.app.getHttpServer())
       .post("/api/play/started")
       .send({ ...VALID_STARTED_BODY, userId: "attacker-user-id" })

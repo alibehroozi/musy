@@ -1,5 +1,10 @@
 import { Injectable, Logger, Inject } from "@nestjs/common";
-import type { PlayStartedRequest, PlayCompletedRequest, ResolveResponse } from "@moc/contracts";
+import type {
+  PlayStartedRequest,
+  PlayCompletedRequest,
+  ResolveResponse,
+  SongSnapshot,
+} from "@moc/contracts";
 import { computeSnapshotHash } from "@moc/api-core";
 import { AudiusStreamClient } from "./providers/audius-stream.client.js";
 import { SoundCloudStreamClient } from "./providers/soundcloud-stream.client.js";

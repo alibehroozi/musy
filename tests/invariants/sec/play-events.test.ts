@@ -6,6 +6,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import { buildPlayTestApp, type PlayTestAppHandle } from "../_helpers/play-test-app.js";
 
+const USER_A_ID = "550e8400-e29b-41d4-a716-446655440001";
+const USER_A_GID = "g_user_a_117851234567890123456";
 const VALID_SNAPSHOT = { title: "Get Lucky", artist: "Daft Punk", kind: "track", durationSec: 249 };
 
 describe("SEC-07: User A's session cannot write to user B's interest_scores or listening_events by body field manipulation", () => {
@@ -17,8 +19,8 @@ describe("SEC-07: User A's session cannot write to user B's interest_scores or l
 
   it("a userId field in the POST /play/started body is ignored; record uses session userId", async () => {
     h = await buildPlayTestApp();
-    const sessionUserId = "real-session-user";
-    const token = h.authService.signSession({ uid: sessionUserId, gid: "g-real" });
+    const sessionUserId = USER_A_ID;
+    const token = h.authService.signSession({ uid: sessionUserId, gid: USER_A_GID });
     await request(h.app.getHttpServer())
       .post("/api/play/started")
       .send({
@@ -36,8 +38,8 @@ describe("SEC-07: User A's session cannot write to user B's interest_scores or l
 
   it("a userId field in the POST /play/completed body is ignored; record uses session userId", async () => {
     h = await buildPlayTestApp();
-    const sessionUserId = "real-session-user";
-    const token = h.authService.signSession({ uid: sessionUserId, gid: "g-real" });
+    const sessionUserId = USER_A_ID;
+    const token = h.authService.signSession({ uid: sessionUserId, gid: USER_A_GID });
     await request(h.app.getHttpServer())
       .post("/api/play/completed")
       .send({
@@ -56,8 +58,8 @@ describe("SEC-07: User A's session cannot write to user B's interest_scores or l
 
   it("user A cannot overwrite user B's interest_scores by supplying user B's songKey + user A's session", async () => {
     h = await buildPlayTestApp();
-    const userAId = "user-a";
-    const tokenA = h.authService.signSession({ uid: userAId, gid: "g-a" });
+    const userAId = USER_A_ID;
+    const tokenA = h.authService.signSession({ uid: userAId, gid: USER_A_GID });
 
     await request(h.app.getHttpServer())
       .post("/api/play/started")

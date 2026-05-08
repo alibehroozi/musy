@@ -78,7 +78,12 @@ jobs:
         # the OS-level libs Playwright needs on the runner. Cached across
         # runs by setup-node's npm cache plus Playwright's own cache dir
         # is short-lived; this step takes ~30s on a cold cache, ~5s warm.
-        run: npx playwright install chromium --with-deps
+        # Run via the apps/web workspace because @playwright/test is pinned
+        # to 1.47.x there (matches lost-pixel's playwright-core@1.47.2). With
+        # that pin, npm doesn't hoist `playwright` to the root .bin dir, so
+        # `npx playwright` from the repo root fails with `playwright: not
+        # found`. `npm exec --workspace apps/web` resolves it correctly.
+        run: npm exec --workspace apps/web -- playwright install chromium --with-deps
 
       - name: Bring up MongoDB (matches /prepare-local step 4)
         run: docker compose up -d mongo

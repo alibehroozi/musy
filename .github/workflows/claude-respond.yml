@@ -59,8 +59,9 @@ jobs:
       - run: npm ci
 
       - name: Install Playwright browsers
-        # For Layer 2 visual regression — same as auto-feature.
-        run: npx playwright install chromium --with-deps
+        # For Layer 2 visual regression — same as auto-feature. See note
+        # there for why this goes through the apps/web workspace.
+        run: npm exec --workspace apps/web -- playwright install chromium --with-deps
 
       - name: Bring up MongoDB
         run: docker compose up -d mongo

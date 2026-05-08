@@ -177,7 +177,7 @@ First run will fail (no baselines). On the first commit that adds the spec, run 
 
     Land them in one `chore(setup): cascade <var-or-thing> across env files + workflows` commit (or split per-file if the change is large). **Forgetting any one of the four breaks either local dev or CI.** If no env / local-dev change, skip this step entirely.
 
-11. **Mark the product-spec feature file done (if applicable).** If this run consumed a `product-specs/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` in the same commit.
+11. **Mark the product-spec feature file done (if applicable).** If this run consumed a `product-specs/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` **and delete the entire `product-specs/<epic>/design/` folder** in the same commit — `/epic-plan`'s mockups have served their planning purpose; keeping them past implementation just rots as the real UI drifts from the planning sketches.
 
 12. **Open PR** against `main` with title `task: <short title>`. Body lists:
 

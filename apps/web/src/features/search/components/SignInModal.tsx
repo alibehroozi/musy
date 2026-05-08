@@ -1,4 +1,5 @@
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect } from "react";
+import { Modal, Button } from "@moc/design-system";
 import { useAuthContext } from "../../../contexts/AuthContext.js";
 import { GOOGLE_LOGIN_URL, fetchMe } from "../../auth/api.js";
 
@@ -21,7 +22,6 @@ function GoogleIcon(): JSX.Element {
 
 export function SignInModal({ open, onClose }: SignInModalProps): JSX.Element | null {
   const { state, refresh } = useAuthContext();
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (state.status === "authenticated" && open) {
@@ -42,91 +42,28 @@ export function SignInModal({ open, onClose }: SignInModalProps): JSX.Element | 
     return () => clearInterval(id);
   }, [open, state.status, refresh]);
 
-  useEffect(() => {
-    if (!open) return;
-    function handleKey(e: globalThis.KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  function handleBackdropClick(e: MouseEvent<HTMLDivElement>) {
-    if (e.target === e.currentTarget) onClose();
-  }
-
-  function handleBackdropKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Enter" || e.key === " ") onClose();
-  }
-
   return (
-    <div
-      role="presentation"
-      className="fixed inset-0 z-modal flex items-center justify-center px-6"
-      onClick={handleBackdropClick}
-      onKeyDown={handleBackdropKeyDown}
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="To continue, sign in"
+      variant="center"
+      testId="sign-in-modal"
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-hidden />
-
-      {/* Card */}
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sign-in-title"
-        ref={dialogRef}
-        data-testid="sign-in-modal"
-        className="relative w-full max-w-xs bg-white rounded-2xl shadow-lg overflow-hidden"
-      >
-        {/* Close button */}
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+      <div className="flex flex-col items-center gap-4 pb-2">
+        <p className="text-sm text-center text-text-muted">
+          Save songs and shape your taste profile
+        </p>
+        <Button
+          variant="secondary"
+          size="lg"
+          className="w-full"
+          onClick={() => { window.open(GOOGLE_LOGIN_URL, "_blank", "noopener,noreferrer"); }}
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-            <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-        </button>
-
-        {/* Top accent bar */}
-        <div className="h-1 w-full bg-gradient-to-r from-[#EA4335] via-[#FBBC05] to-[#4285F4]" aria-hidden />
-
-        {/* Content */}
-        <div className="px-6 pt-8 pb-7 flex flex-col items-center text-center gap-5">
-          {/* Logo mark */}
-          <div className="w-14 h-14 rounded-full bg-gray-50 flex items-center justify-center shadow-sm">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path d="M9 18V5l12-2v13" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="6" cy="18" r="3" stroke="#6b7280" strokeWidth="1.5" />
-              <circle cx="18" cy="16" r="3" stroke="#6b7280" strokeWidth="1.5" />
-            </svg>
-          </div>
-
-          {/* Heading */}
-          <div className="flex flex-col gap-1.5">
-            <p id="sign-in-title" className="text-gray-900 text-base font-semibold leading-snug">
-              To continue, sign in using<br />your Google account
-            </p>
-            <p className="text-gray-400 text-xs leading-relaxed">
-              Save songs and shape your taste profile
-            </p>
-          </div>
-
-          {/* Google button — opens in system browser so PWA context is preserved */}
-          <button
-            type="button"
-            onClick={() => { window.open(GOOGLE_LOGIN_URL, "_blank", "noopener,noreferrer"); }}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 rounded-xl py-3 px-4 text-gray-700 text-sm font-medium shadow-sm hover:bg-gray-50 hover:shadow-md active:scale-95 transition-all"
-          >
-            <GoogleIcon />
-            <span>Sign in with Google</span>
-          </button>
-        </div>
+          <GoogleIcon />
+          Sign in with Google
+        </Button>
       </div>
-    </div>
+    </Modal>
   );
 }

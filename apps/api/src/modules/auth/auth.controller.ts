@@ -70,7 +70,7 @@ export class AuthController {
 
     res.clearCookie(STATE_COOKIE_NAME, this.authService.stateClearCookieOptions());
     res.cookie(SESSION_COOKIE_NAME, sessionJwt, this.authService.sessionCookieOptions());
-    res.redirect(this.authService.webOrigin);
+    res.redirect(`${this.authService.webOrigin}/auth/callback`);
   }
 
   @Get("me")

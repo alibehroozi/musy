@@ -1,4 +1,8 @@
 import { type ReactNode, useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { IconButton } from "../IconButton/IconButton.js";
+import { Icon } from "../Icon/Icon.js";
+
+export type ModalVariant = "sheet" | "center";
 
 export interface ModalProps {
   open: boolean;
@@ -6,9 +10,21 @@ export interface ModalProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** "sheet" slides up from bottom on mobile; "center" is always centered. Default: "sheet" */
+  variant?: ModalVariant;
+  /** data-testid applied to the dialog element */
+  testId?: string;
 }
 
-export function Modal({ open, onClose, title, children, footer }: ModalProps): JSX.Element | null {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  variant = "sheet",
+  testId,
+}: ModalProps): JSX.Element | null {
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -64,52 +80,44 @@ export function Modal({ open, onClose, title, children, footer }: ModalProps): J
     if (e.key === "Enter" || e.key === " ") onClose();
   }
 
+  const isCenter = variant === "center";
+
+  const wrapperCls = [
+    "fixed inset-0 z-modal flex justify-center",
+    isCenter ? "items-center px-6" : "items-end sm:items-center",
+  ].join(" ");
+
+  const dialogCls = isCenter
+    ? "relative z-modal w-full max-w-xs bg-white rounded-2xl shadow-lg overflow-hidden"
+    : "relative z-modal w-full sm:max-w-sm bg-surface rounded-t-lg sm:rounded-lg shadow-lg pb-[env(safe-area-inset-bottom)]";
+
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-modal flex items-end sm:items-center justify-center"
+      className={wrapperCls}
       onClick={handleBackdropClick}
       onKeyDown={handleBackdropKeyDown}
     >
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-bg/80" aria-hidden />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-hidden />
 
-      {/* Sheet */}
+      {/* Dialog */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
         ref={dialogRef}
-        className="relative z-modal w-full sm:max-w-sm bg-surface rounded-t-lg sm:rounded-lg shadow-lg pb-[env(safe-area-inset-bottom)]"
-        data-testid="sign-in-modal"
+        className={dialogCls}
+        data-testid={testId}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
-          <p id="modal-title" className="text-lg font-semibold text-text">
+          <p id="modal-title" className="text-base font-semibold text-text">
             {title}
           </p>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="p-2 text-text-muted hover:text-text transition-colors rounded"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <IconButton label="Close" size="sm" onClick={onClose}>
+            <Icon name="x" size={16} />
+          </IconButton>
         </div>
 
         {/* Body */}

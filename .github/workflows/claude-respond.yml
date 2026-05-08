@@ -98,13 +98,13 @@ jobs:
       - name: Run Claude Code
         # Same auth as auto-feature: Pro OAuth token + the Claude Code
         # GitHub App. The action auto-detects the trigger event and reads
-        # the comment / review body as the prompt — no `prompt:` input
-        # needed for this responder pattern.
+        # the comment / review body as the user task; the `prompt:` below
+        # gets *prepended* to that, giving the agent project context
+        # before it acts on the comment.
         #
-        # claude_args: --dangerously-skip-permissions for the same reason
-        # as auto-feature (no human to approve permission prompts in CI).
-        # show_full_output: true so the runner log shows what Claude
-        # actually did in response to your comment.
+        # Without this prompt, the agent treats short comments literally
+        # ("@claude make it blue" → hard-codes a color) and skips the
+        # design-system / layering / micro-commit rules.
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -112,6 +112,66 @@ jobs:
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
           claude_args: --dangerously-skip-permissions
           show_full_output: true
+          prompt: |
+            You're responding to an @claude mention on a PR. Your task is
+            the body of that comment / review. Before acting on it,
+            ground yourself in the project spec.
+
+            ## CI override on slash-command pauses (read first)
+            Every "wait for sign-off" / "stop and wait" / "stop and ask" /
+            "get user approval" / "loop until approved" instruction inside
+            any `.claude/commands/*.md` is **auto-approved** here. The
+            user's comment is the recorded approval. Proceed without
+            pausing — there's no human to answer.
+
+            ## Read the project spec first
+            Before any change, read:
+              - `AGENTS.md` — hard rules (commit discipline, layering,
+                privacy, design-system conformance, etc.)
+              - `ARCHITECTURE.md` — per-package layout, when-to-use-what
+              - `DESIGN.md` — design system token reference + component
+                catalog
+              - The PR diff and any earlier @claude responses in the
+                thread (so you build on prior work, not duplicate it)
+
+            ## Hard rules that apply to every comment-driven change
+            - **#8 Conform to `ARCHITECTURE.md`.** Layering, file roles,
+              when-to-use-what. Don't reach across layers.
+            - **#10 Micro-commits.** spec → tests → code by layer. Each
+              commit conventional: `feat(<scope>):`, `fix(<scope>):`,
+              `change(<scope>):`, `refactor(<scope>):`, `test(<scope>):`,
+              `spec:`, `docs(<scope>):`.
+            - **Design system gate.** For any UI change: use components
+              from `@moc/design-system`. **Never** hard-code colors,
+              spacing, radii, or font sizes — use Tailwind utilities that
+              resolve to tokens (`bg-primary`, `p-4`, `rounded-md`,
+              `text-md`). If the change needs a component the catalog
+              doesn't have, run `/design-system` to add it FIRST in
+              separate commits, then apply it. "I'll just inline this
+              one button" is the warning sign — stop and add to the DS.
+            - **TDD.** Test before source when behavior changes. Fix
+              source, never weaken tests.
+
+            ## What you do, what you don't
+            - You push follow-up commits to the **PR's branch** (already
+              checked out by the action).
+            - You **reply in the comment thread** when done: what you
+              changed, the commit hashes, `npm run verify` result.
+            - **Don't open new PRs.** This is a follow-up on an existing
+              one.
+            - **Don't merge the PR.** That's the human gate.
+
+            ## Process
+            1. Read the comment to understand what's being asked.
+            2. Read `AGENTS.md`, `ARCHITECTURE.md`, `DESIGN.md`, and the
+               PR diff (`gh pr diff`).
+            3. Plan the change against the rules above. If a UI piece
+               needs a missing DS component, surface that before coding
+               and run `/design-system` first.
+            4. Make the changes, committing per the discipline.
+            5. Run `npm run verify` once at the branch HEAD before
+               pushing.
+            6. `git push`. Reply in the comment thread summarizing.
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

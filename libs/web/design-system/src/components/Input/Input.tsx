@@ -61,9 +61,8 @@ export function Input({
     const containerCls = [
       "w-full flex items-center gap-2",
       size === "lg" ? "px-4 py-2 text-lg" : "px-4 py-2 text-md",
-      "rounded-2xl",
+      "rounded-sm",
       "bg-border border border-transparent",
-      "focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
       "transition-colors",
       className,
     ]

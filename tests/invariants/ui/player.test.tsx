@@ -27,9 +27,13 @@ function idleCtx(): PlayerContextValue {
   return {
     engineState: { status: "idle" },
     progressFraction: 0,
+    isExpanded: false,
     playSnapshot: vi.fn(),
     togglePlay: vi.fn(),
     dismissFailed: vi.fn(),
+    expandPlayer: vi.fn(),
+    collapsePlayer: vi.fn(),
+    seekToFraction: vi.fn(),
   };
 }
 
@@ -37,9 +41,13 @@ function playingCtx(): PlayerContextValue {
   return {
     engineState: { status: "playing", ctx: TRACK_CTX },
     progressFraction: 0.4,
+    isExpanded: false,
     playSnapshot: vi.fn(),
     togglePlay: vi.fn(),
     dismissFailed: vi.fn(),
+    expandPlayer: vi.fn(),
+    collapsePlayer: vi.fn(),
+    seekToFraction: vi.fn(),
   };
 }
 
@@ -47,9 +55,13 @@ function pausedCtx(): PlayerContextValue {
   return {
     engineState: { status: "paused", ctx: TRACK_CTX },
     progressFraction: 0.4,
+    isExpanded: false,
     playSnapshot: vi.fn(),
     togglePlay: vi.fn(),
     dismissFailed: vi.fn(),
+    expandPlayer: vi.fn(),
+    collapsePlayer: vi.fn(),
+    seekToFraction: vi.fn(),
   };
 }
 

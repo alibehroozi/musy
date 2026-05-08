@@ -1,9 +1,11 @@
 import { Injectable, Logger, Inject } from "@nestjs/common";
-import type { ResolveResponse, SongSnapshot } from "@moc/contracts";
+import type { PlayStartedRequest, PlayCompletedRequest, ResolveResponse } from "@moc/contracts";
 import { computeSnapshotHash } from "@moc/api-core";
 import { AudiusStreamClient } from "./providers/audius-stream.client.js";
 import { SoundCloudStreamClient } from "./providers/soundcloud-stream.client.js";
 import { PlayRepository } from "./play.repository.js";
+import { InterestScoresRepository } from "./interest-scores.repository.js";
+import { ListeningEventsRepository } from "./listening-events.repository.js";
 
 const PROVIDER_TIMEOUT_MS = 4_000;
 
@@ -15,7 +17,31 @@ export class PlayService {
     @Inject(AudiusStreamClient) private readonly audiusClient: AudiusStreamClient,
     @Inject(SoundCloudStreamClient) private readonly soundcloudClient: SoundCloudStreamClient,
     @Inject(PlayRepository) private readonly repository: PlayRepository,
+    @Inject(InterestScoresRepository)
+    private readonly interestScores: InterestScoresRepository,
+    @Inject(ListeningEventsRepository)
+    private readonly listeningEvents: ListeningEventsRepository,
   ) {}
+
+  async recordStarted(userId: string, body: PlayStartedRequest): Promise<void> {
+    await Promise.all([
+      this.listeningEvents.insert(userId, body.source, body.externalId, "started", 0),
+      this.interestScores.upsert(userId, body.source, body.externalId, body.snapshot, "started"),
+    ]);
+  }
+
+  async recordCompleted(userId: string, body: PlayCompletedRequest): Promise<void> {
+    await Promise.all([
+      this.listeningEvents.insert(
+        userId,
+        body.source,
+        body.externalId,
+        "completed",
+        body.elapsedMs,
+      ),
+      this.interestScores.upsert(userId, body.source, body.externalId, body.snapshot, "completed"),
+    ]);
+  }
 
   async resolve(snapshot: SongSnapshot): Promise<ResolveResponse> {
     const hash = computeSnapshotHash(snapshot);

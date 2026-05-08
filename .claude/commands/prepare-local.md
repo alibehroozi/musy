@@ -238,9 +238,16 @@ Stop at the first blocker; don't continue probing past a hard failure.
 
 ## Maintenance contract
 
-This command is **the canonical local-dev bring-up procedure**. When other commands change local-dev requirements, they must update this file in the same PR.
+This command is **one of four** places local-dev requirements live (per AGENTS.md hard rule #9 — the cascade). When env vars, docker services, ports, system deps, or init steps change anywhere, all four update in the same PR:
 
-Triggers that require updating this command:
+1. `apps/<api|web>/.env.example` — committed template
+2. `.claude/commands/prepare-local.md` — this file
+3. `.github/workflows/auto-feature.yml` — "Seed CI .env.local files" heredoc
+4. `.github/workflows/claude-respond.yml` — same seed step (mirror)
+
+Forgetting any one breaks either local dev (env var missing on a fresh checkout) or CI (NestJS `getOrThrow("X")` crashes at module init before tests start).
+
+Triggers that require updating **this file specifically**:
 
 | If a change adds/modifies…                                               | Update here                                                                                                      |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
@@ -251,4 +258,4 @@ Triggers that require updating this command:
 | A new app-level port that must be writable to `.env.local`               | Add it as an **owned key** in Step 3b, include it in the lock-step group with whichever paired key it relates to |
 | A new auto-init step (DB seed, migration, fixture)                       | Add the step here                                                                                                |
 
-If you ever run `/prepare-local` and find the green output doesn't actually mean `npm run dev` works, that's a bug — fix this command and whatever recent change forgot to update it.
+If you ever run `/prepare-local` and find the green output doesn't actually mean `npm run dev` works, that's a bug — fix this command and whatever recent change forgot to update it. Same applies to CI: if a workflow run hits a `getOrThrow("X")` crash, the cascade was broken — go fix all four places, not just the workflow seed.

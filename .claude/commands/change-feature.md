@@ -51,7 +51,13 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
 
 10. **Manually exercise** the changed behavior **and the surrounding feature**. Regressions in adjacent areas are the most common failure mode of change tasks. Click through related UI; hit related endpoints.
 
-11. **Update `/prepare-local` if local-dev requirements changed.** Did this change add/modify a docker service, env var, port, or system dep? If yes, commit `chore(setup): update /prepare-local for <reason>` separately.
+11. **Cascade env / local-dev changes (per AGENTS.md hard rule #9).** Did this change add, rename, change the meaning of, or remove an environment variable? Add / change a docker service, port, system dep, or init step? If yes, the change ripples to **all four** of:
+    - `apps/<api|web>/.env.example` — add / rename / remove with a one-line comment
+    - `.claude/commands/prepare-local.md` — Step 3 (owned-keys, fresh-write template, validation, summary), Step 4 / 5 if service / port / URL changed
+    - `.github/workflows/auto-feature.yml` — "Seed CI .env.local files" heredoc
+    - `.github/workflows/claude-respond.yml` — same seed step
+
+    Land in one `chore(setup): cascade <var-or-thing> across env files + workflows` commit (or split per-file if large). Forgetting any of the four breaks either local dev or CI. If no env / local-dev change, skip.
 
 12. **PR title:** `change: <short description>`. PR body must list:
 

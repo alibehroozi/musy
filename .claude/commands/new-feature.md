@@ -137,7 +137,13 @@ First run will fail (no baselines). On the first commit that adds the spec, run 
    - Use the feature in the browser / via curl
    - Confirm Mongo Express (http://localhost:8181) shows the expected docs
 
-10. **Update `/prepare-local` if local-dev requirements changed.** Did this feature add a new docker service, a new required env var, a new system dep, a new port, or a new init step? If yes, commit `chore(setup): update /prepare-local for <reason>` separately. If no, skip.
+10. **Cascade env / local-dev changes (per AGENTS.md hard rule #9).** Did this feature add, rename, change the meaning of, or remove an environment variable? Add a docker service / port / system dep / init step? If yes, the change ripples to **all four** of:
+    - `apps/<api|web>/.env.example` — add / rename / remove the line, one-line comment per key
+    - `.claude/commands/prepare-local.md` — Step 3 (owned-keys list, fresh-write template, validation list, status summary), Step 4 / Step 5 if a service / port / URL changed
+    - `.github/workflows/auto-feature.yml` — the "Seed CI .env.local files" heredoc
+    - `.github/workflows/claude-respond.yml` — same seed step (mirror)
+
+    Land them in one `chore(setup): cascade <var-or-thing> across env files + workflows` commit (or split per-file if the change is large). **Forgetting any one of the four breaks either local dev or CI.** If no env / local-dev change, skip this step entirely.
 
 11. **Mark the pending-epic feature file done (if applicable).** If this run consumed a `pending-epics/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` in the same commit.
 

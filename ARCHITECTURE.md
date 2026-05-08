@@ -402,6 +402,8 @@ Three concentric rings, cheap to expensive:
 
 `/new-feature`, `/change-feature`, `/design-system`, and `/debug-local` all consume the visual layer the same way: the failure surfaces in `npm run verify`, the agent decides regenerate-vs-fix per the rule above, both code and PNGs land in the same PR.
 
+**Auth is mocked universally** in Playwright specs via `apps/web/tests/e2e/fixtures.ts`. Every test starts authenticated as a stable `TEST_USER` so feature tests focus on the feature, not the sign-in dance. Specs **must** import `test` and `expect` from `./fixtures.js` — never directly from `@playwright/test`. To test unauthenticated UX (sign-in page, redirects), opt out per describe block with `test.use({ authed: false })`. The fixture only mocks `/api/me`; feature-specific endpoints stay the test's responsibility (mock with `page.route(...)` in the test or a `beforeEach`).
+
 ---
 
 ## Deployment

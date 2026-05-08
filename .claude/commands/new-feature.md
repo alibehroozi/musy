@@ -68,17 +68,31 @@ The user can describe the feature in two ways:
 
 Rules:
 
+- **Always import from `./fixtures.js`, never directly from `@playwright/test`.** The shared fixture mocks auth universally — every test starts authenticated as `TEST_USER` (a stable fake account) so feature tests focus on the feature's behavior, not the sign-in dance. To test unauthenticated UX, override per `test.describe` with `test.use({ authed: false })`.
+- The auth fixture only mocks `/api/me`. Feature-specific endpoints (search, history, taste profile, …) are the test's responsibility — mock them with `page.route('**/api/<endpoint>', r => r.fulfill({ ... }))` inside each test or in a `test.beforeEach`.
 - Use accessible selectors only (`page.getByRole`, `page.getByLabel`, `page.getByText`). **Never CSS selectors** — they couple the test to implementation, not behavior.
 - One spec file per feature (`apps/web/tests/e2e/<feature-slug>.spec.ts`), one `test.describe` block per feature.
 - Wait on observable state (`expect(page.getByText(...)).toBeVisible()`), not timers (`page.waitForTimeout`).
 - Snapshot fullPage only when layout matters end-to-end; prefer scoped element snapshots (`expect(page.getByRole('main')).toHaveScreenshot(...)`) when a header / nav is irrelevant to the feature.
 
-Pattern:
+Pattern (note the import — `./fixtures.js`, not `@playwright/test`):
 
 ```ts
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 
 test.describe("search", () => {
+  // Mock the feature's own API. Auth (/api/me) is already mocked by the
+  // fixture since `authed` defaults to true.
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/api/search**", (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ results: [{ id: "1", title: "Beatles" }] }),
+      }),
+    );
+  });
+
   test("empty state — initial visit", async ({ page }) => {
     await page.goto("/search");
     await expect(page).toHaveScreenshot("search-empty.png");
@@ -93,12 +107,23 @@ test.describe("search", () => {
   });
 
   test("network error — toast surfaces", async ({ page }) => {
+    // Override the beforeEach mock for just this test.
     await page.route("**/api/search**", (r) => r.abort());
     await page.goto("/search");
     await page.getByRole("searchbox").fill("anything");
     await page.getByRole("searchbox").press("Enter");
     await expect(page.getByRole("status")).toContainText(/error/i);
     await expect(page).toHaveScreenshot("search-error.png");
+  });
+
+  // Unauthenticated variant — opt out of the default auth mock.
+  test.describe("not signed in", () => {
+    test.use({ authed: false });
+
+    test("redirects to sign-in", async ({ page }) => {
+      await page.goto("/search");
+      await expect(page).toHaveScreenshot("search-signin.png");
+    });
   });
 });
 ```

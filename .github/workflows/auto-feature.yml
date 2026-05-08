@@ -73,6 +73,13 @@ jobs:
 
       - run: npm ci
 
+      - name: Install Playwright browsers
+        # Layer 2 visual regression needs Chromium. --with-deps installs
+        # the OS-level libs Playwright needs on the runner. Cached across
+        # runs by setup-node's npm cache plus Playwright's own cache dir
+        # is short-lived; this step takes ~30s on a cold cache, ~5s warm.
+        run: npx playwright install chromium --with-deps
+
       - name: Bring up MongoDB (matches /prepare-local step 4)
         run: docker compose up -d mongo
 
@@ -208,6 +215,38 @@ jobs:
                branch, before `git push`. Per-commit verify is ~5x the
                wallclock cost for no real safety gain (the discipline only
                requires HEAD green).
+
+               After `npm run verify` is green, run `npm run verify:visual`
+               for the Layer 1 (Lost Pixel / Ladle stories) and Layer 2
+               (Playwright / pages) visual regression checks. Three
+               outcomes to react to:
+
+                 a. **Both green.** Push and continue.
+
+                 b. **Failure + this is a UI change called for in the
+                    feature file** (e.g. the file says "add a Tooltip
+                    component" or "update Button hover color"). The
+                    visual diff IS the intended change. Regenerate the
+                    *specific* failing baselines:
+                      - Lost Pixel: `npm run test:visual:ds:update`
+                      - Playwright: `npm run test:visual:web:update`
+                    Then re-run the comparison to confirm green. Commit
+                    the new baselines as `feat(visual): regenerate
+                    baselines for <feature>` (PNGs land alongside code).
+                    Per AGENTS.md hard rule #12: regenerate baselines
+                    ONLY when the diff is unambiguously the intended
+                    change. If you're unsure, treat it as case (c).
+
+                 c. **Failure + the feature file didn't ask for a UI
+                    change** (e.g. a backend feature broke a layout, or
+                    a stray className change drifted off-token). Code is
+                    wrong by default. Fix the source. Don't regenerate.
+
+                 d. **First-run / no baselines exist yet.** A fresh epic
+                    that hasn't been bootstrapped. Run the `:update`
+                    scripts once, commit baselines as
+                    `chore(visual): bootstrap baselines for <feature>`,
+                    then proceed. Subsequent runs compare against them.
             7. Open the PR via `gh pr create` using GITHUB_TOKEN.
                **Always pass `--title` and `--body` non-interactively** —
                never let the command open an editor (it'll hang forever in

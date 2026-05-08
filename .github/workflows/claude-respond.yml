@@ -58,6 +58,10 @@ jobs:
 
       - run: npm ci
 
+      - name: Install Playwright browsers
+        # For Layer 2 visual regression — same as auto-feature.
+        run: npx playwright install chromium --with-deps
+
       - name: Bring up MongoDB
         run: docker compose up -d mongo
 
@@ -149,6 +153,14 @@ jobs:
               doesn't have, run `/design-system` to add it FIRST in
               separate commits, then apply it. "I'll just inline this
               one button" is the warning sign — stop and add to the DS.
+            - **#12 Visual baselines are sacred until proven intentional.**
+              When `npm run verify:visual` fails (Lost Pixel for Ladle
+              stories, Playwright for app pages), default conclusion is
+              code is wrong. Regenerate baselines (`test:visual:ds:update`
+              / `test:visual:web:update`) ONLY when the diff matches the
+              UI change the user's comment explicitly asked for.
+              Regenerate the *specific* failing baselines, never blanket.
+              If unsure, fix the code, not the baseline.
             - **TDD.** Test before source when behavior changes. Fix
               source, never weaken tests.
 
@@ -169,9 +181,16 @@ jobs:
                needs a missing DS component, surface that before coding
                and run `/design-system` first.
             4. Make the changes, committing per the discipline.
-            5. Run `npm run verify` once at the branch HEAD before
-               pushing.
-            6. `git push`. Reply in the comment thread summarizing.
+            5. Run `npm run verify` once at the branch HEAD. Then run
+               `npm run verify:visual` (Layers 1+2). On a visual
+               failure, apply the regenerate-vs-fix decision tree from
+               hard rule #12: regenerate ONLY if the user's comment
+               asked for that exact UI change; otherwise fix code.
+               When you regenerate baselines, commit them as
+               `feat(visual): regenerate baselines for <change>`.
+            6. `git push`. Reply in the comment thread summarizing what
+               you changed, the commit hashes, and verify + visual
+               results.
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

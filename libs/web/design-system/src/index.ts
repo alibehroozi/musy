@@ -18,3 +18,6 @@ export type { InputProps, InputVariant, InputSize } from "./components/Input/Inp
 
 export { ResultRow } from "./components/ResultRow/ResultRow.js";
 export type { ResultRowProps } from "./components/ResultRow/ResultRow.js";
+
+export { ListItemButton } from "./components/ListItemButton/ListItemButton.js";
+export type { ListItemButtonProps } from "./components/ListItemButton/ListItemButton.js";

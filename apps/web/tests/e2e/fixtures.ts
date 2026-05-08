@@ -7,7 +7,7 @@ import { ErrorResponse, User } from "@moc/contracts";
  *
  * Two responsibilities:
  *
- *   1. **Auth** — every test starts authenticated as `TEST_USER`. `/api/me`
+ *   1. **Auth** — every test starts authenticated as `TEST_USER`. `/api/auth/me`
  *      is intercepted to return 200 + the user payload by default. Test
  *      unauthenticated UX with `test.use({ authed: false })` per
  *      describe block.
@@ -21,7 +21,7 @@ import { ErrorResponse, User } from "@moc/contracts";
  *      responses for exactly this reason.
  *
  * Specs MUST import from this file, never directly from
- * `@playwright/test`. The fixture only mocks `/api/me`; feature-
+ * `@playwright/test`. The fixture only mocks `/api/auth/me`; feature-
  * specific endpoints (search, history, taste, …) stay the test's
  * responsibility — mock them via `mockJsonRoute` in `beforeEach` or
  * per-test.
@@ -125,7 +125,7 @@ export const test = base.extend<AuthFixtures>({
   authed: [true, { option: true }],
 
   page: async ({ page, authed }, use) => {
-    await page.route("**/api/me", async (route) => {
+    await page.route("**/api/auth/me", async (route) => {
       if (authed) {
         await route.fulfill({
           status: 200,

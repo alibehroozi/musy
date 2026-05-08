@@ -1,24 +1,34 @@
 import {
   AlertTriangle,
+  ChevronDown,
   ChevronUp,
   Clock,
   Compass,
   Heart,
+  MoreHorizontal,
   Pause,
   Play,
+  Radio,
   Search,
+  SkipBack,
+  SkipForward,
   X,
 } from "lucide-react";
 
 const LUCIDE_ICONS = {
   "alert-triangle": AlertTriangle,
+  "chevron-down": ChevronDown,
   "chevron-up": ChevronUp,
   clock: Clock,
   compass: Compass,
   heart: Heart,
+  "more-horizontal": MoreHorizontal,
   pause: Pause,
   play: Play,
+  radio: Radio,
   search: Search,
+  "skip-back": SkipBack,
+  "skip-forward": SkipForward,
   x: X,
 } as const;
 

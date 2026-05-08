@@ -27,3 +27,6 @@ export type { IconButtonProps } from "./components/IconButton/IconButton.js";
 
 export { MiniPlayer } from "./components/MiniPlayer/MiniPlayer.js";
 export type { MiniPlayerProps } from "./components/MiniPlayer/MiniPlayer.js";
+
+export { ProgressSlider } from "./components/ProgressSlider/ProgressSlider.js";
+export type { ProgressSliderProps } from "./components/ProgressSlider/ProgressSlider.js";

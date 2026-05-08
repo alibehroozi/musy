@@ -39,10 +39,40 @@ Read [`DESIGN.md`](../../DESIGN.md) for the catalog and token reference, and the
    - `npm --workspace libs/web/design-system run stories` to eyeball the story locally — at least skim each variant
    - `npm run verify` at the root must be green at the branch HEAD (Layer 1 + 2)
    - `npm run verify:visual` — runs both `test:visual:ds` (Lost Pixel against Ladle stories) **and** `test:visual:web` (Playwright snapshots of apps/web pages). DS changes routinely cascade into apps/web — a token tweak or component restyling shifts every page that consumes it — so checking only the DS half lets app-level regressions through. **Always run the full `verify:visual`, never just `test:visual:ds`.**
-   - **First-run / regenerate flow:** if a snapshot fails, apply the regenerate-vs-fix decision tree (AGENTS.md hard rule #12). When the diff is intended:
-     - DS-side: `npm run test:visual:ds:update` regenerates Lost Pixel baselines under `libs/web/design-system/.lostpixel/baseline/`.
-     - Web-side: `npm run test:visual:web:update` regenerates Playwright snapshots under `apps/web/`.
-     - Commit only the snapshots that actually correspond to your change as `feat(visual): regenerate baselines for <Name>`. Never blanket-update unrelated snapshots — that masks real regressions.
+   - **First-run / regenerate flow:** if a snapshot fails, apply the regenerate-vs-fix decision tree (AGENTS.md hard rule #12). When the diff is intended, **never run a workspace-wide `:update`** — it overwrites every drifted baseline at once, silently making any unrelated regression the new "correct." Target only what this change actually touched:
+     - **Web-side (Playwright, `apps/web/`).** The script is `playwright test --update-snapshots`; npm passes args through. Update only specs that exercise the changed DS component:
+
+       ```bash
+       npm --workspace apps/web run test:visual:update -- tests/e2e/<spec>.spec.ts
+       ```
+
+       Append `-g "<test title>"` to scope further inside one spec.
+
+     - **DS-side (Lost Pixel, `libs/web/design-system/`).** The CLI has no per-story filter, so do a surgical PNG copy:
+
+       ```bash
+       # 1. Compare. Even on failure, current/ and difference/ are populated.
+       npm run test:visual:ds || true
+
+       # 2. Inspect what diffed:
+       ls libs/web/design-system/.lostpixel/difference/
+
+       # 3. Classify each entry as one of:
+       #    (a) new story authored by this DS change,
+       #    (b) existing story whose visual change is intended by this DS change,
+       #    (c) unrelated drift — STOP, fix the source code instead.
+
+       # 4. For (a) and (b) only, copy that one story's PNGs (one per breakpoint
+       #    matches via the wildcard — the literal `[w375px]` etc. is matched by *):
+       cp libs/web/design-system/.lostpixel/current/<story>--<variant>__*.png \
+          libs/web/design-system/.lostpixel/baseline/
+
+       # 5. Re-run compare to confirm green.
+       npm run test:visual:ds
+       ```
+
+     - Commit the new / updated PNGs as `feat(visual): regenerate baselines for <Name>`. The PR diff shows exactly the baselines you intentionally rewrote — no others.
+
    - Re-run `npm run verify:visual` after regenerating to confirm green.
 
 7. **Update `/prepare-local` if local-dev requirements changed.** New devDeps that the design-system package needs (e.g. a Radix primitive) should be added to its package.json — `/prepare-local` itself usually doesn't need an update. If you added a new npm script the agent should run automatically, document it.

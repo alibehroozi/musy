@@ -10,8 +10,19 @@
 # agents don't race on the same pending-epic file. If a scheduled run
 # fires while a manual one is still going, the scheduled run queues.
 #
-# Output: a PR. The human gate is PR review — there is no human in the
-# loop during the run itself.
+# Output: a draft PR opened immediately and grown commit-by-commit,
+# then flipped to ready-for-review when `npm run verify` is green at
+# branch HEAD. The PR is the unit of work, not the run — see "Resume
+# semantics" below. The human gate is PR review.
+#
+# Resume semantics: if a run dies (timeout, runner kill, transient
+# error) with its draft PR still open, the next scheduled run picks
+# up where it left off — checks out the branch, inspects commit
+# prefixes to figure out which micro-commit stages already landed,
+# and continues from the first missing stage. Closing the PR (without
+# merging) is the lever to drop a feature from the queue: the next
+# run sees the closed PR for that feature's `task-<slug>` branch and
+# skips to the next pending one. No need to edit `status:` frontmatter.
 
 name: Auto-implement next pending feature
 
@@ -190,86 +201,249 @@ jobs:
             yourself about to wait for input, stop and proceed instead.
 
             ## Your job
-            Implement one pending feature from `product-specs/` and open a PR.
+            Implement one pending feature from `product-specs/`, **driving
+            a draft PR that grows commit-by-commit** so a human (or the
+            next run, if this one dies) can see exactly where you are.
 
             ## Algorithm
-            1. If the input `${{ github.event.inputs.feature_path }}` is non-empty,
-               that's the feature file. Use it directly.
-            2. Otherwise, find the lowest-numbered file under
-               `product-specs/*/features/NN-*.md` whose YAML frontmatter has
-               `status: pending`. Sort by epic name first, then numeric prefix.
-               If nothing is pending, print a summary and exit cleanly — do
-               not commit.
-            3. Run `/new-feature <that path>` per `.claude/commands/new-feature.md`.
-               Apply the CI override above to every pause. Install the deps
-               the file's "Tooling" section names; if you discover the feature
-               genuinely needs deps the file didn't anticipate, add them and
-               explain in the relevant code commit's body — the PR review is
-               the gate.
-            4. Follow the micro-commit discipline (AGENTS.md hard rule #10) —
-               spec → tests → code by layer.
-            5. **Branch naming.** Use the slash command's recommended branch
-               name (e.g. `task-<slug>`). If `git ls-remote --heads origin
-               <branch>` returns the branch (a stale leftover from a prior
-               run), suffix yours with `-r${{ github.run_id }}` to make it
-               unique. Never force-push to an existing branch.
-            6. **Verify only at branch HEAD, not per commit.** The micro-
-               commit discipline allows intermediate commits to be red
-               (especially the test commit before implementation). Run
-               `npm run verify` ONCE — after the final code commit on the
-               branch, before `git push`. Per-commit verify is ~5x the
-               wallclock cost for no real safety gain (the discipline only
-               requires HEAD green).
 
-               After `npm run verify` is green, run `npm run verify:visual`
-               for the Layer 1 (Lost Pixel / Ladle stories) and Layer 2
-               (Playwright / pages) visual regression checks. Three
-               outcomes to react to:
+            ### Step 1 — pick the feature
 
-                 a. **Both green.** Push and continue.
+            If the input `${{ github.event.inputs.feature_path }}` is
+            non-empty, that's the feature file. Use it directly and skip
+            ahead to Step 2.
 
-                 b. **Failure + this is a UI change called for in the
-                    feature file** (e.g. the file says "add a Tooltip
-                    component" or "update Button hover color"). The
-                    visual diff IS the intended change. Regenerate the
-                    *specific* failing baselines:
-                      - Lost Pixel: `npm run test:visual:ds:update`
-                      - Playwright: `npm run test:visual:web:update`
-                    Then re-run the comparison to confirm green. Commit
-                    the new baselines as `feat(visual): regenerate
-                    baselines for <feature>` (PNGs land alongside code).
-                    Per AGENTS.md hard rule #12: regenerate baselines
-                    ONLY when the diff is unambiguously the intended
-                    change. If you're unsure, treat it as case (c).
+            Otherwise, iterate over `product-specs/*/features/NN-*.md`
+            whose YAML frontmatter has `status: pending`, sorted by epic
+            name first then numeric prefix. For each candidate, derive
+            the slash-command's recommended branch name (e.g.
+            `task-<slug>`) and check:
 
-                 c. **Failure + the feature file didn't ask for a UI
-                    change** (e.g. a backend feature broke a layout, or
-                    a stray className change drifted off-token). Code is
-                    wrong by default. Fix the source. Don't regenerate.
+                gh pr list --head <branch> --state closed --json number,state --limit 1
 
-                 d. **First-run / no baselines exist yet.** A fresh epic
-                    that hasn't been bootstrapped. Run the `:update`
-                    scripts once, commit baselines as
-                    `chore(visual): bootstrap baselines for <feature>`,
-                    then proceed. Subsequent runs compare against them.
-            7. Open the PR via `gh pr create` using GITHUB_TOKEN.
-               **Always pass `--title` and `--body` non-interactively** —
-               never let the command open an editor (it'll hang forever in
-               CI). Title `task: <short title>`; body lists the commit
-               sequence, the new invariant IDs, the source pending-epic
-               feature file path, and confirms `npm run verify` is green
-               at the branch HEAD.
-            8. Per /new-feature step 11, mark the feature file
-               `status: done` with `implemented-in-pr: <url>` in a final docs
-               commit. If every feature in the epic is now done, also flip
-               EPIC.md's status in the same commit.
+            If a closed/merged PR exists for that branch, **skip this
+            feature** — closing a PR is the user's signal to drop it
+            from the queue — and move to the next candidate. Pick the
+            first candidate with no closed/merged PR. If nothing
+            qualifies, print a one-line summary and exit cleanly without
+            committing.
+
+            ### Step 2 — branch on PR + branch state
+
+            With feature file picked and `<branch>` derived:
+
+              a. **Open PR exists** (`gh pr list --head <branch>
+                 --state open --json number,url` returns a row) →
+                 **resume mode**. Run:
+
+                     git fetch origin <branch>
+                     git checkout <branch>
+                     git reset --hard origin/<branch>
+
+                 Then inspect
+
+                     git log --reverse origin/main..HEAD --pretty=format:%s
+
+                 and identify which micro-commit stages already landed
+                 by their conventional prefixes (`spec:`,
+                 `test(invariants):`, `feat(contracts):`,
+                 `feat(api-core):`, `feat(api):`, `feat(web-core):`,
+                 `feat(web):`, plus any `feat(visual):` /
+                 `chore(visual):` baselines and the final docs
+                 feature-marking commit). Continue from the first
+                 missing stage; **never redo a stage already on the
+                 branch**. Record the existing PR number — that's
+                 where you push and comment.
+
+              b. **No open PR but the branch exists on origin** —
+                 orphan from a prior run that never opened the PR.
+                 Fetch + checkout it as in (a), then open a draft PR
+                 for it yourself per Step 3, then proceed as resume.
+
+              c. **Neither branch nor open PR** → **fresh start**.
+                 Create the branch off `main`, do the spec commit
+                 (per /new-feature step 1 — `INVARIANTS.md` update;
+                 if the feature genuinely has no spec changes, an
+                 empty `chore(<scope>): bootstrap <slug>` commit
+                 instead so the PR has something to point at), push,
+                 and open the draft PR per Step 3.
+
+            Never force-push. Resume mode appends; it never rewrites
+            history.
+
+            ### Step 3 — open the draft PR (fresh-start case)
+
+            Run `gh pr create --draft --title "task: <slug>" --body
+            "<body>"`. **Always pass `--title` and `--body` non-
+            interactively** — never let the command open an editor
+            (it'll hang in CI).
+
+            Body template:
+
+            ```markdown
+            ## Source
+            `<feature file path>`
+
+            ## Progress
+            - [x] spec — INVARIANTS update
+            - [ ] test(invariants) — stub red
+            - [ ] feat(contracts) — Zod schemas
+            - [ ] feat(api-core) — pure logic
+            - [ ] feat(api) — Nest module
+            - [ ] feat(web-core) — fetcher
+            - [ ] feat(web) — UI
+            - [ ] verify green at HEAD
+            - [ ] visual baselines green
+            - [ ] feature marked done
+
+            ## Commits
+            - <first-commit-subject>
+            ```
+
+            Drop checklist lines for layers this feature genuinely
+            doesn't touch. Tick the spec line if you just made the
+            spec commit; leave it unticked if you bootstrapped with
+            an empty commit.
+
+            ### Step 4 — implement
+
+            Run `/new-feature <feature path>` per
+            `.claude/commands/new-feature.md`, applying the CI
+            override above to every pause. Install the deps the
+            file's "Tooling" section names; if you discover the
+            feature genuinely needs deps the file didn't anticipate,
+            add them and explain in the relevant code commit's body
+            — the PR review is the gate.
+
+            Follow the micro-commit discipline (AGENTS.md hard rule
+            #10) — spec → tests → code by layer.
+
+            **After every commit**, run this trio:
+
+              1. `git push origin <branch>`
+              2. `gh pr comment <pr-number> --body "<commit-subject> — <one-line scope>"`
+              3. Tick the matching checklist line in the PR body and
+                 append the commit to the Commits list. Read the
+                 current body first with
+                 `gh pr view <pr-number> --json body -q .body` so
+                 you don't drop unrelated text, then write the new
+                 body via `gh pr edit <pr-number> --body "<full new body>"`.
+
+            If any of these three fails (network blip, rate limit),
+            log it and continue. A missed comment is cosmetic — the
+            commit list on the PR still shows the work. A missed push
+            self-heals via Step 2's resume logic on the next
+            scheduled run.
+
+            ### Step 5 — verify at branch HEAD
+
+            **Verify only at branch HEAD, not per commit.** The micro-
+            commit discipline allows intermediate commits to be red
+            (especially the test commit before implementation). Run
+            `npm run verify` ONCE — after the final code commit on the
+            branch. Per-commit verify is ~5x the wallclock cost for no
+            real safety gain.
+
+            After `npm run verify` is green, run `npm run verify:visual`
+            for the Layer 1 (Lost Pixel / Ladle stories) and Layer 2
+            (Playwright / pages) visual regression checks. Three
+            outcomes to react to:
+
+              a. **Both green.** Tick the verify + visual checklist
+                 lines. Continue.
+
+              b. **Failure + this is a UI change called for in the
+                 feature file** (e.g. the file says "add a Tooltip
+                 component" or "update Button hover color"). The
+                 visual diff IS the intended change. Regenerate the
+                 *specific* failing baselines — **never** the
+                 workspace-wide `:update` scripts, which overwrite
+                 every drifted baseline at once and silently mask
+                 unrelated regressions:
+
+                   - **Playwright (`apps/web/`):** target only the
+                     spec(s) this feature touches. The npm script
+                     passes args through to `playwright test
+                     --update-snapshots`:
+
+                         npm --workspace apps/web run test:visual:update \
+                           -- tests/e2e/<feature-slug>.spec.ts
+
+                     Append `-g "<title>"` for finer scope when only
+                     one test in the spec is intentionally changing.
+
+                   - **Lost Pixel (`libs/web/design-system/`):** the
+                     CLI has no per-story filter, so surgical PNG copy:
+
+                         # Compare; on failure, current/ and
+                         # difference/ are still populated.
+                         npm run test:visual:ds || true
+
+                         # List what diffed.
+                         ls libs/web/design-system/.lostpixel/difference/
+
+                         # For each entry, classify:
+                         #  (a) new story authored by this feature,
+                         #  (b) existing story whose visual change is
+                         #      intended by this feature,
+                         #  (c) unrelated drift → STOP, fix the source.
+
+                         # For (a) and (b) only, copy that one story's
+                         # PNGs (one per breakpoint; the literal
+                         # `[wNNNpx]` portion is matched by the *).
+                         cp libs/web/design-system/.lostpixel/current/<story>--<variant>__*.png \
+                            libs/web/design-system/.lostpixel/baseline/
+
+                         # Re-run compare to confirm green.
+                         npm run test:visual:ds
+
+                 Then re-run the failing layer to confirm green. Commit
+                 as `feat(visual): regenerate baselines for <feature>`
+                 (push + comment + tick as usual). Per AGENTS.md hard
+                 rule #12: regenerate baselines ONLY when the diff is
+                 unambiguously the intended change. If you're unsure,
+                 treat it as case (c).
+
+              c. **Failure + the feature file didn't ask for a UI
+                 change.** Code is wrong by default. Fix the source.
+                 Don't regenerate.
+
+              d. **First-run / no baselines exist yet for this feature.**
+                 The new spec(s) / story(ies) this feature added need
+                 baselines. Use the same targeted approach as (b) —
+                 bulk `:update` is still wrong here because the
+                 workspace likely already holds baselines for unrelated
+                 specs/stories that would silently get rewritten if
+                 they happened to be drifted. For each net-new spec,
+                 run the targeted Playwright update by spec path; for
+                 each net-new Ladle story, surgically copy its PNGs
+                 from `.lostpixel/current/` to `.lostpixel/baseline/`.
+                 Commit as `chore(visual): bootstrap baselines for
+                 <feature>`, then proceed.
+
+            ### Step 6 — promote the PR
+
+            Per /new-feature step 11, mark the feature file
+            `status: done` with `implemented-in-pr: <url>` in a final
+            docs commit. If every feature in the epic is now done,
+            also flip EPIC.md's status in the same commit. Push +
+            comment + tick the "feature marked done" checklist line
+            as usual.
+
+            Then `gh pr ready <pr-number>` to flip the PR from draft
+            to ready-for-review. If the call fails because the PR is
+            already ready (resume case where a prior run promoted it
+            before dying), ignore the error and continue.
 
             ## Hard constraints in CI (on top of AGENTS.md hard rules)
-            - **Never weaken a test to make CI green.** If the suite goes
-              red, fix the source — same rule as interactive mode.
+            - **Never weaken a test to make CI green.** If the suite
+              goes red, fix the source — same rule as interactive mode.
             - **No `.github/workflows/` edits.** AGENTS.md hard rule #6.
-            - **`npm run verify` must be green** at the branch HEAD before
-              you push and open the PR. Once. Not after every commit.
+            - **Never force-push.** Resume appends; it never rewrites
+              history.
+            - **`npm run verify` must be green** at branch HEAD before
+              you flip the PR to ready. Once, at the end. Not after
+              every commit.
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

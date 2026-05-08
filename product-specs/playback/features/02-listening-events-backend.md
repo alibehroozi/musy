@@ -1,7 +1,8 @@
 ---
 epic: playback
-status: pending
+status: done
 estimated-invariants: 6
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/14
 ---
 
 # Feature 02: Listening events backend

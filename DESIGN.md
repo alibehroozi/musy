@@ -77,12 +77,13 @@ Components live in `libs/web/design-system/src/components/<Name>/`. Each compone
 
 ### Catalog
 
-| Component    | Variants                        | Sizes          | Use for                                                     |
-| ------------ | ------------------------------- | -------------- | ----------------------------------------------------------- |
-| `Typography` | `h1` `h2` `h3` `body` `caption` | —              | Any text rendering                                          |
-| `Button`     | `primary` `secondary` `ghost`   | `sm` `md` `lg` | All clickable actions                                       |
-| `Icon`       | —                               | `size` (px)    | Thin lucide-react wrapper; keeps app free of lucide imports |
-| `BottomNav`  | —                               | —              | Fixed bottom nav bar; tab routing + active highlight        |
+| Component        | Variants                        | Sizes          | Use for                                                                  |
+| ---------------- | ------------------------------- | -------------- | ------------------------------------------------------------------------ |
+| `Typography`     | `h1` `h2` `h3` `body` `caption` | —              | Any text rendering                                                       |
+| `Button`         | `primary` `secondary` `ghost`   | `sm` `md` `lg` | All clickable actions (inline-flex, centered chrome)                     |
+| `ListItemButton` | —                               | —              | Clickable list row (full-width, left-aligned, optional leading/trailing) |
+| `Icon`           | —                               | `size` (px)    | Thin lucide-react wrapper; keeps app free of lucide imports              |
+| `BottomNav`      | —                               | —              | Fixed bottom nav bar; tab routing + active highlight                     |
 
 The catalog grows via `/design-system`. Don't shortcut by hand-rolling components into `apps/web` and "moving them later" — that pattern accumulates duplicate visual logic.
 

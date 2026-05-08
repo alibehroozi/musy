@@ -17,8 +17,11 @@ test-results/
 
 # Lost Pixel — only baseline/ is committed (the canonical truth).
 # current/ and difference/ are produced on every run; never commit.
-.lostpixel/current/
-.lostpixel/difference/
+# Lost Pixel also auto-writes a redundant .lostpixel/.gitignore on each run;
+# the rules above already cover what it would exclude, so we ignore it too.
+**/.lostpixel/current/
+**/.lostpixel/difference/
+**/.lostpixel/.gitignore
 
 # Temporary repros from /debug-local — never commit
 # Promote to tests/invariants/<category>/ via /new-invariant or discard

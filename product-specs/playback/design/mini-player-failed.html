@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=375, initial-scale=1" />
+    <title>Mini-player — failed / unavailable</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-size: var(--text-md);
+        line-height: var(--leading-normal);
+        width: 375px;
+        min-height: 100vh;
+      }
+
+      .shell {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 375px;
+        overflow: hidden;
+      }
+
+      .scroll {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding-bottom: var(--spacing-2);
+      }
+
+      .h1 {
+        font-size: var(--text-2xl);
+        font-weight: var(--font-weight-bold);
+        line-height: var(--leading-tight);
+        padding: var(--spacing-4) var(--spacing-4) var(--spacing-2);
+      }
+
+      /* ── Search input ── */
+      .search-wrap {
+        padding: 0 var(--spacing-4) var(--spacing-3);
+      }
+      .search {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-3) var(--spacing-3);
+      }
+      .search input {
+        flex: 1;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--color-text);
+        font-size: var(--text-md);
+        font-family: inherit;
+      }
+      .search .clear {
+        color: var(--color-text-muted);
+      }
+
+      /* ── Result rows (kept light to focus on the failed mini-player) ── */
+      .row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-3);
+        padding: var(--spacing-3) var(--spacing-4);
+      }
+      .row + .row {
+        border-top: 1px solid var(--color-border);
+      }
+      .artwork {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-md);
+        background: linear-gradient(
+          135deg,
+          oklch(0.5 0.15 320),
+          oklch(0.4 0.12 280)
+        );
+        flex-shrink: 0;
+      }
+      .artwork.alt {
+        background: linear-gradient(
+          135deg,
+          oklch(0.55 0.13 200),
+          oklch(0.4 0.1 240)
+        );
+      }
+      .row-meta {
+        flex: 1;
+        min-width: 0;
+      }
+      .row-title {
+        font-size: var(--text-md);
+        font-weight: var(--font-weight-medium);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row-sub {
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row-trailing {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2);
+        flex-shrink: 0;
+      }
+      .badge {
+        display: inline-block;
+        padding: var(--spacing-1) var(--spacing-2);
+        border-radius: var(--radius-full);
+        background: var(--color-border);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        text-transform: capitalize;
+        white-space: nowrap;
+      }
+      .icon-btn {
+        background: transparent;
+        border: 0;
+        color: var(--color-text-muted);
+        width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-full);
+        cursor: pointer;
+      }
+
+      /* ── Failed mini-player ── */
+      .mini-failed {
+        display: grid;
+        grid-template-columns: 36px 1fr 36px;
+        align-items: center;
+        gap: var(--spacing-3);
+        padding: var(--spacing-3) var(--spacing-4);
+        background: var(--color-surface);
+        border-top: 1px solid var(--color-border);
+      }
+      .mini-failed .warn-icon {
+        color: var(--color-warning);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .mini-failed .text {
+        min-width: 0;
+      }
+      .mini-failed .text-title {
+        font-size: var(--text-sm);
+        font-weight: var(--font-weight-medium);
+        color: var(--color-text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .mini-failed .text-sub {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        margin-top: 2px;
+      }
+      .mini-failed .dismiss {
+        background: transparent;
+        border: 0;
+        color: var(--color-text-muted);
+        width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-full);
+        cursor: pointer;
+      }
+
+      /* ── Bottom nav ── */
+      .bottom-nav {
+        display: flex;
+        background: var(--color-surface);
+        border-top: 1px solid var(--color-border);
+        height: 64px;
+        flex-shrink: 0;
+      }
+      .nav-tab {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-1);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        background: transparent;
+        border: 0;
+      }
+      .nav-tab.active {
+        color: var(--color-text);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="scroll">
+        <div class="h1">Search</div>
+        <div class="search-wrap">
+          <div class="search">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-muted)" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <input value="daft punk" />
+            <span class="clear">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </span>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="artwork" aria-hidden="true"></div>
+          <div class="row-meta">
+            <div class="row-title">Get Lucky</div>
+            <div class="row-sub">Daft Punk · 2013 · 4:09</div>
+          </div>
+          <div class="row-trailing">
+            <span class="badge">Audius</span>
+            <button class="icon-btn" aria-label="Save">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>
+            </button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="artwork alt" aria-hidden="true"></div>
+          <div class="row-meta">
+            <div class="row-title">Around the World</div>
+            <div class="row-sub">Daft Punk · 1997 · 7:11</div>
+          </div>
+          <div class="row-trailing">
+            <span class="badge">SoundCloud</span>
+            <button class="icon-btn" aria-label="Save">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Failed mini-player -->
+      <div class="mini-failed" role="alert" aria-live="polite">
+        <span class="warn-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+        </span>
+        <div class="text">
+          <div class="text-title">Couldn't play "Get Lucky"</div>
+          <div class="text-sub">Tap another track to try again.</div>
+        </div>
+        <button class="dismiss" aria-label="Dismiss">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+
+      <!-- Bottom nav -->
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button class="nav-tab" type="button">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+          Explore
+        </button>
+        <button class="nav-tab" type="button">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>
+          Taste
+        </button>
+        <button class="nav-tab active" type="button" aria-current="page">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          Search
+        </button>
+      </nav>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=375, initial-scale=1" />
+    <title>Now playing — radio station</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-size: var(--text-md);
+        line-height: var(--leading-normal);
+        width: 375px;
+        min-height: 100vh;
+      }
+
+      .screen {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 375px;
+        padding: var(--spacing-4) var(--spacing-6);
+      }
+
+      /* ── Top bar ── */
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 32px;
+        flex-shrink: 0;
+      }
+      .icon-btn {
+        background: transparent;
+        border: 0;
+        color: var(--color-text);
+        width: 36px;
+        height: 36px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-full);
+        cursor: pointer;
+      }
+      .icon-btn.muted {
+        color: var(--color-text-muted);
+      }
+
+      /* ── Cover (station artwork) ── */
+      .cover-wrap {
+        display: flex;
+        justify-content: center;
+        margin-top: var(--spacing-6);
+      }
+      .cover {
+        width: 280px;
+        height: 280px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(
+          135deg,
+          oklch(0.45 0.16 25),
+          oklch(0.32 0.1 25)
+        );
+        box-shadow: var(--shadow-lg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 96px;
+        font-weight: var(--font-weight-bold);
+        color: var(--color-text);
+        letter-spacing: -0.02em;
+      }
+
+      /* ── Station meta ── */
+      .meta {
+        margin-top: var(--spacing-8);
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--spacing-3);
+      }
+      .meta-text {
+        min-width: 0;
+        flex: 1;
+      }
+      .title {
+        font-size: var(--text-2xl);
+        font-weight: var(--font-weight-bold);
+        line-height: var(--leading-tight);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sub {
+        font-size: var(--text-md);
+        color: var(--color-text-muted);
+        margin-top: 2px;
+      }
+
+      /* ── Live indicator ── */
+      .live {
+        margin-top: var(--spacing-6);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-2);
+        color: var(--color-danger);
+        font-size: var(--text-sm);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: 0.08em;
+      }
+      .live-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--color-danger);
+        border-radius: var(--radius-full);
+        box-shadow: 0 0 0 4px color-mix(in oklch, var(--color-danger) 25%, transparent);
+      }
+
+      /* ── Transport ── */
+      .transport {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-8);
+        margin-top: var(--spacing-6);
+      }
+      .transport-btn {
+        background: transparent;
+        border: 0;
+        color: var(--color-text);
+        width: 56px;
+        height: 56px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+      .transport-btn.disabled {
+        color: var(--color-text-muted);
+        opacity: 0.45;
+      }
+      .play-btn {
+        background: var(--color-text);
+        color: var(--color-bg);
+        border-radius: var(--radius-full);
+        width: 72px;
+        height: 72px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 0;
+        cursor: pointer;
+      }
+
+      /* ── Footer source ── */
+      .footer {
+        margin-top: auto;
+        display: flex;
+        justify-content: flex-end;
+        padding-top: var(--spacing-4);
+      }
+      .badge {
+        display: inline-block;
+        padding: var(--spacing-1) var(--spacing-3);
+        border-radius: var(--radius-full);
+        background: var(--color-surface);
+        color: var(--color-text-muted);
+        font-size: var(--text-xs);
+        text-transform: capitalize;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="screen" aria-label="Now playing radio station">
+      <div class="topbar">
+        <button class="icon-btn" aria-label="Collapse">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <button class="icon-btn muted" aria-label="More">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+        </button>
+      </div>
+
+      <div class="cover-wrap">
+        <div class="cover" aria-hidden="true">B</div>
+      </div>
+
+      <div class="meta">
+        <div class="meta-text">
+          <div class="title">BBC Radio 1</div>
+          <div class="sub">United Kingdom · 12.4k listening</div>
+        </div>
+        <button class="icon-btn muted" aria-label="Save">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>
+        </button>
+      </div>
+
+      <div class="live">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span>LIVE</span>
+      </div>
+
+      <div class="transport">
+        <button class="transport-btn disabled" aria-label="Skip back" aria-disabled="true">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"></polygon><rect x="5" y="4" width="2" height="16"></rect></svg>
+        </button>
+        <button class="play-btn" aria-label="Pause">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+        </button>
+        <button class="transport-btn disabled" aria-label="Skip forward" aria-disabled="true">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"></polygon><rect x="17" y="4" width="2" height="16"></rect></svg>
+        </button>
+      </div>
+
+      <div class="footer">
+        <span class="badge">Radio Browser</span>
+      </div>
+    </main>
+  </body>
+</html>

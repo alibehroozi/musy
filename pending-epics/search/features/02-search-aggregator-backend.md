@@ -1,7 +1,8 @@
 ---
 epic: search
-status: pending
+status: done
 estimated-invariants: 8
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/4
 ---
 
 # Feature 02: Search aggregator backend

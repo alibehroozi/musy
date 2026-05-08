@@ -3,7 +3,7 @@ import { SearchResponse, HistoryResponse } from "@moc/contracts";
 
 /**
  * Feature 02: Search aggregator backend.
- * Source: pending-epics/search/features/02-search-aggregator-backend.md.
+ * Source: product-specs/search/features/02-search-aggregator-backend.md.
  *
  * The aggregator is backend-only, but its acceptance criteria assert
  * specific response shapes (cached, partial+empty, all-providers-failed,

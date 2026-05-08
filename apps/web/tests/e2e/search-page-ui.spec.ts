@@ -3,7 +3,7 @@ import { SearchResponse, HistoryResponse, ErrorResponse } from "@moc/contracts";
 
 /**
  * Feature 03: Search page UI — input + results.
- * Source: pending-epics/search/features/03-search-page-ui.md.
+ * Source: product-specs/search/features/03-search-page-ui.md.
  *
  * One screenshot per visible state change in the spec's User behavior:
  *  - 1. Empty state — suggestions block visible

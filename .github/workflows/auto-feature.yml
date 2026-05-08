@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       feature_path:
-        description: "Optional: explicit pending-epics/.../NN-<slug>.md path. Leave blank to auto-pick the lowest-numbered pending feature."
+        description: "Optional: explicit product-specs/.../NN-<slug>.md path. Leave blank to auto-pick the lowest-numbered pending feature."
         required: false
         type: string
       model:
@@ -190,13 +190,13 @@ jobs:
             yourself about to wait for input, stop and proceed instead.
 
             ## Your job
-            Implement one pending feature from `pending-epics/` and open a PR.
+            Implement one pending feature from `product-specs/` and open a PR.
 
             ## Algorithm
             1. If the input `${{ github.event.inputs.feature_path }}` is non-empty,
                that's the feature file. Use it directly.
             2. Otherwise, find the lowest-numbered file under
-               `pending-epics/*/features/NN-*.md` whose YAML frontmatter has
+               `product-specs/*/features/NN-*.md` whose YAML frontmatter has
                `status: pending`. Sort by epic name first, then numeric prefix.
                If nothing is pending, print a summary and exit cleanly — do
                not commit.

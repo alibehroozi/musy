@@ -21,3 +21,9 @@ export type { ResultRowProps } from "./components/ResultRow/ResultRow.js";
 
 export { ListItemButton } from "./components/ListItemButton/ListItemButton.js";
 export type { ListItemButtonProps } from "./components/ListItemButton/ListItemButton.js";
+
+export { IconButton } from "./components/IconButton/IconButton.js";
+export type { IconButtonProps } from "./components/IconButton/IconButton.js";
+
+export { MiniPlayer } from "./components/MiniPlayer/MiniPlayer.js";
+export type { MiniPlayerProps } from "./components/MiniPlayer/MiniPlayer.js";

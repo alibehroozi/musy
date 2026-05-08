@@ -1,10 +1,25 @@
-import { Clock, Compass, Heart, Search } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronUp,
+  Clock,
+  Compass,
+  Heart,
+  Pause,
+  Play,
+  Search,
+  X,
+} from "lucide-react";
 
 const LUCIDE_ICONS = {
+  "alert-triangle": AlertTriangle,
+  "chevron-up": ChevronUp,
   clock: Clock,
   compass: Compass,
   heart: Heart,
+  pause: Pause,
+  play: Play,
   search: Search,
+  x: X,
 } as const;
 
 type LucideIconName = keyof typeof LUCIDE_ICONS;

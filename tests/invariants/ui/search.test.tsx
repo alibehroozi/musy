@@ -2,13 +2,18 @@
 //
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under UI-04, UI-05, UI-06.
+// Invariants verified here are listed in INVARIANTS.md under UI-04, UI-05, UI-06, UI-07.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter } from "react-router-dom";
 import { SearchPage } from "../../../apps/web/src/features/search/SearchPage.js";
+import {
+  AuthContext,
+  type AuthContextValue,
+  type AuthState,
+} from "../../../apps/web/src/contexts/AuthContext.js";
 
 const EMPTY_RESPONSE = {
   results: [],
@@ -78,11 +83,14 @@ function mockSearchWith(response: unknown, delay = 0): void {
   ) as typeof globalThis.fetch;
 }
 
-function renderSearchPage() {
+function renderSearchPage(authState: AuthState = { status: "unauthenticated", error: null }) {
+  const contextValue: AuthContextValue = { state: authState, refresh: async () => {} };
   return render(
-    <MemoryRouter>
-      <SearchPage />
-    </MemoryRouter>,
+    <AuthContext.Provider value={contextValue}>
+      <MemoryRouter>
+        <SearchPage />
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
 }
 
@@ -207,7 +215,71 @@ describe("UI-06: every result in a successful response is rendered as a ResultRo
 });
 
 describe("UI-07: authenticated user with ≥1 history entry sees history list, not suggestions", () => {
-  it.todo("history list is visible when authenticated user has history entries and input is empty");
-  it.todo("suggestions block is not rendered when history list is shown");
-  it.todo("unauthenticated user still sees the suggestions block (no history list)");
+  const originalFetch = globalThis.fetch;
+
+  const HISTORY_RESPONSE = {
+    entries: [
+      {
+        id: "h1",
+        query: "queen",
+        lastSearchedAt: new Date(Date.now() - 60000).toISOString(),
+        searchCount: 2,
+      },
+    ],
+    nextCursor: null,
+  };
+
+  const AUTHENTICATED_USER = {
+    id: "user-1",
+    email: "test@example.com",
+    googleId: "g_test_123",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  function mockHistoryFetch(): void {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/search/history")) {
+        return new Response(JSON.stringify(HISTORY_RESPONSE), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      // search endpoint — return empty results
+      return new Response(
+        JSON.stringify({ results: [], partial: false, failedProviders: [], cached: false }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof globalThis.fetch;
+  }
+
+  beforeEach(() => {
+    cleanup();
+    mockHistoryFetch();
+  });
+  afterEach(() => {
+    cleanup();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("history list is visible when authenticated user has history entries and input is empty", async () => {
+    renderSearchPage({ status: "authenticated", user: AUTHENTICATED_USER });
+    await waitFor(() => {
+      expect(screen.getByTestId("history-list")).toBeInTheDocument();
+    });
+  });
+
+  it("suggestions block is not rendered when history list is shown", async () => {
+    renderSearchPage({ status: "authenticated", user: AUTHENTICATED_USER });
+    await waitFor(() => {
+      expect(screen.getByTestId("history-list")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("suggestions-block")).not.toBeInTheDocument();
+  });
+
+  it("unauthenticated user still sees the suggestions block (no history list)", () => {
+    renderSearchPage({ status: "unauthenticated", error: null });
+    expect(screen.getByTestId("suggestions-block")).toBeInTheDocument();
+    expect(screen.queryByTestId("history-list")).not.toBeInTheDocument();
+  });
 });

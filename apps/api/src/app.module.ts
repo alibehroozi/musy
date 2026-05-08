@@ -4,6 +4,7 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { UsersModule } from "./modules/users/users.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
+import { SearchModule } from "./modules/search/search.module.js";
 import { HealthController } from "./health.controller.js";
 import { AllExceptionsFilter } from "./common/all-exceptions.filter.js";
 import { AuthGuard } from "./common/auth.guard.js";
@@ -23,6 +24,7 @@ import { AuthGuard } from "./common/auth.guard.js";
     }),
     UsersModule,
     AuthModule,
+    SearchModule,
   ],
   controllers: [HealthController],
   providers: [

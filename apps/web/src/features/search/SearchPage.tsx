@@ -1,19 +1,27 @@
 import { type KeyboardEvent, useCallback } from "react";
 import { Input, Button } from "@moc/design-system";
 import { useSearch } from "./useSearch.js";
+import { useHistory } from "./useHistory.js";
 import { SuggestionsBlock } from "./components/SuggestionsBlock.js";
+import { HistoryList } from "./components/HistoryList.js";
 import { ResultsSkeleton } from "./components/ResultsSkeleton.js";
 import { ResultsList } from "./components/ResultsList.js";
 
 export function SearchPage(): JSX.Element {
   const { query, setQuery, state, submit, submitWithQuery, retry, clear } = useSearch();
+  const { entries, hasMore, loadMore, refresh } = useHistory();
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") submit();
+      if (e.key === "Enter") {
+        submit();
+        refresh();
+      }
     },
-    [submit],
+    [submit, refresh],
   );
+
+  const showHistory = state.status === "idle" && query === "" && entries.length > 0;
 
   return (
     <main className="flex flex-col h-full">
@@ -34,7 +42,16 @@ export function SearchPage(): JSX.Element {
 
       {/* Results area */}
       <div className="flex-1 overflow-y-auto">
-        {state.status === "idle" && <SuggestionsBlock onSelect={submitWithQuery} />}
+        {state.status === "idle" && showHistory && (
+          <HistoryList
+            entries={entries}
+            hasMore={hasMore}
+            onSelect={submitWithQuery}
+            onLoadMore={loadMore}
+          />
+        )}
+
+        {state.status === "idle" && !showHistory && <SuggestionsBlock onSelect={submitWithQuery} />}
 
         {state.status === "loading" && <ResultsSkeleton />}
 

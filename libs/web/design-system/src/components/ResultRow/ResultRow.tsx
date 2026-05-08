@@ -50,7 +50,7 @@ function Artwork({ url, title }: ArtworkProps): JSX.Element {
 
 function SourceBadge({ label }: { label: string }): JSX.Element {
   return (
-    <span className="shrink-0 rounded-full bg-border px-2 py-0.5 text-xs text-text-muted capitalize">
+    <span className="shrink-0 rounded-full bg-border px-3 py-1 text-xs text-text-muted capitalize">
       {label}
     </span>
   );

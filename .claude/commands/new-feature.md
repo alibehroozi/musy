@@ -9,7 +9,7 @@ The user describes a feature they want built. Your job is to take it from descri
 The user can describe the feature in two ways:
 
 - **Free-form** in chat (e.g. "add a sign-in flow with Google").
-- **Pointing at a pending-epic feature file** (e.g. "implement `pending-epics/auth/features/01-sign-in-google.md`"). When this happens, that file IS the spec — read it whole and use it as the input to every subsequent step:
+- **Pointing at a product-spec feature file** (e.g. "implement `product-specs/auth/features/01-sign-in-google.md`"). When this happens, that file IS the spec — read it whole and use it as the input to every subsequent step:
   - "Product description" → the feature description for the rest of this command
   - "Suggested invariants" → seeds for `/new-invariant`'s exploration
   - "DS components used / missing" → answers step 3 directly
@@ -19,7 +19,7 @@ The user can describe the feature in two ways:
 
 ## Sequence (do in order, do not skip)
 
-1. **Confirm the scope.** Restate the feature in one sentence and confirm with the user. If a pending-epic file was passed, restate from its "Product description". If it's bigger than a single PR, propose a split before proceeding. Don't push past ambiguous scope.
+1. **Confirm the scope.** Restate the feature in one sentence and confirm with the user. If a product-spec file was passed, restate from its "Product description". If it's bigger than a single PR, propose a split before proceeding. Don't push past ambiguous scope.
 
 2. **Tooling check (terse).** Before branching:
    - List capabilities this feature needs that the codebase doesn't already cover (auth? email? rate-limit? embeddings? caching? scheduling?)
@@ -56,11 +56,11 @@ The user can describe the feature in two ways:
    - **`feat(web-core): ...`** — pure frontend logic in `libs/web/core/`. No React / DOM imports.
    - **`feat(api): ...`** — `apps/api/src/modules/<name>/` with module + controller + service + repository + schema. Per `ARCHITECTURE.md` layering.
    - **`feat(web): ...`** — `apps/web/src/features/<name>/` with `<Name>Page.tsx`, subcomponents in `components/`, hooks in `hooks/`, fetcher in `api.ts`. Components used must already exist in `@moc/design-system` (caught by step 3).
-   - **`test(visual, web): user-flow spec for <feature>`** — when the feature touches UI: a Playwright spec at `apps/web/tests/e2e/<feature-slug>.spec.ts` that replicates the user behavior described in the pending-epic feature file. See step 7a below for the mapping. **Only present when web UI changes; backend-only features skip.**
+   - **`test(visual, web): user-flow spec for <feature>`** — when the feature touches UI: a Playwright spec at `apps/web/tests/e2e/<feature-slug>.spec.ts` that replicates the user behavior described in the product-spec feature file. See step 7a below for the mapping. **Only present when web UI changes; backend-only features skip.**
 
    **Convert `it.todo` test bodies into real assertions in the same commit as the layer that makes them passable.** Tests that depend on `contracts` get real bodies in the `feat(contracts):` commit. Tests that depend on `api` get real bodies in the `feat(api):` commit. By the final code commit, every test is green.
 
-7a. **Authoring the Playwright spec (when step 7 includes a `test(visual, web):` commit).** The pending-epic feature file's **User behavior** section IS the test plan. Map directly:
+7a. **Authoring the Playwright spec (when step 7 includes a `test(visual, web):` commit).** The product-spec feature file's **User behavior** section IS the test plan. Map directly:
 
 - **Each numbered step where the UI visibly changes** → a `toHaveScreenshot('<feature>-<state>.png')` after the corresponding interaction.
 - **Each named "Failure mode the user can reach"** → its own `test()` that forces that state (e.g. `page.route('**/api/...', r => r.abort())` for network failure) and snaps the resulting UI.
@@ -171,7 +171,7 @@ First run will fail (no baselines). On the first commit that adds the spec, run 
 
     Land them in one `chore(setup): cascade <var-or-thing> across env files + workflows` commit (or split per-file if the change is large). **Forgetting any one of the four breaks either local dev or CI.** If no env / local-dev change, skip this step entirely.
 
-11. **Mark the pending-epic feature file done (if applicable).** If this run consumed a `pending-epics/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` in the same commit.
+11. **Mark the product-spec feature file done (if applicable).** If this run consumed a `product-specs/<epic>/features/NN-<slug>.md`, edit its frontmatter — set `status: done` and add `implemented-in-pr: <PR url>` — and commit as `docs(epic, <epic-slug>): mark NN-<slug> done`. Don't delete the file; it's historical record. If all features in the epic are done, also flip `EPIC.md`'s `status:` to `done` in the same commit.
 
 12. **Open PR** against `main` with title `task: <short title>`. Body lists:
 

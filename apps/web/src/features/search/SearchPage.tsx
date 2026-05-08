@@ -16,6 +16,7 @@ export function SearchPage(): JSX.Element {
       if (e.key === "Enter") {
         submit();
         refresh();
+        e.currentTarget.blur();
       }
     },
     [submit, refresh],

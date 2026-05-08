@@ -34,6 +34,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)                                                                                                                               | Critical |
 | DATA-03 | Every `search_cache` document has `expiresAt` set strictly after its creation time; the TTL index drops it at `expiresAt`; `queryHash` is unique in the collection                                              | High     |
 | DATA-04 | `search_history` has a unique compound index `(userId, query)`; submitting the same normalized query twice for the same user creates exactly one document (dedupe at the DB level) and increments `searchCount` | High     |
+| DATA-05 | `interest_scores` has a unique compound index `(userId, songKey)`; any combination of events for the same user+song produces exactly one document                                                               | High     |
+| DATA-06 | `interest_scores.score` is monotonically non-decreasing per `(userId, songKey)`; any event upsert satisfies `newDoc.score >= oldDoc.score` (max-rule)                                                           | High     |
+| DATA-07 | `interest_scores.snapshot` is written on the first event and **never overwritten** by subsequent events on the same `(userId, songKey)`                                                                         | High     |
 
 **Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`
 
@@ -62,6 +65,7 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | API-04 | `POST /api/search` always returns 200 with a body matching `SearchResponse` (`results`, `partial`, `failedProviders`, `cached`), even when all providers fail (`results: []`, `partial: true`)       | Critical |
 | API-05 | `GET /api/search/history` requires a valid session cookie; returns 401 + `ErrorResponse` when no session is present                                                                                  | Critical |
 | API-06 | Cursor pagination on `GET /api/search/history` is stable: issuing the same cursor twice returns the same page of entries (no skipped or duplicated entries when the underlying data has not changed) | High     |
+| API-07 | `POST /api/search/explored` and `POST /api/search/saved` require a valid session cookie; both return 401 + `ErrorResponse` when no session is present                                                | Critical |
 
 **Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`
 
@@ -78,6 +82,8 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | UI-05 | When a search request is in flight, a skeleton loading indicator is visible in the results area; previous results are replaced by the skeleton                                    | High     |
 | UI-06 | On a successful response with non-empty results, every result in the response is rendered as a `ResultRow`; track rows show title+artist and station rows show a "Live" indicator | High     |
 | UI-07 | When the authenticated user has ≥ 1 search history entry and the input is empty, the history list is visible in the results area and the static suggestions block is not rendered | High     |
+| UI-08 | When an anonymous user taps a result row OR the add button, the sign-in Modal opens and no event POST is fired to `/api/search/explored` or `/api/search/saved`                   | High     |
+| UI-09 | The sign-in Modal is rendered with `z-modal` styling so it sits above the bottom navigation on a mobile viewport                                                                  | High     |
 
 **Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`, `tests/invariants/ui/search.test.tsx`
 
@@ -92,6 +98,7 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`) return 401 without a valid session cookie | Critical |
 | SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                     | Critical |
 | SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                 | Critical |
+| SEC-06 | `interest_scores` documents are scoped per-user; no API endpoint introduced in this feature exposes another user's documents                                                                        | Critical |
 
 **Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`
 

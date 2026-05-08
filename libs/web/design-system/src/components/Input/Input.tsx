@@ -60,7 +60,7 @@ export function Input({
 
     const containerCls = [
       "w-full flex items-center gap-2",
-      size === "lg" ? "px-5 py-6 text-lg" : "px-4 py-4 text-md",
+      size === "lg" ? "px-4 py-2 text-lg" : "px-4 py-2 text-md",
       "rounded-2xl",
       "bg-border border border-transparent",
       "focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20",
@@ -80,7 +80,7 @@ export function Input({
         <input
           id={id}
           value={value}
-          className="flex-1 min-w-0 bg-transparent outline-none text-text placeholder:text-text-muted font-medium pl-2"
+          className="flex-1 min-w-0 bg-transparent outline-none text-text placeholder:text-text-muted font-medium pl-4"
           {...rest}
         />
         {clearBtn}

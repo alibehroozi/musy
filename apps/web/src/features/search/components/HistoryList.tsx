@@ -1,6 +1,28 @@
 import { useEffect, useRef } from "react";
 import type { HistoryEntry } from "@moc/contracts";
 
+const HISTORY_SKELETON_COUNT = 5;
+
+function SkeletonHistoryRow(): JSX.Element {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 animate-pulse">
+      <div className="size-4 rounded-full bg-border shrink-0" />
+      <div className="h-4 rounded bg-border w-2/5" />
+      <div className="ml-auto h-3 w-12 rounded bg-border" />
+    </div>
+  );
+}
+
+export function HistorySkeleton(): JSX.Element {
+  return (
+    <div aria-label="Loading history" data-testid="history-skeleton">
+      {Array.from({ length: HISTORY_SKELETON_COUNT }).map((_, i) => (
+        <SkeletonHistoryRow key={i} />
+      ))}
+    </div>
+  );
+}
+
 function ClockIcon(): JSX.Element {
   return (
     <svg

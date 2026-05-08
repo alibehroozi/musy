@@ -2,9 +2,11 @@ import { MiniPlayer } from "@moc/design-system";
 import { usePlayerContext } from "./PlayerProvider.js";
 
 export function MiniPlayerHost(): JSX.Element | null {
-  const { engineState, progressFraction, togglePlay, dismissFailed } = usePlayerContext();
+  const { engineState, progressFraction, togglePlay, dismissFailed, expandPlayer, isExpanded } =
+    usePlayerContext();
 
-  if (engineState.status === "idle") return null;
+  // Hide the mini-player when the full overlay is open
+  if (engineState.status === "idle" || isExpanded) return null;
 
   const track = engineState.ctx;
   const isPlaying = engineState.status === "playing";
@@ -18,7 +20,7 @@ export function MiniPlayerHost(): JSX.Element | null {
         state="failed"
         {...(engineState.errorMsg !== undefined ? { failedTitle: engineState.errorMsg } : {})}
         onPlayPause={togglePlay}
-        onExpand={() => undefined}
+        onExpand={expandPlayer}
         onDismiss={dismissFailed}
       />
     );
@@ -33,7 +35,7 @@ export function MiniPlayerHost(): JSX.Element | null {
       progressFraction={progressFraction}
       state={miniState}
       onPlayPause={togglePlay}
-      onExpand={() => undefined}
+      onExpand={expandPlayer}
       onDismiss={dismissFailed}
     />
   );

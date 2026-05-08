@@ -11,13 +11,18 @@ import type { SongSnapshot } from "@moc/contracts";
 import { AudioEngine, type EngineState, type AudioInterface } from "@moc/web-core";
 import { useAuthContext } from "../../contexts/AuthContext.js";
 import { resolveStream, recordStarted, recordCompleted } from "./api.js";
+import { useMediaSession } from "./useMediaSession.js";
 
 export interface PlayerContextValue {
   engineState: EngineState;
   progressFraction: number;
+  isExpanded: boolean;
   playSnapshot: (snapshot: SongSnapshot) => void;
   togglePlay: () => void;
   dismissFailed: () => void;
+  expandPlayer: () => void;
+  collapsePlayer: () => void;
+  seekToFraction: (fraction: number) => void;
 }
 
 export const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -55,6 +60,15 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   const engineRef = useRef<AudioEngine | null>(null);
   const [engineState, setEngineState] = useState<EngineState>({ status: "idle" });
   const [progressFraction, setProgressFraction] = useState(0);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const currentTrack = engineState.status !== "idle" ? engineState.ctx.track : null;
+
+  useMediaSession(
+    currentTrack,
+    useCallback(() => engineRef.current?.togglePlay(), []),
+    useCallback(() => engineRef.current?.seekToFraction(0), []),
+  );
 
   useEffect(() => {
     const audio = new Audio();
@@ -66,6 +80,9 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       if (ev.type === "stateChange") {
         setEngineState(ev.state);
         setProgressFraction(ev.progressFraction);
+        if (ev.state.status === "idle") {
+          setIsExpanded(false);
+        }
       } else if (ev.type === "started") {
         if (authState.status === "authenticated") {
           void recordStarted(ev.source, ev.externalId, ev.snapshot).catch(() => undefined);
@@ -120,9 +137,31 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     engineRef.current?.dismiss();
   }, []);
 
+  const expandPlayer = useCallback(() => {
+    setIsExpanded(true);
+  }, []);
+
+  const collapsePlayer = useCallback(() => {
+    setIsExpanded(false);
+  }, []);
+
+  const seekToFraction = useCallback((fraction: number) => {
+    engineRef.current?.seekToFraction(fraction);
+  }, []);
+
   return (
     <PlayerContext.Provider
-      value={{ engineState, progressFraction, playSnapshot, togglePlay, dismissFailed }}
+      value={{
+        engineState,
+        progressFraction,
+        isExpanded,
+        playSnapshot,
+        togglePlay,
+        dismissFailed,
+        expandPlayer,
+        collapsePlayer,
+        seekToFraction,
+      }}
     >
       {children}
     </PlayerContext.Provider>

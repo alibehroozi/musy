@@ -15,6 +15,11 @@ coverage/
 playwright-report/
 test-results/
 
+# Lost Pixel — only baseline/ is committed (the canonical truth).
+# current/ and difference/ are produced on every run; never commit.
+.lostpixel/current/
+.lostpixel/difference/
+
 # Temporary repros from /debug-local — never commit
 # Promote to tests/invariants/<category>/ via /new-invariant or discard
 tests/_scratch/

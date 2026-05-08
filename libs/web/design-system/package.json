@@ -13,6 +13,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:visual": "./scripts/visual-ds.sh",
+    "test:visual:update": "./scripts/visual-ds.sh update",
     "stories": "ladle serve",
     "stories:build": "ladle build",
     "typecheck": "tsc --noEmit -p tsconfig.json"

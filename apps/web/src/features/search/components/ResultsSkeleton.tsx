@@ -15,7 +15,7 @@ function SkeletonRow(): JSX.Element {
 
 export function ResultsSkeleton(): JSX.Element {
   return (
-    <div aria-label="Loading results" data-testid="results-skeleton">
+    <div role="status" aria-label="Loading results" data-testid="results-skeleton">
       {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
         <SkeletonRow key={i} />
       ))}

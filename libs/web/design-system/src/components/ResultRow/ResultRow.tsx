@@ -90,6 +90,7 @@ export function ResultRow(props: ResultRowProps): JSX.Element {
         <div className="flex items-center gap-2">
           <p className="text-md font-semibold text-text truncate">{name}</p>
           <span
+            role="img"
             aria-label="Live"
             className="shrink-0 size-2 rounded-full bg-danger"
             data-testid="live-indicator"

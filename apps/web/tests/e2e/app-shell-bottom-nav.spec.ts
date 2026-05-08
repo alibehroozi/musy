@@ -1,4 +1,4 @@
-import { test, expect, mockJsonRoute } from "./fixtures.js";
+import { test, expect, mockJsonRoute, expectAccessible } from "./fixtures.js";
 import { HistoryResponse } from "@moc/contracts";
 
 /**
@@ -31,6 +31,7 @@ test.describe("app shell — bottom nav", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 2 — taps Explore → "Explore — coming soon" + Explore active.
@@ -50,6 +51,7 @@ test.describe("app shell — bottom nav", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 3 — taps Taste → "Taste — coming soon" + Taste active.
@@ -69,6 +71,7 @@ test.describe("app shell — bottom nav", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 4 — back to Search.
@@ -87,6 +90,7 @@ test.describe("app shell — bottom nav", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 5 — refresh preserves the active tab (PWA-01).
@@ -103,6 +107,7 @@ test.describe("app shell — bottom nav", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Failure mode — direct navigation to an unknown route falls back to /search.
@@ -118,6 +123,7 @@ test.describe("app shell — bottom nav", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Anonymous user sees identical shell (UI-02 covers this acceptance criterion).
@@ -131,6 +137,7 @@ test.describe("app shell — bottom nav", () => {
         fullPage: true,
         animations: "disabled",
       });
+      await expectAccessible(page);
     });
   });
 
@@ -151,5 +158,6 @@ test.describe("app shell — bottom nav", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 });

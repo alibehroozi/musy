@@ -1,4 +1,4 @@
-import { test, expect, mockJsonRoute } from "./fixtures.js";
+import { test, expect, mockJsonRoute, expectAccessible } from "./fixtures.js";
 import { SearchResponse, HistoryResponse, ErrorResponse } from "@moc/contracts";
 
 /**
@@ -64,6 +64,7 @@ test.describe("search page UI", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("search-empty.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 2 — tapping a suggestion populates the input AND runs a search.
@@ -78,6 +79,7 @@ test.describe("search page UI", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("search-suggestion-tapped.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 3 — loading skeleton on submit.
@@ -107,6 +109,7 @@ test.describe("search page UI", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("search-loading.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
 
     releaseSearch!();
     await expect(page.getByText("Get Lucky")).toBeVisible();
@@ -129,6 +132,7 @@ test.describe("search page UI", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("search-results.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 6 — clearing the input returns to the suggestions state.
@@ -147,6 +151,7 @@ test.describe("search page UI", () => {
       "search-cleared-back-to-suggestions.png",
       { animations: "disabled" },
     );
+    await expectAccessible(page);
   });
 
   // Step 7 — empty submit is a no-op.
@@ -171,6 +176,7 @@ test.describe("search page UI", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("search-empty-submit-noop.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Failure mode — backend returned partial+empty (covered against the
@@ -192,6 +198,7 @@ test.describe("search page UI", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("search-no-results.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Failure mode — API errors (5xx) → inline retry, retrying refires
@@ -229,6 +236,7 @@ test.describe("search page UI", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("search-error.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
 
     await page.getByRole("button", { name: "Retry" }).click();
     await expect(page.getByText("Get Lucky")).toBeVisible();
@@ -253,5 +261,6 @@ test.describe("search page UI", () => {
       fullPage: true,
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 });

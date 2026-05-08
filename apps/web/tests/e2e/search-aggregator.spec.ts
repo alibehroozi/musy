@@ -1,4 +1,4 @@
-import { test, expect, mockJsonRoute, mockJsonError } from "./fixtures.js";
+import { test, expect, mockJsonRoute, mockJsonError, expectAccessible } from "./fixtures.js";
 import { SearchResponse, HistoryResponse } from "@moc/contracts";
 
 /**
@@ -67,6 +67,7 @@ test.describe("search aggregator backend", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("aggregator-cached-results.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Failure mode — all providers fail (200 + partial: true + empty results).
@@ -87,6 +88,7 @@ test.describe("search aggregator backend", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("aggregator-all-failed.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Failure mode — partial response with one provider down still renders results.
@@ -106,6 +108,7 @@ test.describe("search aggregator backend", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("aggregator-partial-with-results.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Failure mode — upstream error (5xx with ErrorResponse-shaped body).
@@ -124,6 +127,7 @@ test.describe("search aggregator backend", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("aggregator-upstream-error.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Failure mode — genuine network failure (no HTTP response). Per
@@ -139,5 +143,6 @@ test.describe("search aggregator backend", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("aggregator-network-failure.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 });

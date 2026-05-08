@@ -1,4 +1,4 @@
-import { test, expect, mockJsonRoute } from "./fixtures.js";
+import { test, expect, mockJsonRoute, expectAccessible } from "./fixtures.js";
 import { SearchResponse, HistoryResponse } from "@moc/contracts";
 
 /**
@@ -65,6 +65,7 @@ test.describe("search history", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("history-empty-suggestions-shown.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 5 (UI-07) — auth user with entries: list replaces suggestions.
@@ -78,6 +79,7 @@ test.describe("search history", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("history-list-replaces-suggestions.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 7 — tapping a history entry repopulates the input + runs search.
@@ -95,6 +97,7 @@ test.describe("search history", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("history-entry-replayed.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Clearing the input after a search returns to history (not suggestions).
@@ -114,6 +117,7 @@ test.describe("search history", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("history-cleared-back-to-history.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 8 — cursor pagination: scrolling triggers next-page fetch.
@@ -174,6 +178,7 @@ test.describe("search history", () => {
     await expect(page.getByRole("main")).toHaveScreenshot("history-paginated-two-pages.png", {
       animations: "disabled",
     });
+    await expectAccessible(page);
   });
 
   // Step 1 — anonymous user sees only suggestions, never fires
@@ -204,6 +209,7 @@ test.describe("search history", () => {
       await expect(page.getByRole("main")).toHaveScreenshot("history-anonymous-suggestions.png", {
         animations: "disabled",
       });
+      await expectAccessible(page);
     });
   });
 });

@@ -65,5 +65,43 @@ export default [
       "tailwindcss/no-unnecessary-arbitrary-value": "warn",
     },
   },
+  // Forbidden raw HTML form elements in apps/web/ — per AGENTS.md hard
+  // rule #14. The DS owns the accessible markup (correct roles, focus
+  // styles, ARIA, contrast); apps consume the wrapped components. Lint
+  // catches the regression at commit time so it never reaches CI.
+  //
+  // Scope is apps/web/** ONLY — libs/web/design-system/** is where the
+  // raw tags legitimately live (Button wraps <button>, Input wraps
+  // <input>, etc.). As DS components grow (Textarea, Select, …), add
+  // selectors here AND update the table in AGENTS.md hard rule #14 in
+  // the same PR.
+  {
+    files: ["apps/web/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXOpeningElement[name.name='button']",
+          message:
+            "Use Button from @moc/design-system instead of raw <button>. AGENTS.md hard rule #14.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='input']",
+          message:
+            "Use Input from @moc/design-system instead of raw <input>. AGENTS.md hard rule #14.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='textarea']",
+          message:
+            "Raw <textarea> is forbidden in apps/web/. Add a Textarea component to @moc/design-system first via /design-system. AGENTS.md hard rule #14.",
+        },
+        {
+          selector: "JSXOpeningElement[name.name='select']",
+          message:
+            "Raw <select> is forbidden in apps/web/. Add a Select component to @moc/design-system first via /design-system. AGENTS.md hard rule #14.",
+        },
+      ],
+    },
+  },
   prettier,
 ];

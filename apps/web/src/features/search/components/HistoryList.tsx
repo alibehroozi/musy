@@ -86,6 +86,13 @@ export function HistoryList({
   return (
     <div data-testid="history-list">
       {entries.map((entry) => (
+        // TODO(ds): swap for a `ListItemButton` (or `Button` variant supporting
+        // full-width left-aligned rows) once /design-system adds it. The DS's
+        // current `Button` is `inline-flex items-center justify-center` —
+        // doesn't compose into a list row without heavy `!important`
+        // overrides. AGENTS.md hard rule #14 forbids new <button> in
+        // apps/web/; this preexisting one is tracked debt.
+        // eslint-disable-next-line no-restricted-syntax
         <button
           key={entry.id}
           onClick={() => onSelect(entry.query)}

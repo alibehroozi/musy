@@ -56,8 +56,54 @@ The user can describe the feature in two ways:
    - **`feat(web-core): ...`** — pure frontend logic in `libs/web/core/`. No React / DOM imports.
    - **`feat(api): ...`** — `apps/api/src/modules/<name>/` with module + controller + service + repository + schema. Per `ARCHITECTURE.md` layering.
    - **`feat(web): ...`** — `apps/web/src/features/<name>/` with `<Name>Page.tsx`, subcomponents in `components/`, hooks in `hooks/`, fetcher in `api.ts`. Components used must already exist in `@moc/design-system` (caught by step 3).
+   - **`test(visual, web): user-flow spec for <feature>`** — when the feature touches UI: a Playwright spec at `apps/web/tests/e2e/<feature-slug>.spec.ts` that replicates the user behavior described in the pending-epic feature file. See step 7a below for the mapping. **Only present when web UI changes; backend-only features skip.**
 
    **Convert `it.todo` test bodies into real assertions in the same commit as the layer that makes them passable.** Tests that depend on `contracts` get real bodies in the `feat(contracts):` commit. Tests that depend on `api` get real bodies in the `feat(api):` commit. By the final code commit, every test is green.
+
+7a. **Authoring the Playwright spec (when step 7 includes a `test(visual, web):` commit).** The pending-epic feature file's **User behavior** section IS the test plan. Map directly:
+
+- **Each numbered step where the UI visibly changes** → a `toHaveScreenshot('<feature>-<state>.png')` after the corresponding interaction.
+- **Each named "Failure mode the user can reach"** → its own `test()` that forces that state (e.g. `page.route('**/api/...', r => r.abort())` for network failure) and snaps the resulting UI.
+- **Empty / first-run state** → its own `test()` snapping the page before any user input.
+
+Rules:
+
+- Use accessible selectors only (`page.getByRole`, `page.getByLabel`, `page.getByText`). **Never CSS selectors** — they couple the test to implementation, not behavior.
+- One spec file per feature (`apps/web/tests/e2e/<feature-slug>.spec.ts`), one `test.describe` block per feature.
+- Wait on observable state (`expect(page.getByText(...)).toBeVisible()`), not timers (`page.waitForTimeout`).
+- Snapshot fullPage only when layout matters end-to-end; prefer scoped element snapshots (`expect(page.getByRole('main')).toHaveScreenshot(...)`) when a header / nav is irrelevant to the feature.
+
+Pattern:
+
+```ts
+import { test, expect } from "@playwright/test";
+
+test.describe("search", () => {
+  test("empty state — initial visit", async ({ page }) => {
+    await page.goto("/search");
+    await expect(page).toHaveScreenshot("search-empty.png");
+  });
+
+  test("typing query and seeing results", async ({ page }) => {
+    await page.goto("/search");
+    await page.getByRole("searchbox").fill("the beatles");
+    await page.getByRole("searchbox").press("Enter");
+    await expect(page.getByText(/Beatles/)).toBeVisible();
+    await expect(page).toHaveScreenshot("search-results.png");
+  });
+
+  test("network error — toast surfaces", async ({ page }) => {
+    await page.route("**/api/search**", (r) => r.abort());
+    await page.goto("/search");
+    await page.getByRole("searchbox").fill("anything");
+    await page.getByRole("searchbox").press("Enter");
+    await expect(page.getByRole("status")).toContainText(/error/i);
+    await expect(page).toHaveScreenshot("search-error.png");
+  });
+});
+```
+
+First run will fail (no baselines). On the first commit that adds the spec, run `npm run test:visual:web:update` and commit the resulting PNGs as part of the same `test(visual, web):` commit (so the PR shows the new spec + its baselines together).
 
 8. **Run verify** after each layer commit. `npm run verify` doesn't have to pass on every intermediate commit (test commits often run red against missing implementation), but **the final commit on the branch must be green**.
 

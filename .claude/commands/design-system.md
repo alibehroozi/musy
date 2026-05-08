@@ -32,10 +32,13 @@ Read [`DESIGN.md`](../../DESIGN.md) for the catalog and token reference, and the
    - **Component**. `feat(design-system, <name>): add <Name>` (or `change(design-system, <name>): …` for a change). One commit covers the component file, its test, and its story — they're tightly coupled and meaningless apart.
    - **Catalog**. `docs(design-system): add <Name> to DESIGN.md catalog` — only when the component is new (not for variant changes on existing components).
 
+   **Note on visual regression:** DS components do **NOT** need Playwright specs. Lost Pixel automatically snapshots every Ladle story across the configured breakpoints — your component + story already constitute the visual test. New / changed component → new / changed `<Name>.stories.tsx` → Lost Pixel snaps it on the next `verify:visual` run. Apply the regenerate-vs-fix decision tree (AGENTS.md hard rule #12) when those snapshots fail.
+
 6. **Run verify.**
    - `npm --workspace libs/web/design-system run test` for component tests
    - `npm --workspace libs/web/design-system run stories` to eyeball the story locally — at least skim each variant
    - `npm run verify` at the root must be green at the branch HEAD
+   - `npm run test:visual:ds` to confirm the Lost Pixel snapshot reflects what you intend. On the first run for a new component or token, the test fails because no baseline exists — that's expected. Run `npm run test:visual:ds:update` to bootstrap baselines for the new story states, commit them as `feat(visual): regenerate baselines for <Name>`, and re-verify.
 
 7. **Update `/prepare-local` if local-dev requirements changed.** New devDeps that the design-system package needs (e.g. a Radix primitive) should be added to its package.json — `/prepare-local` itself usually doesn't need an update. If you added a new npm script the agent should run automatically, document it.
 

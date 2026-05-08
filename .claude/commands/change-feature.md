@@ -41,6 +41,7 @@ If the user says "X is broken," that's `/debug-local`, not this command. This co
    - `change(web-core): ...` — pure frontend logic
    - `change(api): ...` — controller / service / repository
    - `change(web): ...` — features / components / hooks
+   - `change(visual, web): ...` — when the change touches user-visible behavior, update `apps/web/tests/e2e/<feature-slug>.spec.ts`. **New behavior path** → add a new `test()` with the relevant `getBy*` interactions and a `toHaveScreenshot('<feature>-<state>.png')`. **Removed path** → delete the obsolete `test()` and run `npm run test:visual:web:update` to drop its orphan baseline PNG. **Adjusted path** → the existing test stays; only the snapshot's PNG regenerates (baseline change is the visible-change evidence). See `/new-feature` step 7a for the authoring pattern.
 
    Convert `it.todo` test bodies into real assertions in the same commit as the layer that makes them passable.
 

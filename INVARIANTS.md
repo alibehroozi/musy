@@ -36,8 +36,10 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | DATA-04 | `search_history` has a unique compound index `(userId, query)`; submitting the same normalized query twice for the same user creates exactly one document (dedupe at the DB level) and increments `searchCount` | High     |
 
 | DATA-05 | Every `play_resolutions` document has `expiresAt` strictly after `resolvedAt`; the TTL index is configured with `expireAfterSeconds: 0`; `snapshotHash` is unique in the collection | High |
+| DATA-06 | Every `listening_events` document has `userId`, `songKey`, `eventType`, and `at` populated; `elapsedMs >= 0`; compound index `(userId, songKey, at)` exists | High |
+| DATA-07 | `interest_scores` has a unique compound index `(userId, songKey)`; successive upserts for the same `(userId, songKey)` produce exactly one document; `score` is monotonically non-decreasing — never drops on repeated events | Critical |
 
-**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/play.test.ts`
+**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/play.test.ts`, `tests/invariants/data/play-events.test.ts`
 
 ---
 
@@ -51,8 +53,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | LOGIC-04 | The web-core `searchTracks` fetcher validates the API response against the `SearchResponse` Zod schema and throws a `ZodError` when the response body does not match the schema                      | High     |
 | LOGIC-05 | The pure SoundCloud HTML parser (`extractSourceFromHtml`) is deterministic: given the same HTML input it always returns the same result; it returns `null` for malformed or unrecognised HTML        | High     |
 | LOGIC-06 | The `computeSnapshotHash` function is stable: identical `(title, artist, durationSec)` triples always produce the same hash regardless of leading/trailing whitespace or letter case                 | High     |
+| LOGIC-07 | `bumpScore(oldScore, "started")` returns `max(oldScore, 3)`; `bumpScore(oldScore, "completed")` returns `max(oldScore, 5)`; score never decreases; function is pure — no I/O, deterministic          | High     |
 
-**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/play.test.ts`
+**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/play.test.ts`, `tests/invariants/logic/score-bump.test.ts`
 
 ---
 
@@ -68,8 +71,10 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | API-06 | Cursor pagination on `GET /api/search/history` is stable: issuing the same cursor twice returns the same page of entries (no skipped or duplicated entries when the underlying data has not changed)                                                        | High     |
 | API-07 | `POST /play/resolve` is publicly accessible (no session required); returns 400 + `ErrorResponse` when the snapshot is missing or malformed; returns 200 with `source: null, streamUrl: null` when no provider matches — never 404 for an unresolvable track | Critical |
 | API-08 | `POST /play/resolve` response always conforms to the `ResolveResponse` Zod schema, including when both Audius and SoundCloud fail                                                                                                                           | Critical |
+| API-09 | `POST /play/started` and `POST /play/completed` both require a valid session cookie; both return 401 + `ErrorResponse` when the cookie is missing or invalid; both return 204 with no body on success                                                       | Critical |
+| API-10 | Both endpoints validate the request body against their respective Zod schemas and reject malformed bodies with 400 + `ErrorResponse`; any `userId` field in the body is ignored — the server always derives `userId` from the session                       | Critical |
 
-**Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`, `tests/invariants/api/play.test.ts`
+**Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`, `tests/invariants/api/play.test.ts`, `tests/invariants/api/play-events.test.ts`
 
 ---
 
@@ -92,16 +97,17 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## SEC — authorization and credential hygiene
 
-| ID     | Invariant                                                                                                                                                                                           | Severity |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line                        | Critical |
-| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                 | Critical |
-| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`) return 401 without a valid session cookie | Critical |
-| SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                     | Critical |
-| SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                 | Critical |
-| SEC-06 | The `SOUNDCLOUD_USER_AGENT` env var value and any SoundCloud-extracted `client_id` never appear in any HTTP response body or structured log line at any log level                                   | Critical |
+| ID     | Invariant                                                                                                                                                                                                 | Severity |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line                              | Critical |
+| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                       | Critical |
+| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`) return 401 without a valid session cookie       | Critical |
+| SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                           | Critical |
+| SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                       | Critical |
+| SEC-06 | The `SOUNDCLOUD_USER_AGENT` env var value and any SoundCloud-extracted `client_id` never appear in any HTTP response body or structured log line at any log level                                         | Critical |
+| SEC-07 | User A's session cannot write to user B's `interest_scores` or `listening_events` by any body field manipulation; the server always derives `userId` from the session cookie, never from the request body | Critical |
 
-**Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`, `tests/invariants/sec/play.test.ts`
+**Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`, `tests/invariants/sec/play.test.ts`, `tests/invariants/sec/play-events.test.ts`
 
 ---
 
@@ -112,8 +118,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | PRIVACY-01 | Outgoing HTTP requests to Audius, Deezer, Radio Browser, and Genius carry only the search query string; no user identifier, session token, or IP forwarding header is added by our aggregator code                                    | Critical |
 | PRIVACY-02 | `search_history` content (query strings and `userId` mappings) never leaves the database tier; the search aggregator (providers, cache) is entirely unaware of history — no history data reaches third-party APIs or LLM prompts      | Critical |
 | PRIVACY-03 | Outgoing requests from the play resolver to Audius and SoundCloud carry only song-snapshot data (title + artist as search terms, or a spoofed `User-Agent`); no user identifier, session cookie, or `X-Forwarded-For` header is added | Critical |
+| PRIVACY-04 | Neither `POST /play/started` nor `POST /play/completed` makes any outgoing third-party HTTP request; all listening data stays within the database tier and is never forwarded to Audius, SoundCloud, or any external service          | Critical |
 
-**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`
+**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`, `tests/invariants/privacy/play-events.test.ts`
 
 ---
 

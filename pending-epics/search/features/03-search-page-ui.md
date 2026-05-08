@@ -1,7 +1,8 @@
 ---
 epic: search
-status: pending
+status: done
 estimated-invariants: 5
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/5
 ---
 
 # Feature 03: Search page UI — input + results

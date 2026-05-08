@@ -90,7 +90,7 @@ describe("PRIVACY-02: search_history content never leaves the database tier; pro
   it("SearchHistoryRepository exposes only DB methods — no outgoing HTTP", async () => {
     const { SearchHistoryRepository } =
       await import("../../../apps/api/src/modules/search/search-history.repository.js");
-    const proto = SearchHistoryRepository.prototype as Record<string, unknown>;
+    const proto = SearchHistoryRepository.prototype as unknown as Record<string, unknown>;
     // The repository must only have upsert and findByUser; no fetch/http methods
     const ownMethods = Object.getOwnPropertyNames(proto).filter(
       (k) => k !== "constructor" && typeof proto[k] === "function",

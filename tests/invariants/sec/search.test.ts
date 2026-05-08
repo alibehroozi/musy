@@ -54,9 +54,11 @@ describe("SEC-05: GET /api/search/history for user A never returns entries owned
   it("user A's history request only returns user A's entries, not user B's", async () => {
     h = await buildSearchHistoryTestApp();
 
+    const userA = "550e8400-e29b-41d4-a716-44665544000a";
+    const userB = "550e8400-e29b-41d4-a716-44665544000b";
     const now = Date.now();
     // Seed user A's history
-    h.historyRepo.historyByUser.set("user-a", [
+    h.historyRepo.historyByUser.set(userA, [
       {
         id: "ha1",
         query: "user-a-secret-query",
@@ -65,7 +67,7 @@ describe("SEC-05: GET /api/search/history for user A never returns entries owned
       },
     ]);
     // Seed user B's history (separate)
-    h.historyRepo.historyByUser.set("user-b", [
+    h.historyRepo.historyByUser.set(userB, [
       {
         id: "hb1",
         query: "user-b-query",
@@ -75,7 +77,7 @@ describe("SEC-05: GET /api/search/history for user A never returns entries owned
     ]);
 
     // Request as user B
-    const tokenB = h.authService.signSession({ uid: "user-b", gid: "g_user_b" });
+    const tokenB = h.authService.signSession({ uid: userB, gid: "g_user_b" });
     const res = await request(h.app.getHttpServer())
       .get("/api/search/history")
       .set("Cookie", `session=${tokenB}`);

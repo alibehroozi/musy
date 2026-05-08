@@ -121,7 +121,10 @@ describe("API-05: GET /api/search/history requires a valid session; returns 401 
 
   it("returns 200 + HistoryResponse when a valid session cookie is present", async () => {
     h = await buildSearchHistoryTestApp();
-    const token = h.authService.signSession({ uid: "user-1", gid: "g_user_1" });
+    const token = h.authService.signSession({
+      uid: "550e8400-e29b-41d4-a716-446655440001",
+      gid: "g_user_1",
+    });
     const res = await request(h.app.getHttpServer())
       .get("/api/search/history")
       .set("Cookie", `session=${token}`);
@@ -139,7 +142,7 @@ describe("API-06: Cursor pagination on GET /api/search/history is stable", () =>
 
   it("issuing the same cursor twice returns the same entries", async () => {
     h = await buildSearchHistoryTestApp();
-    const userId = "user-paginate";
+    const userId = "550e8400-e29b-41d4-a716-446655440002";
     // Seed 3 entries (page size will be 2 in test)
     const now = Date.now();
     h.historyRepo.historyByUser.set(userId, [
@@ -193,7 +196,7 @@ describe("API-06: Cursor pagination on GET /api/search/history is stable", () =>
 
   it("nextCursor is null when no more entries exist", async () => {
     h = await buildSearchHistoryTestApp();
-    const userId = "user-small";
+    const userId = "550e8400-e29b-41d4-a716-446655440003";
     const now = Date.now();
     h.historyRepo.historyByUser.set(userId, [
       {

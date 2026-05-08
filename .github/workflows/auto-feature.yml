@@ -38,7 +38,7 @@ on:
   schedule:
     # Every 5 hours, on the hour: 00:00, 05:00, 10:00, 15:00, 20:00 UTC.
     # Matches Claude Pro's session window so each run starts fresh.
-    - cron: "0 */5 * * *"
+    - cron: "0 */2 * * *"
 
 concurrency:
   group: auto-feature

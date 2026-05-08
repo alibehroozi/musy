@@ -1,16 +1,17 @@
 import { test as base, expect, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 import type { ZodType } from "zod";
 import { ErrorResponse, User } from "@moc/contracts";
 
 /**
  * Universal Playwright fixtures for the music app.
  *
- * Two responsibilities:
+ * Three responsibilities:
  *
- *   1. **Auth** — every test starts authenticated as `TEST_USER`. `/api/auth/me`
- *      is intercepted to return 200 + the user payload by default. Test
- *      unauthenticated UX with `test.use({ authed: false })` per
- *      describe block.
+ *   1. **Auth** — every test starts authenticated as `TEST_USER`.
+ *      `/api/auth/me` is intercepted to return 200 + the user payload
+ *      by default. Test unauthenticated UX with `test.use({ authed: false })`
+ *      per describe block.
  *
  *   2. **Typed mock helpers** — `mockJsonRoute` / `mockJsonError` build
  *      route fulfillments from `@moc/contracts` Zod schemas. Schema-
@@ -19,6 +20,13 @@ import { ErrorResponse, User } from "@moc/contracts";
  *      against stale shapes. ARCHITECTURE.md and the slash commands
  *      forbid bare `r.fulfill({ body: JSON.stringify(...) })` on JSON
  *      responses for exactly this reason.
+ *
+ *   3. **Accessibility assertion** — `expectAccessible(page)` runs axe-
+ *      core's WCAG 2.1 AA ruleset against the rendered DOM and fails
+ *      the test on any violation (contrast, missing label, invalid
+ *      ARIA, etc.). Per AGENTS.md hard rule #13, every page snapshot
+ *      pairs with this assertion: the snapshot proves what the page
+ *      LOOKS like, the a11y check proves it's READABLE.
  *
  * Specs MUST import from this file, never directly from
  * `@playwright/test`. The fixture only mocks `/api/auth/me`; feature-
@@ -110,6 +118,50 @@ export async function mockJsonError(
   error: ErrorResponse["error"],
 ): Promise<void> {
   await mockJsonRoute(page, url, ErrorResponse, { error }, status);
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Accessibility assertion
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * Run axe-core against the current page and fail the test on any
+ * WCAG 2.1 AA violation — including text contrast, missing labels,
+ * invalid ARIA, etc. Per AGENTS.md hard rule #13, call this after
+ * every `toHaveScreenshot(...)`:
+ *
+ *   await expect(page).toHaveScreenshot("foo.png");
+ *   await expectAccessible(page);
+ *
+ * The visual snapshot proves the page LOOKS right; this proves it's
+ * READABLE. A failure on token-driven UI signals the token pair is
+ * wrong (e.g. text-text-muted on bg-surface fails contrast). Fix
+ * `theme.css`, not the assertion.
+ *
+ * Pass an optional CSS selector list to scope the check (e.g. exclude
+ * a known-failing third-party widget while it's being remediated).
+ * Default: full page.
+ */
+export async function expectAccessible(
+  page: Page,
+  options: { exclude?: string[] } = {},
+): Promise<void> {
+  let builder = new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]);
+  for (const selector of options.exclude ?? []) {
+    builder = builder.exclude(selector);
+  }
+  const results = await builder.analyze();
+
+  // Format the failure with the rule id, impact, and the offending
+  // selectors — terser than dumping the entire results object.
+  const violations = results.violations.map((v) => ({
+    id: v.id,
+    impact: v.impact,
+    description: v.description,
+    nodes: v.nodes.map((n) => ({ target: n.target, html: n.html })),
+  }));
+
+  expect(violations, "axe found WCAG AA violations on this page").toEqual([]);
 }
 
 // ────────────────────────────────────────────────────────────────────────

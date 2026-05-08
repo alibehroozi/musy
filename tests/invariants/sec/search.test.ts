@@ -38,3 +38,7 @@ describe("SEC-04: GENIUS_ACCESS_TOKEN never appears in any HTTP response body", 
     expect(bodyText).not.toContain(SEARCH_TEST_ENV.GENIUS_ACCESS_TOKEN);
   });
 });
+
+describe("SEC-05: GET /api/search/history for user A never returns entries owned by user B", () => {
+  it.todo("user A's history request only returns user A's entries, not user B's");
+});

@@ -205,3 +205,9 @@ describe("UI-06: every result in a successful response is rendered as a ResultRo
     expect(screen.getByTestId("live-indicator")).toBeInTheDocument();
   });
 });
+
+describe("UI-07: authenticated user with ≥1 history entry sees history list, not suggestions", () => {
+  it.todo("history list is visible when authenticated user has history entries and input is empty");
+  it.todo("suggestions block is not rendered when history list is shown");
+  it.todo("unauthenticated user still sees the suggestions block (no history list)");
+});

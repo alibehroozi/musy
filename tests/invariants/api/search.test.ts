@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-03, API-04.
+// Invariants verified here are listed in INVARIANTS.md under API-03, API-04, API-05, API-06.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -99,4 +99,14 @@ describe("API-04: POST /api/search always returns 200 + SearchResponse, even whe
     expect(res2.status).toBe(200);
     expect(SearchResponse.parse(res2.body).cached).toBe(true);
   });
+});
+
+describe("API-05: GET /api/search/history requires a valid session; returns 401 without session", () => {
+  it.todo("returns 401 + ErrorResponse when no session cookie is present");
+  it.todo("returns 200 + HistoryResponse when a valid session cookie is present");
+});
+
+describe("API-06: Cursor pagination on GET /api/search/history is stable", () => {
+  it.todo("issuing the same cursor twice returns the same entries");
+  it.todo("nextCursor is null when no more entries exist");
 });

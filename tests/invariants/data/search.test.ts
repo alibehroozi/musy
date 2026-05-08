@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under DATA-03.
+// Invariants verified here are listed in INVARIANTS.md under DATA-03, DATA-04.
 
 import { describe, it, expect } from "vitest";
 import { SearchCacheSchemaDefinition } from "../../../apps/api/src/modules/search/search-cache.schema.js";
@@ -34,4 +34,10 @@ describe("DATA-03: Every search_cache document has expiresAt > createdAt; queryH
     const expiresAt = new Date(createdAt.getTime() + CACHE_TTL_MS);
     expect(expiresAt.getTime()).toBeGreaterThan(createdAt.getTime());
   });
+});
+
+describe("DATA-04: search_history has a unique compound index (userId, query); duplicate submissions create one document", () => {
+  it.todo("search_history schema has a unique compound index on (userId, query)");
+  it.todo("search_history schema has a range index on (userId, lastSearchedAt: -1)");
+  it.todo("schema has no TTL index — history persists indefinitely");
 });

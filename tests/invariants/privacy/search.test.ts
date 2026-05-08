@@ -66,3 +66,10 @@ describe("PRIVACY-01: Outgoing provider requests carry only the query string; no
     }
   });
 });
+
+describe("PRIVACY-02: search_history content never leaves the database tier; providers are unaware of history", () => {
+  it.todo(
+    "the search aggregator service method signature accepts only a raw query and optional userId; no history data is forwarded to providers",
+  );
+  it.todo("SearchHistoryRepository has no outgoing HTTP methods — all operations are DB-only");
+});

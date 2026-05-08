@@ -142,17 +142,18 @@ echo -n "<your MONGO_URI>" | gcloud secrets create musy-mongo-uri --data-file=-
 echo -n "$SESSION_SECRET"  | gcloud secrets create musy-session-secret --data-file=-
 echo -n "<google client id>"     | gcloud secrets create musy-google-client-id --data-file=-
 echo -n "<google client secret>" | gcloud secrets create musy-google-client-secret --data-file=-
+echo -n "<musy-genius-access-token>" | gcloud secrets create musy-genius-access-token --data-file=-
 
 # Grant the Cloud Run runtime service account access to these secrets
 RUNTIME_SA="$(gcloud projects describe musy-prod --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
-for secret in musy-mongo-uri musy-session-secret musy-google-client-id musy-google-client-secret; do
+for secret in musy-mongo-uri musy-session-secret musy-google-client-id musy-google-client-secret musy-genius-access-token; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --member="serviceAccount:$RUNTIME_SA" \
     --role="roles/secretmanager.secretAccessor"
 done
 
 gcloud run services update musy-api --region=europe-north1 \
-  --update-secrets="MONGO_URI=musy-mongo-uri:latest,SESSION_SECRET=musy-session-secret:latest,GOOGLE_CLIENT_ID=musy-google-client-id:latest,GOOGLE_CLIENT_SECRET=musy-google-client-secret:latest"
+  --update-secrets="MONGO_URI=musy-mongo-uri:latest,SESSION_SECRET=musy-session-secret:latest,GOOGLE_CLIENT_ID=musy-google-client-id:latest,GOOGLE_CLIENT_SECRET=musy-google-client-secret:latest,GENIUS_ACCESS_TOKEN=musy-genius-access-token:latest"
 ```
 
 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` come from your OAuth 2.0 client at https://console.cloud.google.com/apis/credentials. Add `<API_URL>/api/auth/google/callback` to **Authorized redirect URIs** in that screen.

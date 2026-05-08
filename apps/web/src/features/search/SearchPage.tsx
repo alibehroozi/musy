@@ -2,14 +2,17 @@ import { type KeyboardEvent, useCallback } from "react";
 import { Input, Button } from "@moc/design-system";
 import { useSearch } from "./useSearch.js";
 import { useHistory } from "./useHistory.js";
+import { useInterestActions } from "./useInterestActions.js";
 import { SuggestionsBlock } from "./components/SuggestionsBlock.js";
 import { HistoryList, HistorySkeleton } from "./components/HistoryList.js";
 import { ResultsSkeleton } from "./components/ResultsSkeleton.js";
 import { ResultsList } from "./components/ResultsList.js";
+import { SignInModal } from "./components/SignInModal.js";
 
 export function SearchPage(): JSX.Element {
   const { query, setQuery, state, submit, submitWithQuery, retry, clear } = useSearch();
   const { entries, hasMore, isLoading: isHistoryLoading, loadMore, refresh } = useHistory();
+  const { modalOpen, closeSignInModal, handleRowTap, handleSave } = useInterestActions();
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
@@ -65,7 +68,9 @@ export function SearchPage(): JSX.Element {
 
         {state.status === "loading" && <ResultsSkeleton />}
 
-        {state.status === "success" && <ResultsList data={state.data} />}
+        {state.status === "success" && (
+          <ResultsList data={state.data} onRowTap={handleRowTap} onSave={handleSave} />
+        )}
 
         {state.status === "error" && (
           <div className="px-4 py-8 text-center space-y-3">
@@ -76,6 +81,9 @@ export function SearchPage(): JSX.Element {
           </div>
         )}
       </div>
+
+      {/* Sign-in modal (for anonymous users attempting interactions) */}
+      <SignInModal open={modalOpen} onClose={closeSignInModal} />
     </main>
   );
 }

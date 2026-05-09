@@ -37,37 +37,42 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | DATA-05 | `interest_scores` has a unique compound index `(userId, songKey)`; any combination of explored/saved events for the same `(userId, source, externalId)` produces exactly one document                           | Critical |
 | DATA-06 | `interest_scores.score` is monotonically non-decreasing per `(userId, songKey)`: every event upsert satisfies `newDoc.score >= oldDoc.score` (max-rule)                                                         | Critical |
 | DATA-07 | `interest_scores.snapshot` is written on the first event for a given `(userId, songKey)` and is never overwritten by subsequent events on the same key                                                          | High     |
+| DATA-08 | Every `play_resolutions` document has `expiresAt` strictly after `resolvedAt`; the TTL index drops it at `expiresAt`; `snapshotHash` is unique in the collection                                                | High     |
 
-**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/interest-scores.test.ts`
+**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/interest-scores.test.ts`, `tests/invariants/data/play.test.ts`
 
 ---
 
 ## LOGIC — pure function contracts
 
-| ID       | Invariant                                                                                                                                                                                            | Severity |
-| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| LOGIC-01 | The search aggregator's dedupe + merge function is deterministic: given the same list of provider results, it always produces the same output regardless of how many times it is called              | High     |
-| LOGIC-02 | The `withTimeout` helper resolves within `timeout + 100ms` even when the wrapped promise never settles                                                                                               | High     |
-| LOGIC-03 | Dedupe collapses results that share an ISRC, or whose normalized title + artist are within a Levenshtein distance of 3, into a single result whose `sources` array lists every contributing provider | High     |
-| LOGIC-04 | The web-core `searchTracks` fetcher validates the API response against the `SearchResponse` Zod schema and throws a `ZodError` when the response body does not match the schema                      | High     |
+| ID       | Invariant                                                                                                                                                                                             | Severity |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| LOGIC-01 | The search aggregator's dedupe + merge function is deterministic: given the same list of provider results, it always produces the same output regardless of how many times it is called               | High     |
+| LOGIC-02 | The `withTimeout` helper resolves within `timeout + 100ms` even when the wrapped promise never settles                                                                                                | High     |
+| LOGIC-03 | Dedupe collapses results that share an ISRC, or whose normalized title + artist are within a Levenshtein distance of 3, into a single result whose `sources` array lists every contributing provider  | High     |
+| LOGIC-04 | The web-core `searchTracks` fetcher validates the API response against the `SearchResponse` Zod schema and throws a `ZodError` when the response body does not match the schema                       | High     |
+| LOGIC-05 | The `computeSnapshotHash` function is stable: equal `(title, artist, durationSec)` triples — modulo leading/trailing whitespace and ASCII case in `title` and `artist` — produce equal SHA-256 hashes | High     |
+| LOGIC-06 | The pure SoundCloud parser `extractSourceFromHtml(html)` is deterministic: the same HTML string always produces the same parsed `(sourceTrackId, clientId, transcodings)` result (or `null`)          | High     |
 
-**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`
+**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/play.test.ts`
 
 ---
 
 ## API — HTTP contract
 
-| ID     | Invariant                                                                                                                                                                                            | Severity |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| API-01 | Every error response from `apps/api` matches the shared `ErrorResponse` Zod schema                                                                                                                   | Critical |
-| API-02 | `GET /api/auth/me` returns 401 + `ErrorResponse` with no/invalid session cookie; returns 200 + a body matching the `User` Zod schema with a valid session cookie                                     | Critical |
-| API-03 | `POST /api/search` is publicly accessible (no session required); returns 400 + `ErrorResponse` when `q` is empty or missing                                                                          | Critical |
-| API-04 | `POST /api/search` always returns 200 with a body matching `SearchResponse` (`results`, `partial`, `failedProviders`, `cached`), even when all providers fail (`results: []`, `partial: true`)       | Critical |
-| API-05 | `GET /api/search/history` requires a valid session cookie; returns 401 + `ErrorResponse` when no session is present                                                                                  | Critical |
-| API-06 | Cursor pagination on `GET /api/search/history` is stable: issuing the same cursor twice returns the same page of entries (no skipped or duplicated entries when the underlying data has not changed) | High     |
-| API-07 | `POST /api/search/explored` and `POST /api/search/saved` return 401 + `ErrorResponse` without a valid session cookie; with a valid cookie and a body matching the request schema they return 204     | Critical |
+| ID     | Invariant                                                                                                                                                                                                                      | Severity |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| API-01 | Every error response from `apps/api` matches the shared `ErrorResponse` Zod schema                                                                                                                                             | Critical |
+| API-02 | `GET /api/auth/me` returns 401 + `ErrorResponse` with no/invalid session cookie; returns 200 + a body matching the `User` Zod schema with a valid session cookie                                                               | Critical |
+| API-03 | `POST /api/search` is publicly accessible (no session required); returns 400 + `ErrorResponse` when `q` is empty or missing                                                                                                    | Critical |
+| API-04 | `POST /api/search` always returns 200 with a body matching `SearchResponse` (`results`, `partial`, `failedProviders`, `cached`), even when all providers fail (`results: []`, `partial: true`)                                 | Critical |
+| API-05 | `GET /api/search/history` requires a valid session cookie; returns 401 + `ErrorResponse` when no session is present                                                                                                            | Critical |
+| API-06 | Cursor pagination on `GET /api/search/history` is stable: issuing the same cursor twice returns the same page of entries (no skipped or duplicated entries when the underlying data has not changed)                           | High     |
+| API-07 | `POST /api/search/explored` and `POST /api/search/saved` return 401 + `ErrorResponse` without a valid session cookie; with a valid cookie and a body matching the request schema they return 204                               | Critical |
+| API-08 | `POST /api/play/resolve` is publicly accessible (no session required); returns 400 + `ErrorResponse` when the body is missing or fails the `ResolveRequest` schema; never returns 404 for a snapshot the providers can't match | Critical |
+| API-09 | `POST /api/play/resolve` always returns 200 with a body matching `ResolveResponse`, including the case where every provider yields nothing (`{ source: null, sourceTrackId: null, streamUrl: null, expiresAt: null }`)         | Critical |
 
-**Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`
+**Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`, `tests/invariants/api/play.test.ts`
 
 ---
 
@@ -92,27 +97,29 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## SEC — authorization and credential hygiene
 
-| ID     | Invariant                                                                                                                                                                                           | Severity |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line                        | Critical |
-| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                 | Critical |
-| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`) return 401 without a valid session cookie | Critical |
-| SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                     | Critical |
-| SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                 | Critical |
-| SEC-06 | `interest_scores` documents are scoped per-user: events written by user A never appear in any HTTP response served to user B, and the repository filters every read by the authenticated `userId`   | Critical |
+| ID     | Invariant                                                                                                                                                                                                                     | Severity |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line                                                  | Critical |
+| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                                           | Critical |
+| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`, `POST /api/play/resolve`) return 401 without a valid session cookie | Critical |
+| SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                                               | Critical |
+| SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                                           | Critical |
+| SEC-06 | `interest_scores` documents are scoped per-user: events written by user A never appear in any HTTP response served to user B, and the repository filters every read by the authenticated `userId`                             | Critical |
+| SEC-07 | The configured `SOUNDCLOUD_USER_AGENT` value and the SoundCloud `client_id` extracted from upstream HTML never appear in any HTTP response body served by `apps/api`                                                          | Critical |
 
-**Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`
+**Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`, `tests/invariants/sec/play.test.ts`
 
 ---
 
 ## PRIVACY — data flow boundaries
 
-| ID         | Invariant                                                                                                                                                                                                                        | Severity |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| PRIVACY-01 | Outgoing HTTP requests to Audius, Deezer, Radio Browser, and Genius carry only the search query string; no user identifier, session token, or IP forwarding header is added by our aggregator code                               | Critical |
-| PRIVACY-02 | `search_history` content (query strings and `userId` mappings) never leaves the database tier; the search aggregator (providers, cache) is entirely unaware of history — no history data reaches third-party APIs or LLM prompts | Critical |
+| ID         | Invariant                                                                                                                                                                                                                                                                                        | Severity |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| PRIVACY-01 | Outgoing HTTP requests to Audius, Deezer, Radio Browser, and Genius carry only the search query string; no user identifier, session token, or IP forwarding header is added by our aggregator code                                                                                               | Critical |
+| PRIVACY-02 | `search_history` content (query strings and `userId` mappings) never leaves the database tier; the search aggregator (providers, cache) is entirely unaware of history — no history data reaches third-party APIs or LLM prompts                                                                 | Critical |
+| PRIVACY-03 | Outgoing HTTP requests fired by the `/api/play/resolve` flow (Audius stream redirect, SoundCloud HTML scrape, SoundCloud transcoding API) carry only the snapshot fields and our spoofed User-Agent; no user identifier, session cookie, or `X-Forwarded-*` header is added by our resolver code | Critical |
 
-**Test files:** `tests/invariants/privacy/search.test.ts`
+**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`
 
 ---
 

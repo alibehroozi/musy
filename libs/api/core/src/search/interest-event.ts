@@ -2,6 +2,7 @@ import type { InterestEventType, ProviderName } from "@moc/contracts";
 
 export const INTEREST_SCORE_BY_EVENT: Record<InterestEventType, number> = {
   explored: 3,
+  completed: 5,
   saved: 8,
 };
 

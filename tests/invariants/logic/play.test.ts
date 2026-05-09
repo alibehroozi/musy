@@ -3,7 +3,7 @@
 // Invariants verified here are listed in INVARIANTS.md under LOGIC-05, LOGIC-06, LOGIC-07.
 
 import { describe, it, expect } from "vitest";
-import { computeSnapshotHash, extractSourceFromHtml } from "@moc/api-core";
+import { bumpScore, computeSnapshotHash, extractSourceFromHtml } from "@moc/api-core";
 import type { SongSnapshot } from "@moc/contracts";
 
 function snap(overrides: Partial<SongSnapshot> = {}): SongSnapshot {
@@ -82,10 +82,35 @@ describe("LOGIC-06: extractSourceFromHtml is deterministic given the same HTML i
 });
 
 describe("LOGIC-07: bumpScore is a deterministic max-rule keyed on play event type", () => {
-  it.todo("bumpScore(0, 'started') returns 3");
-  it.todo("bumpScore(0, 'completed') returns 5");
-  it.todo("bumpScore(8, 'started') returns 8 (never decreases)");
-  it.todo("bumpScore(8, 'completed') returns 8 (never decreases)");
-  it.todo("bumpScore(3, 'completed') returns 5 (started → completed bumps up)");
-  it.todo("bumpScore(5, 'started') returns 5 (completed before started keeps the higher score)");
+  it("bumpScore(0, 'started') returns 3", () => {
+    expect(bumpScore(0, "started")).toBe(3);
+  });
+
+  it("bumpScore(0, 'completed') returns 5", () => {
+    expect(bumpScore(0, "completed")).toBe(5);
+  });
+
+  it("bumpScore(8, 'started') returns 8 (never decreases)", () => {
+    expect(bumpScore(8, "started")).toBe(8);
+  });
+
+  it("bumpScore(8, 'completed') returns 8 (never decreases)", () => {
+    expect(bumpScore(8, "completed")).toBe(8);
+  });
+
+  it("bumpScore(3, 'completed') returns 5 (started → completed bumps up)", () => {
+    expect(bumpScore(3, "completed")).toBe(5);
+  });
+
+  it("bumpScore(5, 'started') returns 5 (completed before started keeps the higher score)", () => {
+    expect(bumpScore(5, "started")).toBe(5);
+  });
+
+  it("is deterministic: identical inputs produce identical outputs across calls", () => {
+    for (let i = 0; i < 5; i++) {
+      expect(bumpScore(0, "started")).toBe(3);
+      expect(bumpScore(0, "completed")).toBe(5);
+      expect(bumpScore(8, "completed")).toBe(8);
+    }
+  });
 });

@@ -91,3 +91,9 @@ describe("SEC-05: GET /api/search/history for user A never returns entries owned
     expect(queryStrings).toContain("user-b-query");
   });
 });
+
+describe("SEC-06: interest_scores documents are scoped per-user", () => {
+  it.todo("repository.findScoresForUser(A) never returns documents whose userId != A");
+  it.todo("an event written by user A creates a document with userId === A only");
+  it.todo("user B querying for the same songKey sees no document");
+});

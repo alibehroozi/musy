@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-03, API-04, API-05, API-06.
+// Invariants verified here are listed in INVARIANTS.md under API-03, API-04, API-05, API-06, API-07.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -215,4 +215,14 @@ describe("API-06: Cursor pagination on GET /api/search/history is stable", () =>
     const body = HistoryResponse.parse(res.body);
     expect(body.nextCursor).toBeNull();
   });
+});
+
+describe("API-07: POST /api/search/explored and POST /api/search/saved require a valid session", () => {
+  it.todo("POST /api/search/explored returns 401 + ErrorResponse without a session cookie");
+  it.todo("POST /api/search/saved returns 401 + ErrorResponse without a session cookie");
+  it.todo("POST /api/search/explored returns 204 with a valid session and matching body");
+  it.todo("POST /api/search/saved returns 204 with a valid session and matching body");
+  it.todo(
+    "POST /api/search/explored returns 400 + ErrorResponse when the body fails schema validation",
+  );
 });

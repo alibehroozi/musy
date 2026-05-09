@@ -176,11 +176,13 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
   );
 
   it(
-    "produceStreamUrl returns a valid HTTPS non-preview stream URL, or null when only a snippet is available",
+    "produceStreamUrl always returns a valid HTTPS non-preview stream URL (falls back to non-snipped alternative when official track is snippet-gated)",
     async () => {
       const client = new SoundCloudStreamClient(
         fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
       );
+      // findMatch now prefers non-snipped candidates; for snippet-gated tracks like
+      // Daft Punk / Columbia it falls back to a remix/cover with non-snipped transcodings.
       const match = await client.findMatch(SC_TRACK);
       if (!match) {
         throw new Error(
@@ -188,15 +190,12 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
         );
       }
       const stream = await client.produceStreamUrl(match.sourceLocator);
-      // Major-label tracks (Daft Punk / Columbia) may have snippet-only access on
-      // SoundCloud free tier. Returning null is correct; returning a preview URL is not.
-      if (stream !== null) {
-        expect(stream.streamUrl).toMatch(/^https?:\/\//);
-        expect(stream.streamUrl).not.toContain("/preview/");
-        expect(typeof stream.expiresAt).toBe("string");
-      }
+      expect(stream).not.toBeNull();
+      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+      expect(stream?.streamUrl).not.toContain("/preview/");
+      expect(typeof stream?.expiresAt).toBe("string");
     },
-    30_000,
+    45_000,
   );
 
   it(
@@ -222,11 +221,13 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
   );
 
   it(
-    "produceStreamUrl (API fallback path): Don't Stop The Music by Rihanna returns a full stream URL without 'preview', or null when only a snippet is available",
+    "produceStreamUrl (API fallback path): Don't Stop The Music by Rihanna always returns a full non-preview stream URL (finds non-snipped alternative when official track is snippet-gated)",
     async () => {
       const client = new SoundCloudStreamClient(
         fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
       );
+      // findMatch now falls back to a remix/cover with non-snipped transcodings when the
+      // official Rihanna track (Def Jam / SoundCloud Go) has snippet-only access.
       const match = await client.findMatch(SC_TRACK_API_PATH);
       if (!match) {
         throw new Error(
@@ -235,14 +236,11 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
       }
       expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
       const stream = await client.produceStreamUrl(match.sourceLocator);
-      // Major-label tracks (Rihanna / Def Jam) may have snippet-only access on
-      // SoundCloud free tier. Returning null is correct; returning a preview URL is not.
-      if (stream !== null) {
-        expect(stream.streamUrl).toMatch(/^https?:\/\//);
-        expect(stream.streamUrl).not.toContain("/preview/");
-      }
+      expect(stream).not.toBeNull();
+      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+      expect(stream?.streamUrl).not.toContain("/preview/");
     },
-    40_000,
+    55_000,
   );
 });
 

@@ -45,16 +45,18 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## LOGIC — pure function contracts
 
-| ID       | Invariant                                                                                                                                                                                             | Severity |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| LOGIC-01 | The search aggregator's dedupe + merge function is deterministic: given the same list of provider results, it always produces the same output regardless of how many times it is called               | High     |
-| LOGIC-02 | The `withTimeout` helper resolves within `timeout + 100ms` even when the wrapped promise never settles                                                                                                | High     |
-| LOGIC-03 | Dedupe collapses results that share an ISRC, or whose normalized title + artist are within a Levenshtein distance of 3, into a single result whose `sources` array lists every contributing provider  | High     |
-| LOGIC-04 | The web-core `searchTracks` fetcher validates the API response against the `SearchResponse` Zod schema and throws a `ZodError` when the response body does not match the schema                       | High     |
-| LOGIC-05 | The `computeSnapshotHash` function is stable: equal `(title, artist, durationSec)` triples — modulo leading/trailing whitespace and ASCII case in `title` and `artist` — produce equal SHA-256 hashes | High     |
-| LOGIC-06 | The pure SoundCloud parser `extractSourceFromHtml(html)` is deterministic: the same HTML string always produces the same parsed `(sourceTrackId, clientId, transcodings)` result (or `null`)          | High     |
+| ID       | Invariant                                                                                                                                                                                                                                                                                                             | Severity |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| LOGIC-01 | The search aggregator's dedupe + merge function is deterministic: given the same list of provider results, it always produces the same output regardless of how many times it is called                                                                                                                               | High     |
+| LOGIC-02 | The `withTimeout` helper resolves within `timeout + 100ms` even when the wrapped promise never settles                                                                                                                                                                                                                | High     |
+| LOGIC-03 | Dedupe collapses results that share an ISRC, or whose normalized title + artist are within a Levenshtein distance of 3, into a single result whose `sources` array lists every contributing provider                                                                                                                  | High     |
+| LOGIC-04 | The web-core `searchTracks` fetcher validates the API response against the `SearchResponse` Zod schema and throws a `ZodError` when the response body does not match the schema                                                                                                                                       | High     |
+| LOGIC-05 | The `computeSnapshotHash` function is stable: equal `(title, artist, durationSec)` triples — modulo leading/trailing whitespace and ASCII case in `title` and `artist` — produce equal SHA-256 hashes                                                                                                                 | High     |
+| LOGIC-06 | The pure SoundCloud parser `extractSourceFromHtml(html)` is deterministic: the same HTML string always produces the same parsed `(sourceTrackId, clientId, transcodings)` result (or `null`)                                                                                                                          | High     |
+| LOGIC-07 | The audio engine in `libs/web/core/player/audio-engine.ts` is a deterministic state machine: given an event sequence (`load`, `playing`, `pause`, `ended`, `error`, …), the resulting `(status, currentTrack, progressMs)` triple is stable and testable without a real `<audio>` element (mock the driver interface) | High     |
+| LOGIC-08 | The web-core `resolveAndPlay(snapshot, apiBase)` function validates the `/play/resolve` response against the `ResolveResponse` Zod schema and propagates `ZodError` when the response body does not conform                                                                                                           | High     |
 
-**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/play.test.ts`
+**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/play.test.ts`, `tests/invariants/logic/player.test.ts`
 
 ---
 
@@ -78,20 +80,23 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## UI — DOM / rendering, checkable in jsdom
 
-| ID    | Invariant                                                                                                                                                                                                 | Severity |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| UI-01 | The app shell renders a routed bottom navigation for all users regardless of authentication state; the sign-in flow is not shown at the root shell level                                                  | High     |
-| UI-02 | The bottom navigation is visible on every routed page (`/explore`, `/taste`, `/search`, and the not-found fallback) regardless of authentication state                                                    | High     |
-| UI-03 | Exactly one bottom-nav tab carries `aria-current="page"` at any time, matching the current route path                                                                                                     | High     |
-| UI-04 | When the search input is empty and there is no per-user history, the suggestions block ("Try: …") is visible in the results area                                                                          | High     |
-| UI-05 | When a search request is in flight, a skeleton loading indicator is visible in the results area; previous results are replaced by the skeleton                                                            | High     |
-| UI-06 | On a successful response with non-empty results, every result in the response is rendered as a `ResultRow`; track rows show title+artist and station rows show a "Live" indicator                         | High     |
-| UI-07 | When the authenticated user has ≥ 1 search history entry and the input is empty, the history list is visible in the results area and the static suggestions block is not rendered                         | High     |
-| UI-08 | Pressing Enter in the search input on `/search` removes focus from the input element (so the on-screen keyboard dismisses on touch devices); the active element after Enter is no longer the search input | Medium   |
-| UI-09 | When an unauthenticated user taps a result row OR the row's add button, the sign-in Modal opens and no `POST /api/search/explored` or `POST /api/search/saved` request is fired                           | Critical |
-| UI-10 | The sign-in Modal sits at z-index `--z-modal` so it renders above the fixed bottom navigation; on a 375×667 viewport the modal's content is not occluded by the nav                                       | High     |
+| ID    | Invariant                                                                                                                                                                                                          | Severity |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| UI-01 | The app shell renders a routed bottom navigation for all users regardless of authentication state; the sign-in flow is not shown at the root shell level                                                           | High     |
+| UI-02 | The bottom navigation is visible on every routed page (`/explore`, `/taste`, `/search`, and the not-found fallback) regardless of authentication state                                                             | High     |
+| UI-03 | Exactly one bottom-nav tab carries `aria-current="page"` at any time, matching the current route path                                                                                                              | High     |
+| UI-04 | When the search input is empty and there is no per-user history, the suggestions block ("Try: …") is visible in the results area                                                                                   | High     |
+| UI-05 | When a search request is in flight, a skeleton loading indicator is visible in the results area; previous results are replaced by the skeleton                                                                     | High     |
+| UI-06 | On a successful response with non-empty results, every result in the response is rendered as a `ResultRow`; track rows show title+artist and station rows show a "Live" indicator                                  | High     |
+| UI-07 | When the authenticated user has ≥ 1 search history entry and the input is empty, the history list is visible in the results area and the static suggestions block is not rendered                                  | High     |
+| UI-08 | Pressing Enter in the search input on `/search` removes focus from the input element (so the on-screen keyboard dismisses on touch devices); the active element after Enter is no longer the search input          | Medium   |
+| UI-09 | When an unauthenticated user taps a result row OR the row's add button, the sign-in Modal opens and no `POST /api/search/explored` or `POST /api/search/saved` request is fired                                    | Critical |
+| UI-10 | The sign-in Modal sits at z-index `--z-modal` so it renders above the fixed bottom navigation; on a 375×667 viewport the modal's content is not occluded by the nav                                                | High     |
+| UI-11 | When a track is playing or paused mid-track, the mini-player is rendered above the bottom nav on every routed page (`/explore`, `/taste`, `/search`); when no track has ever been played the mini-player is absent | High     |
+| UI-12 | When a track resolves to `source: null` (no stream), the mini-player renders in the failed state (visible warning + dismiss button) and no `<audio>` src is set                                                    | Critical |
+| UI-13 | The currently-playing search result row renders with a `data-playing="true"` attribute; all other rows do not have that attribute                                                                                  | High     |
 
-**Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`, `tests/invariants/ui/search.test.tsx`, `tests/invariants/ui/sign-in-modal.test.tsx`
+**Test files:** `tests/invariants/ui/auth.test.tsx`, `tests/invariants/ui/nav.test.tsx`, `tests/invariants/ui/search.test.tsx`, `tests/invariants/ui/sign-in-modal.test.tsx`, `tests/invariants/ui/player.test.tsx`
 
 ---
 
@@ -118,8 +123,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | PRIVACY-01 | Outgoing HTTP requests to Audius, Deezer, Radio Browser, and Genius carry only the search query string; no user identifier, session token, or IP forwarding header is added by our aggregator code                                                                                               | Critical |
 | PRIVACY-02 | `search_history` content (query strings and `userId` mappings) never leaves the database tier; the search aggregator (providers, cache) is entirely unaware of history — no history data reaches third-party APIs or LLM prompts                                                                 | Critical |
 | PRIVACY-03 | Outgoing HTTP requests fired by the `/api/play/resolve` flow (Audius stream redirect, SoundCloud HTML scrape, SoundCloud transcoding API) carry only the snapshot fields and our spoofed User-Agent; no user identifier, session cookie, or `X-Forwarded-*` header is added by our resolver code | Critical |
+| PRIVACY-04 | The browser's audio-fetch URL set on `<audio src>` is the raw stream URL from the resolver response; the FE code adds no user-identifier, session, or fingerprinting query parameters to it                                                                                                      | Critical |
 
-**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`
+**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`, `tests/invariants/privacy/player-web.test.ts`
 
 ---
 
@@ -149,8 +155,9 @@ _No invariants yet. Examples:_
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | BROWSER-01 | On a 375×667 mobile viewport, each bottom-nav tab has a touch target ≥ 44×44 px and the nav applies `env(safe-area-inset-bottom)` so no content is occluded by the iOS home indicator                      | High     |
 | BROWSER-02 | On a 375×667 mobile viewport, the search input is visible at the top of the viewport without scrolling; results are scrollable below it; the bottom nav remains fixed and does not occlude the last result | High     |
+| BROWSER-03 | On a 375×667 mobile viewport, the mini-player + bottom nav together fit within the bottom region without horizontal scroll; the play/pause and dismiss buttons have a touch target ≥ 44×44 px              | High     |
 
-**Test files:** `tests/invariants/browser/bottom-nav.test.ts`, `tests/invariants/browser/search.test.ts` (Layer 3 — Playwright, stubs pending)
+**Test files:** `tests/invariants/browser/bottom-nav.test.ts`, `tests/invariants/browser/search.test.ts`, `tests/invariants/browser/player.test.ts` (Layer 3 — Playwright)
 
 ---
 

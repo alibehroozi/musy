@@ -1,15 +1,20 @@
 // If a test fails, fix the source code, not the test.
 //
 // Invariants verified here are listed in INVARIANTS.md under API-08, API-09.
+// Real-provider integration tests (no mocking) are at the bottom of this file.
+// Per hard rule #15, SoundCloud and Audius clients call the actual upstream.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import { ErrorResponse, ResolveResponse } from "@moc/contracts";
+import type { ConfigService } from "@nestjs/config";
 import {
   buildPlayTestApp,
   makeSnapshot,
   type PlayTestAppHandle,
 } from "../_helpers/play-test-app.js";
+import { SoundCloudStreamClient } from "../../../apps/api/src/modules/play/providers/soundcloud-stream.client.js";
+import { AudiusStreamClient } from "../../../apps/api/src/modules/play/providers/audius-stream.client.js";
 
 describe("API-08: POST /api/play/resolve is publicly accessible; rejects empty/invalid body with 400; never 404 on unmatched", () => {
   let h: PlayTestAppHandle | undefined;
@@ -109,5 +114,90 @@ describe("API-09: POST /api/play/resolve always returns 200 + ResolveResponse, e
     expect(res.status).toBe(200);
     const body = ResolveResponse.parse(res.body);
     expect(body.source).toBe("audius");
+  });
+});
+
+// ── Real-provider integration tests (no mocking) ──────────────────────────────
+// These call the actual SoundCloud and Audius upstreams.
+// Per hard rule #15, provider clients are NOT mocked — these tests reveal
+// real upstream shape changes and broken scraping before they hit production.
+
+const DEFAULT_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+function fakeConfig(env: Record<string, string> = {}): ConfigService {
+  return {
+    get: <T>(key: string, defaultValue?: T): T => {
+      if (key in env) return env[key] as unknown as T;
+      return defaultValue as T;
+    },
+    getOrThrow: <T>(key: string): T => {
+      if (key in env) return env[key] as unknown as T;
+      throw new Error(`Missing config key: ${key}`);
+    },
+  } as unknown as ConfigService;
+}
+
+// "Get Lucky" is confirmed available on SoundCloud's official Daft Punk page.
+const SC_TRACK = { title: "Get Lucky", artist: "Daft Punk", kind: "track" as const };
+// "Ghosts N Stuff" by deadmau5 is confirmed available directly on Audius.
+const AUDIUS_TRACK = { title: "Ghosts N Stuff", artist: "deadmau5", kind: "track" as const };
+
+describe("SoundCloudStreamClient: real provider (no mocking)", () => {
+  it(
+    "findMatch returns a non-null result with sourceTrackId and a soundcloud.com permalink",
+    async () => {
+      const client = new SoundCloudStreamClient(
+        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
+      );
+      const result = await client.findMatch(SC_TRACK);
+      expect(result).not.toBeNull();
+      expect(typeof result?.sourceTrackId).toBe("string");
+      expect(result?.sourceTrackId.length).toBeGreaterThan(0);
+      expect(result?.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+    },
+    20_000,
+  );
+
+  it(
+    "produceStreamUrl returns a valid HTTPS stream URL for a matched track",
+    async () => {
+      const client = new SoundCloudStreamClient(
+        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
+      );
+      const match = await client.findMatch(SC_TRACK);
+      if (!match) {
+        throw new Error(
+          "SoundCloud findMatch returned null — real SoundCloud integration is broken",
+        );
+      }
+      const stream = await client.produceStreamUrl(match.sourceLocator);
+      expect(stream).not.toBeNull();
+      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+      expect(typeof stream?.expiresAt).toBe("string");
+    },
+    30_000,
+  );
+});
+
+describe("AudiusStreamClient: real provider (no mocking)", () => {
+  it(
+    "findMatch returns a non-null result for a track confirmed on Audius",
+    async () => {
+      const client = new AudiusStreamClient(fakeConfig({ AUDIUS_APP_NAME: "moc-test" }));
+      const result = await client.findMatch(AUDIUS_TRACK);
+      expect(result).not.toBeNull();
+      expect(typeof result?.sourceTrackId).toBe("string");
+      expect(result?.sourceTrackId.length).toBeGreaterThan(0);
+    },
+    20_000,
+  );
+
+  it("produceStreamUrl returns a stable Audius stream redirect URL (no network call needed)", () => {
+    const client = new AudiusStreamClient(fakeConfig({ AUDIUS_APP_NAME: "moc-test" }));
+    const result = client.produceStreamUrl("some-track-id");
+    expect(result.streamUrl).toMatch(/^https:\/\/api\.audius\.co\/v1\/tracks\//);
+    expect(result.expiresAt).toBeNull();
   });
 });

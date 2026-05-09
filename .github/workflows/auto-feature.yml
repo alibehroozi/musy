@@ -248,12 +248,15 @@ jobs:
                  by their conventional prefixes (`spec:`,
                  `test(invariants):`, `feat(contracts):`,
                  `feat(api-core):`, `feat(api):`, `feat(web-core):`,
-                 `feat(web):`, plus any `feat(visual):` /
-                 `chore(visual):` baselines and the final docs
-                 feature-marking commit). Continue from the first
-                 missing stage; **never redo a stage already on the
-                 branch**. Record the existing PR number — that's
-                 where you push and comment.
+                 `feat(web):`, `test(visual, web):`, plus any
+                 `feat(visual):` / `chore(visual):` baselines and the
+                 final docs feature-marking commit). Continue from
+                 the first missing stage; **never redo a stage already
+                 on the branch**. If `feat(web):` landed but
+                 `test(visual, web):` did not, the feature is
+                 incomplete — Step 4a applies and that's the next
+                 stage to author. Record the existing PR number —
+                 that's where you push and comment.
 
               b. **No open PR but the branch exists on origin** —
                  orphan from a prior run that never opened the PR.
@@ -292,6 +295,7 @@ jobs:
             - [ ] feat(api) — Nest module
             - [ ] feat(web-core) — fetcher
             - [ ] feat(web) — UI
+            - [ ] test(visual, web) — Playwright e2e spec covering every User-behavior scenario (drop only for purely backend-only features)
             - [ ] verify green at HEAD
             - [ ] visual baselines green
             - [ ] feature marked done
@@ -334,6 +338,73 @@ jobs:
             commit list on the PR still shows the work. A missed push
             self-heals via Step 2's resume logic on the next
             scheduled run.
+
+            ### Step 4a — Playwright e2e spec is mandatory for UI features
+
+            If this feature adds or changes anything under `apps/web/`,
+            you **MUST** author
+            `apps/web/tests/e2e/<feature-slug>.spec.ts` per
+            `/new-feature` step 7a, and land it as a
+            `test(visual, web): user-flow spec for <feature>` commit
+            **before** running Step 5 verify and **before** flipping
+            the PR to ready in Step 6.
+
+            The spec must cover **every** scenario named in the
+            product-spec feature file's "User behavior" section:
+
+              - One `test()` per numbered User-behavior step where the
+                UI visibly changes, with a `toHaveScreenshot(...)` after
+                the corresponding interaction.
+              - One `test()` per named "Failure mode the user can reach"
+                (network failure, upstream provider error, validation
+                error, empty result, gating, etc.), forcing that state
+                via `mockJsonError` or `page.route(..., r => r.abort())`.
+              - One `test()` for the empty / first-run state.
+              - For every authenticated-vs-unauthenticated divergence the
+                feature file describes, an additional `test.describe`
+                with `test.use({ authed: false })`.
+
+            Non-negotiables (already in /new-feature step 7a — restated
+            here so they are not silently dropped under CI pressure):
+
+              - **Import from `./fixtures.js`**, never directly from
+                `@playwright/test`. Auth is mocked universally there.
+              - **Mocked responses must be typed via `mockJsonRoute` /
+                `mockJsonError`** against the matching `@moc/contracts`
+                Zod schema. No bare `page.route(..., r => r.fulfill({
+                body: JSON.stringify({...}) }))` with an untyped object.
+              - **Every `toHaveScreenshot(...)` is paired with
+                `await expectAccessible(page)`** (AGENTS.md hard rule
+                #13). A WCAG AA failure on token-driven UI means the
+                token pair is wrong — fix `theme.css`, not the test.
+              - **No raw `<button>` / `<input>` / `<textarea>` /
+                `<select>`** in the feature's web code (AGENTS.md hard
+                rule #14). DS components only.
+              - **Selectors are accessible** (`getByRole`, `getByLabel`,
+                `getByText`) and resolve to a real target — verify the
+                label/text appears in the JSX of the `feat(web):`
+                commit you just authored, in `@moc/design-system`, or
+                already-on-branch code. CSS selectors and hallucinated
+                labels are bugs at authoring time, not later.
+
+            On the first run that adds the spec, generate baselines for
+            **only the new spec**:
+
+                npm --workspace apps/web run test:visual:update \
+                  -- tests/e2e/<feature-slug>.spec.ts
+
+            Commit the resulting PNGs in the same `test(visual, web):`
+            commit so the PR shows the spec and its baselines together.
+            Never run the workspace-wide `test:visual:web:update` —
+            it overwrites every drifted baseline at once and silently
+            masks unrelated regressions (AGENTS.md hard rule #12).
+
+            **Hard gate:** a PR with a `feat(web):` commit but no
+            `test(visual, web):` commit is treated as incomplete. Do
+            not flip the draft PR to ready in Step 6 until the spec
+            has landed and snaps green. If verify (Step 5) reveals the
+            spec is missing, return here, author it, push, then
+            re-run verify.
 
             ### Step 5 — verify at branch HEAD
 

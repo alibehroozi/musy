@@ -150,3 +150,44 @@ describe("LOGIC-03: Dedupe collapses matching results into a single result prese
     expect(sources).toContain("genius");
   });
 });
+
+import { applyInterestEvent, songKeyOf, INTEREST_SCORE_BY_EVENT } from "@moc/api-core";
+
+describe("LOGIC: applyInterestEvent enforces the max-rule (DATA-06 helper)", () => {
+  it("first explored event yields score 3 with scoreChanged=true", () => {
+    const r = applyInterestEvent(null, "explored");
+    expect(r).toEqual({ score: 3, scoreChanged: true });
+  });
+
+  it("first saved event yields score 8 with scoreChanged=true", () => {
+    const r = applyInterestEvent(null, "saved");
+    expect(r).toEqual({ score: 8, scoreChanged: true });
+  });
+
+  it("explored after saved keeps score at 8 with scoreChanged=false", () => {
+    const r = applyInterestEvent(8, "explored");
+    expect(r).toEqual({ score: 8, scoreChanged: false });
+  });
+
+  it("saved after explored raises score to 8 with scoreChanged=true", () => {
+    const r = applyInterestEvent(3, "saved");
+    expect(r).toEqual({ score: 8, scoreChanged: true });
+  });
+
+  it("re-saving stays at 8 with scoreChanged=false (idempotent)", () => {
+    const r = applyInterestEvent(8, "saved");
+    expect(r).toEqual({ score: 8, scoreChanged: false });
+  });
+
+  it("event scores are 3 (explored) and 8 (saved), per the product spec", () => {
+    expect(INTEREST_SCORE_BY_EVENT.explored).toBe(3);
+    expect(INTEREST_SCORE_BY_EVENT.saved).toBe(8);
+  });
+});
+
+describe("LOGIC: songKeyOf composes a stable per-(source, externalId) key", () => {
+  it("formats as `${source}:${externalId}`", () => {
+    expect(songKeyOf("audius", "abc123")).toBe("audius:abc123");
+    expect(songKeyOf("radio-browser", "station-uuid")).toBe("radio-browser:station-uuid");
+  });
+});

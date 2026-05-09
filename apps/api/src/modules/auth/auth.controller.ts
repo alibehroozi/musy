@@ -20,6 +20,7 @@ import { AuthService, SESSION_COOKIE_NAME, STATE_COOKIE_NAME } from "./auth.serv
 interface StateCookiePayload {
   state: string;
   codeVerifier: string;
+  popup?: boolean;
 }
 
 type AuthedRequest = Request & {
@@ -36,9 +37,9 @@ export class AuthController {
 
   @Public()
   @Get("google")
-  startGoogle(@Res() res: Response): void {
+  startGoogle(@Query("popup") popup: string | undefined, @Res() res: Response): void {
     const { url, state, codeVerifier } = this.authService.startGoogleFlow();
-    const cookieValue = encodeStateCookie({ state, codeVerifier });
+    const cookieValue = encodeStateCookie({ state, codeVerifier, popup: popup === "1" });
     res.cookie(STATE_COOKIE_NAME, cookieValue, this.authService.stateCookieOptions());
     res.redirect(url);
   }
@@ -70,7 +71,10 @@ export class AuthController {
 
     res.clearCookie(STATE_COOKIE_NAME, this.authService.stateClearCookieOptions());
     res.cookie(SESSION_COOKIE_NAME, sessionJwt, this.authService.sessionCookieOptions());
-    res.redirect(this.authService.webOrigin);
+    const destination = cookie.popup
+      ? `${this.authService.webOrigin}/auth/popup-complete`
+      : this.authService.webOrigin;
+    res.redirect(destination);
   }
 
   @Get("me")

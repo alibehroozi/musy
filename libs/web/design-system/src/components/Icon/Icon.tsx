@@ -14,6 +14,7 @@ type LucideIconName = keyof typeof LUCIDE_ICONS;
 // — trademarks can't be re-themed.
 const BRAND_ICONS = {
   "google-brand": GoogleBrandSvg,
+  "heart-filled": HeartFilledSvg,
 } as const;
 
 type BrandIconName = keyof typeof BRAND_ICONS;
@@ -38,6 +39,28 @@ export function Icon({ name, size = 24, className }: IconProps): JSX.Element {
 interface BrandSvgProps {
   size: number;
   className: string | undefined;
+}
+
+function HeartFilledSvg({ size, className }: BrandSvgProps): JSX.Element {
+  // currentColor so consumers theme it via text-* utilities.
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      className={className}
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+    </svg>
+  );
 }
 
 function GoogleBrandSvg({ size, className }: BrandSvgProps): JSX.Element {

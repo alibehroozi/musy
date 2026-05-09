@@ -3,6 +3,7 @@ import { Icon } from "./Icon.js";
 
 export const Compass: Story = () => <Icon name="compass" />;
 export const Heart: Story = () => <Icon name="heart" />;
+export const HeartFilled: Story = () => <Icon name="heart-filled" />;
 export const Search: Story = () => <Icon name="search" />;
 export const Clock: Story = () => <Icon name="clock" />;
 export const GoogleBrand: Story = () => <Icon name="google-brand" />;

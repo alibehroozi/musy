@@ -1,7 +1,8 @@
 ---
 epic: search
-status: pending
+status: done
 estimated-invariants: 7
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/17
 ---
 
 # Feature 05: Interactive rows — explored, saved, sign-in gating

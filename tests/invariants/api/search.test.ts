@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-03, API-04, API-05, API-06.
+// Invariants verified here are listed in INVARIANTS.md under API-03, API-04, API-05, API-06, API-07.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -214,5 +214,87 @@ describe("API-06: Cursor pagination on GET /api/search/history is stable", () =>
     expect(res.status).toBe(200);
     const body = HistoryResponse.parse(res.body);
     expect(body.nextCursor).toBeNull();
+  });
+});
+
+import {
+  buildSearchEventsTestApp,
+  type SearchEventsTestAppHandle,
+} from "../_helpers/search-events-test-app.js";
+
+describe("API-07: POST /api/search/explored and POST /api/search/saved require a valid session", () => {
+  let h: SearchEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  const validBody = {
+    source: "deezer",
+    externalId: "1",
+    snapshot: { title: "Get Lucky", artist: "Daft Punk", kind: "track" },
+  };
+
+  it("POST /api/search/explored returns 401 + ErrorResponse without a session cookie", async () => {
+    h = await buildSearchEventsTestApp();
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search/explored")
+      .send(validBody)
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(401);
+    expect(() => ErrorResponse.parse(res.body)).not.toThrow();
+  });
+
+  it("POST /api/search/saved returns 401 + ErrorResponse without a session cookie", async () => {
+    h = await buildSearchEventsTestApp();
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search/saved")
+      .send(validBody)
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(401);
+    expect(() => ErrorResponse.parse(res.body)).not.toThrow();
+  });
+
+  it("POST /api/search/explored returns 204 with a valid session and matching body", async () => {
+    h = await buildSearchEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440010";
+    const token = h.authService.signSession({ uid: userId, gid: "g_explored" });
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search/explored")
+      .send(validBody)
+      .set("Content-Type", "application/json")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(204);
+    const docs = await h.repo.findScoresForUser(userId);
+    expect(docs).toHaveLength(1);
+    expect(docs[0]!.score).toBe(3);
+  });
+
+  it("POST /api/search/saved returns 204 with a valid session and matching body", async () => {
+    h = await buildSearchEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440011";
+    const token = h.authService.signSession({ uid: userId, gid: "g_saved" });
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search/saved")
+      .send(validBody)
+      .set("Content-Type", "application/json")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(204);
+    const docs = await h.repo.findScoresForUser(userId);
+    expect(docs).toHaveLength(1);
+    expect(docs[0]!.score).toBe(8);
+  });
+
+  it("POST /api/search/explored returns 400 + ErrorResponse when the body fails schema validation", async () => {
+    h = await buildSearchEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440012";
+    const token = h.authService.signSession({ uid: userId, gid: "g_invalid" });
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search/explored")
+      .send({ source: "deezer" }) // missing externalId, snapshot
+      .set("Content-Type", "application/json")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(400);
+    expect(() => ErrorResponse.parse(res.body)).not.toThrow();
   });
 });

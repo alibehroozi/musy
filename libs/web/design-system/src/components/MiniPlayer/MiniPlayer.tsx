@@ -7,8 +7,8 @@ export interface TrackSnapshot {
   title: string;
   artist: string;
   kind: "track" | "station";
-  coverUrl?: string;
-  durationSec?: number;
+  coverUrl?: string | undefined;
+  durationSec?: number | undefined;
 }
 
 export type MiniPlayerState = "playing" | "loading" | "failed";

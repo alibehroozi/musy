@@ -21,3 +21,13 @@ export type { ResultRowProps } from "./components/ResultRow/ResultRow.js";
 
 export { ListItemButton } from "./components/ListItemButton/ListItemButton.js";
 export type { ListItemButtonProps } from "./components/ListItemButton/ListItemButton.js";
+
+export { Modal } from "./components/Modal/Modal.js";
+export type { ModalProps } from "./components/Modal/Modal.js";
+
+export { IconButton } from "./components/IconButton/IconButton.js";
+export type {
+  IconButtonProps,
+  IconButtonVariant,
+  IconButtonSize,
+} from "./components/IconButton/IconButton.js";

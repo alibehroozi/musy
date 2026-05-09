@@ -106,7 +106,11 @@ export class SoundCloudStreamClient {
     parsed: ReturnType<typeof extractSourceFromHtml>,
   ): Promise<SoundCloudStreamUrlResult | null> {
     if (!parsed) return null;
-    const transcoding = parsed.transcodings.find((t) => t.protocol === "progressive");
+    // Prefer full (non-snipped) progressive; fall back to any non-snipped transcoding (e.g. HLS).
+    // Never return a snipped/preview transcoding — callers expect a full stream URL.
+    const transcoding =
+      parsed.transcodings.find((t) => t.protocol === "progressive" && !t.snipped) ??
+      parsed.transcodings.find((t) => !t.snipped);
     if (!transcoding) return null;
 
     const transcodingUrl = new URL(transcoding.url);
@@ -135,12 +139,15 @@ export class SoundCloudStreamClient {
       });
       if (!res.ok) return null;
 
-      type RawTranscoding = { url?: string; format?: { protocol?: string } };
+      type RawTranscoding = { url?: string; format?: { protocol?: string }; snipped?: boolean };
       const track = (await res.json()) as { media?: { transcodings?: RawTranscoding[] } };
       const transcodings = Array.isArray(track.media?.transcodings)
         ? track.media.transcodings
         : [];
-      const progressive = transcodings.find((t) => t.format?.protocol === "progressive");
+      // Prefer full (non-snipped) progressive; fall back to any non-snipped transcoding (e.g. HLS).
+      const progressive =
+        transcodings.find((t) => t.format?.protocol === "progressive" && t.snipped !== true) ??
+        transcodings.find((t) => t.snipped !== true);
       if (!progressive?.url) return null;
 
       const transcodingUrl = new URL(progressive.url);

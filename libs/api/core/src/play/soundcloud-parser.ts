@@ -2,6 +2,7 @@ export interface SoundCloudTranscoding {
   url: string;
   protocol: string;
   mimeType: string;
+  snipped: boolean;
 }
 
 export interface ExtractedSoundCloudSource {
@@ -22,6 +23,7 @@ interface HydrationItem {
 interface RawTranscoding {
   url?: unknown;
   format?: { protocol?: unknown; mime_type?: unknown };
+  snipped?: unknown;
 }
 
 interface RawTrackData {
@@ -56,7 +58,8 @@ function normalizeTranscodings(raw: unknown): SoundCloudTranscoding[] {
     if (typeof t.url !== "string") continue;
     const protocol = typeof t.format?.protocol === "string" ? t.format.protocol : "progressive";
     const mimeType = typeof t.format?.mime_type === "string" ? t.format.mime_type : "audio/mpeg";
-    out.push({ url: t.url, protocol, mimeType });
+    const snipped = t.snipped === true;
+    out.push({ url: t.url, protocol, mimeType, snipped });
   }
   return out;
 }

@@ -72,3 +72,22 @@ export function pickBestMatch(
   }
   return best ? { sourceTrackId: best.id } : null;
 }
+
+// Title-only match with relaxed threshold — used when an exact (title+artist)
+// match is unavailable or snippet-gated. Accepts remixes, covers, different artists.
+const TITLE_DIFF_TOLERANCE_RELAXED = 0.7;
+
+export function pickBestMatchTitleOnly(
+  title: string,
+  candidates: AudiusCandidate[],
+): AudiusMatch | null {
+  let best: { score: number; id: string } | null = null;
+  for (const c of candidates) {
+    const titleDist = jaccardDistance(title, c.title);
+    if (titleDist > TITLE_DIFF_TOLERANCE_RELAXED) continue;
+    if (!best || titleDist < best.score) {
+      best = { score: titleDist, id: c.id };
+    }
+  }
+  return best ? { sourceTrackId: best.id } : null;
+}

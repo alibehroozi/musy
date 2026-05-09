@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under SEC-04, SEC-05.
+// Invariants verified here are listed in INVARIANTS.md under SEC-04, SEC-05, SEC-06.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -92,8 +92,57 @@ describe("SEC-05: GET /api/search/history for user A never returns entries owned
   });
 });
 
+import { FakeInterestScoresRepository } from "../_helpers/search-events-test-app.js";
+
 describe("SEC-06: interest_scores documents are scoped per-user", () => {
-  it.todo("repository.findScoresForUser(A) never returns documents whose userId != A");
-  it.todo("an event written by user A creates a document with userId === A only");
-  it.todo("user B querying for the same songKey sees no document");
+  const ALICE = "550e8400-e29b-41d4-a716-446655440020";
+  const BOB = "550e8400-e29b-41d4-a716-446655440021";
+  const SNAP = { title: "Get Lucky", artist: "Daft Punk", kind: "track" as const };
+
+  it("repository.findScoresForUser(A) never returns documents whose userId != A", async () => {
+    const repo = new FakeInterestScoresRepository();
+    await repo.upsertEvent({
+      userId: ALICE,
+      source: "deezer",
+      externalId: "1",
+      snapshot: SNAP,
+      eventType: "saved",
+    });
+    await repo.upsertEvent({
+      userId: BOB,
+      source: "deezer",
+      externalId: "1",
+      snapshot: SNAP,
+      eventType: "saved",
+    });
+    const aliceDocs = await repo.findScoresForUser(ALICE);
+    expect(aliceDocs).toHaveLength(1);
+    expect(aliceDocs.every((d) => d.userId === ALICE)).toBe(true);
+  });
+
+  it("an event written by user A creates a document with userId === A only", async () => {
+    const repo = new FakeInterestScoresRepository();
+    await repo.upsertEvent({
+      userId: ALICE,
+      source: "audius",
+      externalId: "abc",
+      snapshot: SNAP,
+      eventType: "explored",
+    });
+    const bobDocs = await repo.findScoresForUser(BOB);
+    expect(bobDocs).toHaveLength(0);
+  });
+
+  it("user B querying for the same songKey sees no document", async () => {
+    const repo = new FakeInterestScoresRepository();
+    await repo.upsertEvent({
+      userId: ALICE,
+      source: "audius",
+      externalId: "abc",
+      snapshot: SNAP,
+      eventType: "saved",
+    });
+    const bobDocs = await repo.findScoresForUser(BOB);
+    expect(bobDocs.find((d) => d.songKey === "audius:abc")).toBeUndefined();
+  });
 });

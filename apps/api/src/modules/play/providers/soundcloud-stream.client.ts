@@ -1,7 +1,7 @@
 import { Injectable, Logger, Inject } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { SongSnapshot } from "@moc/contracts";
-import { extractSourceFromHtml, pickBestMatch, type AudiusCandidate } from "@moc/api-core";
+import { extractSourceFromHtml, extractClientId, pickBestMatch, type AudiusCandidate } from "@moc/api-core";
 
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -29,10 +29,69 @@ export class SoundCloudStreamClient {
   }
 
   async findMatch(snapshot: SongSnapshot): Promise<SoundCloudFindResult | null> {
-    const query = encodeURIComponent(`${snapshot.title} ${snapshot.artist}`.trim());
-    const searchUrl = `https://soundcloud.com/search/sounds?q=${query}`;
-    const html = await this.fetchHtml(searchUrl);
-    const items = collectSearchHydration(html);
+    const query = `${snapshot.title} ${snapshot.artist}`.trim();
+    const searchPageUrl = `https://soundcloud.com/search/sounds?q=${encodeURIComponent(query)}`;
+
+    const html = await this.fetchHtml(searchPageUrl);
+    const clientId = extractClientId(html);
+
+    if (clientId) {
+      const apiResult = await this.findViaApi(snapshot, query, clientId);
+      if (apiResult) return apiResult;
+    }
+
+    // Fallback: parse SSR hydration from the search page
+    return this.findViaHydration(snapshot, html);
+  }
+
+  async produceStreamUrl(sourceLocator: string): Promise<SoundCloudStreamUrlResult | null> {
+    const html = await this.fetchHtml(sourceLocator);
+    const parsed = extractSourceFromHtml(html);
+
+    if (parsed) {
+      const result = await this.streamFromParsed(parsed);
+      if (result) return result;
+    }
+
+    // Fallback: use resolve API with client_id extracted from the same page HTML
+    const clientId = extractClientId(html);
+    if (!clientId) return null;
+    return await this.streamViaResolveApi(sourceLocator, clientId);
+  }
+
+  // ── private helpers ──────────────────────────────────────────────────────────
+
+  private async findViaApi(
+    snapshot: SongSnapshot,
+    query: string,
+    clientId: string,
+  ): Promise<SoundCloudFindResult | null> {
+    const url = new URL("https://api-v2.soundcloud.com/search/tracks");
+    url.searchParams.set("q", query);
+    url.searchParams.set("client_id", clientId);
+    url.searchParams.set("limit", "5");
+
+    try {
+      const res = await fetch(url.toString(), {
+        headers: { Accept: "application/json", "User-Agent": this.userAgent },
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { collection?: unknown[] };
+      const items = Array.isArray(body.collection) ? body.collection : [];
+      return this.pickFromItems(snapshot, items as RawSearchTrack[]);
+    } catch {
+      return null;
+    }
+  }
+
+  private findViaHydration(snapshot: SongSnapshot, html: string): SoundCloudFindResult | null {
+    return this.pickFromItems(snapshot, collectSearchHydration(html));
+  }
+
+  private pickFromItems(
+    snapshot: SongSnapshot,
+    items: RawSearchTrack[],
+  ): SoundCloudFindResult | null {
     const candidates = items
       .map((it) => toCandidate(it))
       .filter((c): c is AudiusCandidate & { permalink: string } => c !== null);
@@ -43,9 +102,9 @@ export class SoundCloudStreamClient {
     return { sourceTrackId: winner.id, sourceLocator: winner.permalink };
   }
 
-  async produceStreamUrl(sourceLocator: string): Promise<SoundCloudStreamUrlResult | null> {
-    const html = await this.fetchHtml(sourceLocator);
-    const parsed = extractSourceFromHtml(html);
+  private async streamFromParsed(
+    parsed: ReturnType<typeof extractSourceFromHtml>,
+  ): Promise<SoundCloudStreamUrlResult | null> {
     if (!parsed) return null;
     const transcoding = parsed.transcodings.find((t) => t.protocol === "progressive");
     if (!transcoding) return null;
@@ -59,8 +118,45 @@ export class SoundCloudStreamClient {
     const body = (await res.json()) as { url?: unknown };
     const streamUrl = typeof body.url === "string" ? body.url : "";
     if (!streamUrl) return null;
-    const expiresAt = new Date(Date.now() + STREAM_LIFETIME_MS).toISOString();
-    return { streamUrl, expiresAt };
+    return { streamUrl, expiresAt: new Date(Date.now() + STREAM_LIFETIME_MS).toISOString() };
+  }
+
+  private async streamViaResolveApi(
+    permalink: string,
+    clientId: string,
+  ): Promise<SoundCloudStreamUrlResult | null> {
+    const resolveUrl = new URL("https://api-v2.soundcloud.com/resolve");
+    resolveUrl.searchParams.set("url", permalink);
+    resolveUrl.searchParams.set("client_id", clientId);
+
+    try {
+      const res = await fetch(resolveUrl.toString(), {
+        headers: { Accept: "application/json", "User-Agent": this.userAgent },
+      });
+      if (!res.ok) return null;
+
+      type RawTranscoding = { url?: string; format?: { protocol?: string } };
+      const track = (await res.json()) as { media?: { transcodings?: RawTranscoding[] } };
+      const transcodings = Array.isArray(track.media?.transcodings)
+        ? track.media.transcodings
+        : [];
+      const progressive = transcodings.find((t) => t.format?.protocol === "progressive");
+      if (!progressive?.url) return null;
+
+      const transcodingUrl = new URL(progressive.url);
+      transcodingUrl.searchParams.set("client_id", clientId);
+      const streamRes = await fetch(transcodingUrl.toString(), {
+        headers: { Accept: "application/json", "User-Agent": this.userAgent },
+      });
+      if (!streamRes.ok) return null;
+
+      const streamBody = (await streamRes.json()) as { url?: unknown };
+      const streamUrl = typeof streamBody.url === "string" ? streamBody.url : "";
+      if (!streamUrl) return null;
+      return { streamUrl, expiresAt: new Date(Date.now() + STREAM_LIFETIME_MS).toISOString() };
+    } catch {
+      return null;
+    }
   }
 
   private async fetchHtml(url: string): Promise<string> {

@@ -141,6 +141,21 @@ function fakeConfig(env: Record<string, string> = {}): ConfigService {
 
 // "Get Lucky" is confirmed available on SoundCloud's official Daft Punk page.
 const SC_TRACK = { title: "Get Lucky", artist: "Daft Punk", kind: "track" as const };
+// "Please Please Please" by Sabrina Carpenter — exercises the HTML-parsing path
+// because the track page exposes full transcodings in __sc_hydration (sound entry).
+const SC_TRACK_HTML_PATH = {
+  title: "Please Please Please",
+  artist: "Sabrina Carpenter",
+  kind: "track" as const,
+};
+// "Don't Stop The Music" by Rihanna — exercises the API fallback path
+// because the track page does not embed full progressive transcodings in the SSR hydration,
+// so produceStreamUrl falls back to streamViaResolveApi.
+const SC_TRACK_API_PATH = {
+  title: "Don't Stop The Music",
+  artist: "Rihanna",
+  kind: "track" as const,
+};
 // "Ghosts N Stuff" by deadmau5 is confirmed available directly on Audius.
 const AUDIUS_TRACK = { title: "Ghosts N Stuff", artist: "deadmau5", kind: "track" as const };
 
@@ -161,7 +176,7 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
   );
 
   it(
-    "produceStreamUrl returns a valid HTTPS stream URL for a matched track",
+    "produceStreamUrl returns a valid HTTPS non-preview stream URL, or null when only a snippet is available",
     async () => {
       const client = new SoundCloudStreamClient(
         fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
@@ -173,11 +188,61 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
         );
       }
       const stream = await client.produceStreamUrl(match.sourceLocator);
-      expect(stream).not.toBeNull();
-      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
-      expect(typeof stream?.expiresAt).toBe("string");
+      // Major-label tracks (Daft Punk / Columbia) may have snippet-only access on
+      // SoundCloud free tier. Returning null is correct; returning a preview URL is not.
+      if (stream !== null) {
+        expect(stream.streamUrl).toMatch(/^https?:\/\//);
+        expect(stream.streamUrl).not.toContain("/preview/");
+        expect(typeof stream.expiresAt).toBe("string");
+      }
     },
     30_000,
+  );
+
+  it(
+    "produceStreamUrl (HTML-parse path): Please Please Please by Sabrina Carpenter returns a full stream URL without 'preview'",
+    async () => {
+      const client = new SoundCloudStreamClient(
+        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
+      );
+      const match = await client.findMatch(SC_TRACK_HTML_PATH);
+      if (!match) {
+        throw new Error(
+          "SoundCloud findMatch returned null for Sabrina Carpenter — integration is broken",
+        );
+      }
+      expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+      const stream = await client.produceStreamUrl(match.sourceLocator);
+      expect(stream).not.toBeNull();
+      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+      // Must not be a snipped/preview URL — preview paths contain "/preview/" in the transcoding URL
+      expect(stream?.streamUrl).not.toContain("/preview/");
+    },
+    40_000,
+  );
+
+  it(
+    "produceStreamUrl (API fallback path): Don't Stop The Music by Rihanna returns a full stream URL without 'preview', or null when only a snippet is available",
+    async () => {
+      const client = new SoundCloudStreamClient(
+        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
+      );
+      const match = await client.findMatch(SC_TRACK_API_PATH);
+      if (!match) {
+        throw new Error(
+          "SoundCloud findMatch returned null for Rihanna — integration is broken",
+        );
+      }
+      expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+      const stream = await client.produceStreamUrl(match.sourceLocator);
+      // Major-label tracks (Rihanna / Def Jam) may have snippet-only access on
+      // SoundCloud free tier. Returning null is correct; returning a preview URL is not.
+      if (stream !== null) {
+        expect(stream.streamUrl).toMatch(/^https?:\/\//);
+        expect(stream.streamUrl).not.toContain("/preview/");
+      }
+    },
+    40_000,
   );
 });
 

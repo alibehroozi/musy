@@ -113,9 +113,13 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          model: "claude-sonnet-4-6"
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
-          claude_args: --dangerously-skip-permissions
+          # Model selection goes through claude_args per the latest
+          # claude-code-action docs; the top-level `model:` input is no
+          # longer honored. `sonnet` alias auto-tracks the latest in
+          # family, which is the right default for short comment
+          # follow-ups (cheap on Pro quota, fast).
+          claude_args: --model sonnet --dangerously-skip-permissions
           show_full_output: true
           prompt: |
             You're responding to an @claude mention on a PR. Your task is

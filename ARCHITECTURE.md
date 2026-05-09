@@ -382,6 +382,10 @@ Use `/design-system`. Don't shortcut by hand-rolling components into `apps/web` 
 - Invariant tests live in `tests/invariants/<category>/` (mirrored from `INVARIANTS.md`)
 - E2E in `tests/e2e/` (Playwright); temporary repros in `tests/_scratch/` (gitignored)
 
+**Backend tests hit real upstreams (per AGENTS.md hard rule #15).** Music-provider clients in `apps/api/` are tested against the real provider — not against a `jest.mock(...)` of the client module. The cost is occasional flakiness from upstream rate limits / outages; the value is catching shape drift the moment it happens, instead of merging a green test that lies. Auth clients are the singular exception (mocked because OAuth redirects can't be replayed). A specific failure-mode test that needs a forced response shape can mock that one client iff the product-spec feature file says so explicitly, and the test quotes the line authorizing the override in a comment. Anything else is a no-go.
+
+Where credentials are needed, they cascade through hard rule #9: `apps/api/.env.example` declares the key, `prepare-local` seeds it, both workflows seed it from a CI secret of the same name.
+
 ### Visual regression (Layer 3)
 
 Three concentric rings, cheap to expensive:

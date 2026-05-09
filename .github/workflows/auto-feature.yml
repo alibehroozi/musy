@@ -34,13 +34,13 @@ on:
         required: false
         type: string
       model:
-        description: "Model. Sonnet 4.6 is the default — cheaper on Pro quota, fast enough for most features. Switch to Opus 4.7 for tricky / large features."
+        description: "Model family. 'sonnet' is the default — cheap on Pro quota, fast enough for most features. 'opus' is the heavyweight; pick it for tricky / large features. Aliases auto-track the latest version in each family."
         required: false
-        default: "claude-sonnet-4-6"
+        default: "sonnet"
         type: choice
         options:
-          - "claude-sonnet-4-6"
-          - "claude-opus-4-7"
+          - "sonnet"
+          - "opus"
       debug:
         description: "Verbose mode: stream Claude's tool I/O, model thinking, and per-step diagnostics. Off for cron runs."
         required: false
@@ -145,10 +145,21 @@ jobs:
         # OAuth token (Pro / Max subscription billing) instead of an API key.
         # Generate locally with `claude setup-token`, store as the
         # `CLAUDE_CODE_OAUTH_TOKEN` repository secret.
-        # Model: dispatched value if set, else sonnet-4-6 default (also
-        # used for scheduled runs — workflow_dispatch inputs are empty
-        # for cron triggers).
         # claude_args breakdown:
+        #
+        #   --model <family>  (sonnet | opus)
+        #     Per claude-code-action docs, model selection is passed
+        #     through claude_args as `--model <value>`, not the
+        #     top-level `model:` input (the action stopped honoring
+        #     that — silent fall-through to default). Aliases
+        #     `sonnet` / `opus` resolve to the latest in family per
+        #     the user's subscription, which is what we want — pinned
+        #     dated IDs go stale and need manual bumps.
+        #
+        #     Picks the workflow_dispatch input when set, else
+        #     'sonnet' (also the value cron runs see, since
+        #     workflow_dispatch inputs are empty under schedule
+        #     triggers).
         #
         #   --dangerously-skip-permissions  (always, CI only)
         #     The project's .claude/settings.json has narrow Bash patterns
@@ -182,9 +193,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          model: ${{ github.event.inputs.model || 'claude-sonnet-4-6' }}
           allowed_tools: "Bash,Read,Write,Edit,Glob,Grep"
-          claude_args: --dangerously-skip-permissions ${{ github.event.inputs.debug == 'true' && '--verbose' || '' }}
+          claude_args: --model ${{ github.event.inputs.model || 'sonnet' }} --dangerously-skip-permissions ${{ github.event.inputs.debug == 'true' && '--verbose' || '' }}
           show_full_output: ${{ github.event.inputs.debug == 'true' }}
           prompt: |
             You're running in CI under GitHub Actions. No human is at the

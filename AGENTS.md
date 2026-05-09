@@ -60,6 +60,12 @@ These are non-negotiable. CI enforces them. Do not bypass.
 
     The rule does **not** apply to `libs/web/design-system/**/*` — that's where the raw HTML elements legitimately live (the components wrap them). Apps consume components; never reach for the raw tag. As DS equivalents land, the table and `eslint.config.mjs` rule grow together.
 
+15. **Real upstream HTTP clients are NOT mocked in `apps/api/` tests.** Any Jest test that exercises a music-provider client (SoundCloud, Deezer, Audius, Genius, …) calls the actual provider. Mocked clients drift from real upstream shapes and pass against responses the provider doesn't actually return — the rule that hits hardest in this codebase, because every aggregator-shaped feature lives or dies on real provider quirks. Two narrow exceptions:
+    - **Auth clients are always mocked.** Google OAuth (and any later social-login client) involves redirect flows + signed tokens that can't be replayed in CI. Mocking is the only practical option and is what the existing auth test fixtures already do.
+    - **The product-spec feature file explicitly calls for mocking a specific upstream.** Example: a "what happens when SoundCloud returns 502" test forces a response shape that's not reliably reproducible live. The override is per-test, in writing, in the feature file's "User behavior" / "Failure modes" section, and must be quoted in a comment in the test so review can verify it. Inferring the mock is forbidden — if it's not written down, the client is real.
+
+    This rule does **not** apply to Playwright e2e tests in `apps/web/`: those mock the `apps/api/` API itself (universal in `fixtures.ts`) and never touch upstreams. Real-upstream tests live one layer down. Any provider that requires a token / API key to call (Genius, signed SoundCloud, etc.) goes through hard rule #9's env cascade so CI has the credential.
+
 ### Worktree detection (canonical pre-flight)
 
 When a command's hard rule requires the main checkout, run this check at the very top:

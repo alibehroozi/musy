@@ -213,20 +213,40 @@ jobs:
             non-empty, that's the feature file. Use it directly and skip
             ahead to Step 2.
 
-            Otherwise, iterate over `product-specs/*/features/NN-*.md`
-            whose YAML frontmatter has `status: pending`, sorted by epic
-            name first then numeric prefix. For each candidate, derive
-            the slash-command's recommended branch name (e.g.
-            `task-<slug>`) and check:
+            Otherwise, walk `product-specs/*/features/NN-*.md` and
+            partition the epics that contain at least one
+            `status: pending` feature into two tiers based on each
+            epic's existing progress:
+
+              - **Tier 1 — in-progress epics.** The epic's `features/`
+                folder contains at least one file whose frontmatter
+                has `status: done`. Work-in-flight finishes before
+                new work starts: shipping epic-by-epic keeps the
+                product coherent and avoids ten half-built epics
+                sitting in `main` at once.
+              - **Tier 2 — fresh epics.** No feature in the epic is
+                yet `status: done`.
+
+            Within each tier, sort epics alphabetically by directory
+            name. Within each epic, sort its `status: pending`
+            features by numeric prefix ascending. Walk Tier 1 first,
+            then Tier 2. The first candidate that survives the
+            closed-PR filter below is the feature for this run.
+
+            **Closed-PR filter** (applied to each candidate in walk
+            order): derive the slash-command's recommended branch
+            name (e.g. `task-<slug>`) and check:
 
                 gh pr list --head <branch> --state closed --json number,state --limit 1
 
             If a closed/merged PR exists for that branch, **skip this
-            feature** — closing a PR is the user's signal to drop it
-            from the queue — and move to the next candidate. Pick the
-            first candidate with no closed/merged PR. If nothing
-            qualifies, print a one-line summary and exit cleanly without
-            committing.
+            feature** — closing a PR without merging is the user's
+            signal to drop it from the queue — and move to the next
+            candidate (still respecting tier order: exhaust the
+            remaining Tier 1 candidates before falling into Tier 2).
+
+            If nothing qualifies in either tier, print a one-line
+            summary and exit cleanly without committing.
 
             ### Step 2 — branch on PR + branch state
 

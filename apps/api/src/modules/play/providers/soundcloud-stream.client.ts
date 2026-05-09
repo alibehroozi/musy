@@ -1,13 +1,23 @@
 import { Injectable, Logger, Inject } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { SongSnapshot } from "@moc/contracts";
-import { extractSourceFromHtml, extractClientId, pickBestMatch, type AudiusCandidate } from "@moc/api-core";
+import {
+  extractSourceFromHtml,
+  extractClientId,
+  pickBestMatch,
+  type AudiusCandidate,
+} from "@moc/api-core";
 
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const STREAM_LIFETIME_MS = 55 * 60 * 1000;
+
+// Stable across pages for a given SoundCloud session; updated on every page fetch.
+// Using a class-level cache avoids re-extracting on every produceStreamUrl call and
+// provides a fallback when a specific track page hides the clientId.
+let sharedClientId: string | null = null;
 
 export interface SoundCloudFindResult {
   sourceTrackId: string;
@@ -34,58 +44,84 @@ export class SoundCloudStreamClient {
 
     const html = await this.fetchHtml(searchPageUrl);
     const clientId = extractClientId(html);
+    if (clientId) sharedClientId = clientId;
 
-    if (clientId) {
-      const apiResult = await this.findViaApi(snapshot, query, clientId);
-      if (apiResult) return apiResult;
+    const primaryItems: RawSearchTrack[] = clientId
+      ? await this.fetchSearchItems(query, clientId, 20)
+      : collectSearchHydration(html);
+
+    // Phase 1: verify the best strict (title+artist) match can actually stream non-snipped.
+    // SoundCloud search results omit media.transcodings, so we use the resolve API
+    // (a lightweight JSON call) to confirm the track is not snippet-gated.
+    const strictBest = this.pickFromItems(snapshot, primaryItems);
+    if (strictBest && clientId) {
+      if (await this.canStreamNonSnipped(strictBest.sourceLocator, clientId)) return strictBest;
     }
 
-    // Fallback: parse SSR hydration from the search page
-    return this.findViaHydration(snapshot, html);
+    // Phase 2: title-only broader search — finds remixes/covers/different artists
+    // when the best strict match is snippet-gated (e.g. major-label restriction).
+    if (clientId && snapshot.title) {
+      const titleItems = await this.fetchSearchItems(snapshot.title, clientId, 20);
+      const titleCandidates = titleItems
+        .map(toCandidate)
+        .filter((c): c is AudiusCandidate & { permalink: string } => c !== null);
+
+      // Check candidates in parallel batches of 4 to keep latency manageable.
+      for (let i = 0; i < Math.min(titleCandidates.length, 16); i += 4) {
+        const batch = titleCandidates.slice(i, i + 4);
+        const results = await Promise.all(
+          batch.map((c) =>
+            this.canStreamNonSnipped(c.permalink, clientId).then((ok) => (ok ? c : null)),
+          ),
+        );
+        const winner = results.find((r) => r !== null);
+        if (winner) return { sourceTrackId: winner.id, sourceLocator: winner.permalink };
+      }
+    }
+
+    // Phase 3: last resort — return the best strict match regardless of snipped status.
+    return strictBest;
   }
 
   async produceStreamUrl(sourceLocator: string): Promise<SoundCloudStreamUrlResult | null> {
     const html = await this.fetchHtml(sourceLocator);
-    const parsed = extractSourceFromHtml(html);
+    const freshClientId = extractClientId(html);
+    if (freshClientId) sharedClientId = freshClientId;
 
+    const parsed = extractSourceFromHtml(html);
     if (parsed) {
       const result = await this.streamFromParsed(parsed);
       if (result) return result;
     }
 
-    // Fallback: use resolve API with client_id extracted from the same page HTML
-    const clientId = extractClientId(html);
+    // Use the freshly extracted clientId or fall back to the one cached by findMatch.
+    // Some track pages embed the clientId differently than the search page does.
+    const clientId = freshClientId ?? sharedClientId;
     if (!clientId) return null;
     return await this.streamViaResolveApi(sourceLocator, clientId);
   }
 
   // ── private helpers ──────────────────────────────────────────────────────────
 
-  private async findViaApi(
-    snapshot: SongSnapshot,
+  private async fetchSearchItems(
     query: string,
     clientId: string,
-  ): Promise<SoundCloudFindResult | null> {
+    limit = 20,
+  ): Promise<RawSearchTrack[]> {
     const url = new URL("https://api-v2.soundcloud.com/search/tracks");
     url.searchParams.set("q", query);
     url.searchParams.set("client_id", clientId);
-    url.searchParams.set("limit", "5");
-
+    url.searchParams.set("limit", String(limit));
     try {
       const res = await fetch(url.toString(), {
         headers: { Accept: "application/json", "User-Agent": this.userAgent },
       });
-      if (!res.ok) return null;
+      if (!res.ok) return [];
       const body = (await res.json()) as { collection?: unknown[] };
-      const items = Array.isArray(body.collection) ? body.collection : [];
-      return this.pickFromItems(snapshot, items as RawSearchTrack[]);
+      return Array.isArray(body.collection) ? (body.collection as RawSearchTrack[]) : [];
     } catch {
-      return null;
+      return [];
     }
-  }
-
-  private findViaHydration(snapshot: SongSnapshot, html: string): SoundCloudFindResult | null {
-    return this.pickFromItems(snapshot, collectSearchHydration(html));
   }
 
   private pickFromItems(
@@ -100,6 +136,48 @@ export class SoundCloudStreamClient {
     const winner = candidates.find((c) => c.id === match.sourceTrackId);
     if (!winner) return null;
     return { sourceTrackId: winner.id, sourceLocator: winner.permalink };
+  }
+
+  // Verifies that a SoundCloud track at `permalink` can actually produce a non-preview
+  // stream URL. Uses the resolve API to get transcodings, then calls the transcoding
+  // endpoint to confirm the URL is real and not gated (SoundCloud Go). The `snipped`
+  // field in the API response is not reliable for Go-gated major-label tracks, so we
+  // probe the actual endpoint.
+  private async canStreamNonSnipped(permalink: string, clientId: string): Promise<boolean> {
+    try {
+      const resolveUrl = new URL("https://api-v2.soundcloud.com/resolve");
+      resolveUrl.searchParams.set("url", permalink);
+      resolveUrl.searchParams.set("client_id", clientId);
+      const res = await fetch(resolveUrl.toString(), {
+        headers: { Accept: "application/json", "User-Agent": this.userAgent },
+      });
+      if (!res.ok) return false;
+
+      type RawT = { url?: string; format?: { protocol?: string }; snipped?: boolean };
+      type Track = { media?: { transcodings?: RawT[] } };
+      const track = (await res.json()) as Track;
+      const transcodings = track.media?.transcodings ?? [];
+
+      // Prefer non-snipped progressive; fall back to any non-snipped.
+      const candidate =
+        transcodings.find((t) => t.format?.protocol === "progressive" && t.snipped !== true) ??
+        transcodings.find((t) => t.snipped !== true);
+      if (!candidate?.url) return false;
+
+      // Probe the transcoding endpoint — the actual URL determines whether SoundCloud
+      // serves a real stream or a Go-gated/preview response.
+      const transcodingUrl = new URL(candidate.url);
+      transcodingUrl.searchParams.set("client_id", clientId);
+      const streamRes = await fetch(transcodingUrl.toString(), {
+        headers: { Accept: "application/json", "User-Agent": this.userAgent },
+      });
+      if (!streamRes.ok) return false;
+      const streamBody = (await streamRes.json()) as { url?: unknown };
+      const streamUrl = typeof streamBody.url === "string" ? streamBody.url : "";
+      return streamUrl.length > 0 && !streamUrl.includes("/preview/");
+    } catch {
+      return false;
+    }
   }
 
   private async streamFromParsed(

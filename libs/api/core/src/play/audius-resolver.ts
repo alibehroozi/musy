@@ -36,6 +36,13 @@ function jaccardDistance(a: string, b: string): number {
   if (setA.size === 0 && setB.size === 0) return 0;
   let intersection = 0;
   for (const t of setA) if (setB.has(t)) intersection += 1;
+  // When every query token appears in the candidate (e.g. "Get Lucky" found inside
+  // "Get Lucky (feat. Pharrell Williams)"), use a softer proportional penalty for
+  // the extra tokens rather than the full Jaccard distance — the candidate is almost
+  // certainly an extended/credited version of the searched title.
+  if (intersection === setA.size && setA.size > 0 && setB.size > setA.size) {
+    return ((setB.size - setA.size) / setB.size) * 0.5;
+  }
   const union = setA.size + setB.size - intersection;
   if (union === 0) return 1;
   return 1 - intersection / union;

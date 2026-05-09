@@ -12,6 +12,7 @@ export interface ExtractedSoundCloudSource {
 
 const HYDRATION_RE = /window\.__sc_hydration\s*=\s*(\[[\s\S]*?\]);/;
 const CLIENT_ID_RE = /client_id\s*[=:]\s*"?([A-Za-z0-9_-]{16,})"?/;
+const CLIENT_ID_CAMEL_RE = /"clientId"\s*:\s*"([A-Za-z0-9_-]{16,})"/;
 
 interface HydrationItem {
   hydratable?: unknown;
@@ -60,6 +61,19 @@ function normalizeTranscodings(raw: unknown): SoundCloudTranscoding[] {
   return out;
 }
 
+export function extractClientId(html: string): string | null {
+  // Primary: SoundCloud embeds the client_id in the apiClient hydration item.
+  const items = parseHydration(html);
+  if (items) {
+    const apiClientItem = items.find((item) => item.hydratable === "apiClient");
+    const id = (apiClientItem?.data as { id?: unknown } | undefined)?.id;
+    if (typeof id === "string" && id.length >= 16) return id;
+  }
+  // Fallback: test HTML or older SoundCloud pages may use inline patterns.
+  const m = CLIENT_ID_RE.exec(html) ?? CLIENT_ID_CAMEL_RE.exec(html);
+  return m && typeof m[1] === "string" ? m[1] : null;
+}
+
 export function extractSourceFromHtml(html: string): ExtractedSoundCloudSource | null {
   const items = parseHydration(html);
   if (!items) return null;
@@ -73,8 +87,7 @@ export function extractSourceFromHtml(html: string): ExtractedSoundCloudSource |
   const transcodings = normalizeTranscodings(track.media?.transcodings);
   if (transcodings.length === 0) return null;
 
-  const clientIdMatch = CLIENT_ID_RE.exec(html);
-  const clientId = clientIdMatch && typeof clientIdMatch[1] === "string" ? clientIdMatch[1] : "";
+  const clientId = extractClientId(html);
   if (!clientId) return null;
 
   return { sourceTrackId: id, clientId, transcodings };

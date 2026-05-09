@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under LOGIC-05, LOGIC-06.
+// Invariants verified here are listed in INVARIANTS.md under LOGIC-05, LOGIC-06, LOGIC-07.
 
 import { describe, it, expect } from "vitest";
 import { computeSnapshotHash, extractSourceFromHtml } from "@moc/api-core";
@@ -79,4 +79,13 @@ describe("LOGIC-06: extractSourceFromHtml is deterministic given the same HTML i
     expect(() => extractSourceFromHtml(HTML_WITH_MALFORMED_HYDRATION)).not.toThrow();
     expect(extractSourceFromHtml(HTML_WITH_MALFORMED_HYDRATION)).toBeNull();
   });
+});
+
+describe("LOGIC-07: bumpScore is a deterministic max-rule keyed on play event type", () => {
+  it.todo("bumpScore(0, 'started') returns 3");
+  it.todo("bumpScore(0, 'completed') returns 5");
+  it.todo("bumpScore(8, 'started') returns 8 (never decreases)");
+  it.todo("bumpScore(8, 'completed') returns 8 (never decreases)");
+  it.todo("bumpScore(3, 'completed') returns 5 (started → completed bumps up)");
+  it.todo("bumpScore(5, 'started') returns 5 (completed before started keeps the higher score)");
 });

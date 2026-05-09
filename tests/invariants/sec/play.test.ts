@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under SEC-07.
+// Invariants verified here are listed in INVARIANTS.md under SEC-07, SEC-08.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -60,4 +60,12 @@ describe("SEC-07: SOUNDCLOUD_USER_AGENT and the SoundCloud client_id never appea
     const bodyText = JSON.stringify(res.body ?? "");
     expect(bodyText).not.toContain(PLAY_TEST_ENV.SOUNDCLOUD_USER_AGENT);
   });
+});
+
+describe("SEC-08: /play/started and /play/completed always derive userId from the session, never from the body", () => {
+  it.todo(
+    "a body field 'userId' targeting victimId is ignored — the upsert lands under the session's uid",
+  );
+  it.todo("with no session cookie the call is rejected with 401 before any DB write happens");
+  it.todo("user A's listening_events / interest_scores writes are scoped to A's userId, not B's");
 });

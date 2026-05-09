@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under PRIVACY-03.
+// Invariants verified here are listed in INVARIANTS.md under PRIVACY-03, PRIVACY-04.
 
 import { describe, it, expect } from "vitest";
 import { AudiusStreamClient } from "../../../apps/api/src/modules/play/providers/audius-stream.client.js";
@@ -45,4 +45,9 @@ describe("PRIVACY-03: Outgoing /play/resolve provider requests carry only snapsh
       expect(src.toLowerCase()).not.toContain('"authorization"');
     }
   });
+});
+
+describe("PRIVACY-04: /play/started and /play/completed make no outgoing third-party HTTP request", () => {
+  it.todo("the play module's listening-events repository source contains no fetch / http(s) call");
+  it.todo("the play module's listening-events controller source contains no fetch / http(s) call");
 });

@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-08, API-09.
+// Invariants verified here are listed in INVARIANTS.md under API-08, API-09, API-10, API-11.
 // Real-provider integration tests (no mocking) are at the bottom of this file.
 // Per hard rule #15, SoundCloud and Audius clients call the actual upstream.
 
@@ -160,102 +160,87 @@ const SC_TRACK_API_PATH = {
 const AUDIUS_TRACK = { title: "Ghosts N Stuff", artist: "deadmau5", kind: "track" as const };
 
 describe("SoundCloudStreamClient: real provider (no mocking)", () => {
-  it(
-    "findMatch returns a non-null result with sourceTrackId and a soundcloud.com permalink",
-    async () => {
-      const client = new SoundCloudStreamClient(
-        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
-      );
-      const result = await client.findMatch(SC_TRACK);
-      expect(result).not.toBeNull();
-      expect(typeof result?.sourceTrackId).toBe("string");
-      expect(result?.sourceTrackId.length).toBeGreaterThan(0);
-      expect(result?.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
-    },
-    20_000,
-  );
+  it("findMatch returns a non-null result with sourceTrackId and a soundcloud.com permalink", async () => {
+    const client = new SoundCloudStreamClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }));
+    const result = await client.findMatch(SC_TRACK);
+    expect(result).not.toBeNull();
+    expect(typeof result?.sourceTrackId).toBe("string");
+    expect(result?.sourceTrackId.length).toBeGreaterThan(0);
+    expect(result?.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+  }, 20_000);
 
-  it(
-    "produceStreamUrl always returns a valid HTTPS non-preview stream URL (falls back to non-snipped alternative when official track is snippet-gated)",
-    async () => {
-      const client = new SoundCloudStreamClient(
-        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
-      );
-      // findMatch now prefers non-snipped candidates; for snippet-gated tracks like
-      // Daft Punk / Columbia it falls back to a remix/cover with non-snipped transcodings.
-      const match = await client.findMatch(SC_TRACK);
-      if (!match) {
-        throw new Error(
-          "SoundCloud findMatch returned null — real SoundCloud integration is broken",
-        );
-      }
-      const stream = await client.produceStreamUrl(match.sourceLocator);
-      expect(stream).not.toBeNull();
-      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
-      expect(stream?.streamUrl).not.toContain("/preview/");
-      expect(typeof stream?.expiresAt).toBe("string");
-    },
-    45_000,
-  );
+  it("produceStreamUrl always returns a valid HTTPS non-preview stream URL (falls back to non-snipped alternative when official track is snippet-gated)", async () => {
+    const client = new SoundCloudStreamClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }));
+    // findMatch now prefers non-snipped candidates; for snippet-gated tracks like
+    // Daft Punk / Columbia it falls back to a remix/cover with non-snipped transcodings.
+    const match = await client.findMatch(SC_TRACK);
+    if (!match) {
+      throw new Error("SoundCloud findMatch returned null — real SoundCloud integration is broken");
+    }
+    const stream = await client.produceStreamUrl(match.sourceLocator);
+    expect(stream).not.toBeNull();
+    expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+    expect(stream?.streamUrl).not.toContain("/preview/");
+    expect(typeof stream?.expiresAt).toBe("string");
+  }, 45_000);
 
-  it(
-    "produceStreamUrl (HTML-parse path): Please Please Please by Sabrina Carpenter returns a full stream URL without 'preview'",
-    async () => {
-      const client = new SoundCloudStreamClient(
-        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
+  it("produceStreamUrl (HTML-parse path): Please Please Please by Sabrina Carpenter returns a full stream URL without 'preview'", async () => {
+    const client = new SoundCloudStreamClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }));
+    const match = await client.findMatch(SC_TRACK_HTML_PATH);
+    if (!match) {
+      throw new Error(
+        "SoundCloud findMatch returned null for Sabrina Carpenter — integration is broken",
       );
-      const match = await client.findMatch(SC_TRACK_HTML_PATH);
-      if (!match) {
-        throw new Error(
-          "SoundCloud findMatch returned null for Sabrina Carpenter — integration is broken",
-        );
-      }
-      expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
-      const stream = await client.produceStreamUrl(match.sourceLocator);
-      expect(stream).not.toBeNull();
-      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
-      // Must not be a snipped/preview URL — preview paths contain "/preview/" in the transcoding URL
-      expect(stream?.streamUrl).not.toContain("/preview/");
-    },
-    40_000,
-  );
+    }
+    expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+    const stream = await client.produceStreamUrl(match.sourceLocator);
+    expect(stream).not.toBeNull();
+    expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+    // Must not be a snipped/preview URL — preview paths contain "/preview/" in the transcoding URL
+    expect(stream?.streamUrl).not.toContain("/preview/");
+  }, 40_000);
 
-  it(
-    "produceStreamUrl (API fallback path): Don't Stop The Music by Rihanna always returns a full non-preview stream URL (finds non-snipped alternative when official track is snippet-gated)",
-    async () => {
-      const client = new SoundCloudStreamClient(
-        fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }),
-      );
-      // findMatch now falls back to a remix/cover with non-snipped transcodings when the
-      // official Rihanna track (Def Jam / SoundCloud Go) has snippet-only access.
-      const match = await client.findMatch(SC_TRACK_API_PATH);
-      if (!match) {
-        throw new Error(
-          "SoundCloud findMatch returned null for Rihanna — integration is broken",
-        );
-      }
-      expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
-      const stream = await client.produceStreamUrl(match.sourceLocator);
-      expect(stream).not.toBeNull();
-      expect(stream?.streamUrl).toMatch(/^https?:\/\//);
-      expect(stream?.streamUrl).not.toContain("/preview/");
-    },
-    55_000,
+  it("produceStreamUrl (API fallback path): Don't Stop The Music by Rihanna always returns a full non-preview stream URL (finds non-snipped alternative when official track is snippet-gated)", async () => {
+    const client = new SoundCloudStreamClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }));
+    // findMatch now falls back to a remix/cover with non-snipped transcodings when the
+    // official Rihanna track (Def Jam / SoundCloud Go) has snippet-only access.
+    const match = await client.findMatch(SC_TRACK_API_PATH);
+    if (!match) {
+      throw new Error("SoundCloud findMatch returned null for Rihanna — integration is broken");
+    }
+    expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+    const stream = await client.produceStreamUrl(match.sourceLocator);
+    expect(stream).not.toBeNull();
+    expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+    expect(stream?.streamUrl).not.toContain("/preview/");
+  }, 55_000);
+});
+
+describe("API-10: POST /play/started and POST /play/completed require a valid session; 401 without; 204 with valid", () => {
+  it.todo("POST /api/play/started returns 401 + ErrorResponse without a session cookie");
+  it.todo("POST /api/play/completed returns 401 + ErrorResponse without a session cookie");
+  it.todo("POST /api/play/started returns 204 with no body for a valid session and matching body");
+  it.todo(
+    "POST /api/play/completed returns 204 with no body for a valid session and matching body",
   );
 });
 
+describe("API-11: POST /play/started and POST /play/completed validate body and ignore body userId", () => {
+  it.todo("POST /api/play/started returns 400 + ErrorResponse when source is missing");
+  it.todo("POST /api/play/started returns 400 + ErrorResponse when externalId is empty");
+  it.todo("POST /api/play/completed returns 400 + ErrorResponse when elapsedMs is missing");
+  it.todo("POST /api/play/completed returns 400 + ErrorResponse when elapsedMs is negative");
+  it.todo("any userId field present in the body is ignored — server uses the session's uid");
+});
+
 describe("AudiusStreamClient: real provider (no mocking)", () => {
-  it(
-    "findMatch returns a non-null result for a track confirmed on Audius",
-    async () => {
-      const client = new AudiusStreamClient(fakeConfig({ AUDIUS_APP_NAME: "moc-test" }));
-      const result = await client.findMatch(AUDIUS_TRACK);
-      expect(result).not.toBeNull();
-      expect(typeof result?.sourceTrackId).toBe("string");
-      expect(result?.sourceTrackId.length).toBeGreaterThan(0);
-    },
-    20_000,
-  );
+  it("findMatch returns a non-null result for a track confirmed on Audius", async () => {
+    const client = new AudiusStreamClient(fakeConfig({ AUDIUS_APP_NAME: "moc-test" }));
+    const result = await client.findMatch(AUDIUS_TRACK);
+    expect(result).not.toBeNull();
+    expect(typeof result?.sourceTrackId).toBe("string");
+    expect(result?.sourceTrackId.length).toBeGreaterThan(0);
+  }, 20_000);
 
   it("produceStreamUrl returns a stable Audius stream redirect URL (no network call needed)", () => {
     const client = new AudiusStreamClient(fakeConfig({ AUDIUS_APP_NAME: "moc-test" }));

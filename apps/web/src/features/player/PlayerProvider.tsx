@@ -25,7 +25,23 @@ export interface PlayerContextValue {
   dismissFailed: () => void;
 }
 
-export const PlayerContext = createContext<PlayerContextValue | null>(null);
+const NOOP_PLAYER_STATE: EngineState = {
+  status: "idle",
+  currentTrack: null,
+  progressMs: 0,
+  durationMs: 0,
+};
+
+const NOOP_CONTEXT: PlayerContextValue = {
+  engineState: NOOP_PLAYER_STATE,
+  failedTitle: null,
+  currentSource: null,
+  playSnapshot: () => {},
+  togglePlay: () => {},
+  dismissFailed: () => {},
+};
+
+export const PlayerContext = createContext<PlayerContextValue>(NOOP_CONTEXT);
 
 function makeHtmlAudioDriver(el: HTMLAudioElement) {
   return {
@@ -165,7 +181,5 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
 }
 
 export function usePlayerContext(): PlayerContextValue {
-  const ctx = useContext(PlayerContext);
-  if (!ctx) throw new Error("usePlayer must be used inside <PlayerProvider>");
-  return ctx;
+  return useContext(PlayerContext);
 }

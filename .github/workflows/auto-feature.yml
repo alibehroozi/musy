@@ -240,27 +240,40 @@ jobs:
             Within each tier, sort epics alphabetically by directory
             name. Within each epic, sort its `status: pending`
             features by numeric prefix ascending. Walk Tier 1 first,
-            then Tier 2. The first candidate that survives the
-            closed-PR filter below is the feature for this run.
+            then Tier 2. The first candidate in walk order is the
+            feature for this run — closed PRs do **not** drop a
+            feature from the queue (Step 2 handles a closed prior
+            attempt by retrying on a fresh suffixed branch). A merged
+            PR can't show up here because /new-feature step 11 flips
+            the feature file's frontmatter to `status: done` on
+            merge, which removes it from this walk.
 
-            **Closed-PR filter** (applied to each candidate in walk
-            order): derive the slash-command's recommended branch
-            name (e.g. `task-<slug>`) and check:
-
-                gh pr list --head <branch> --state closed --json number,state --limit 1
-
-            If a closed/merged PR exists for that branch, **skip this
-            feature** — closing a PR without merging is the user's
-            signal to drop it from the queue — and move to the next
-            candidate (still respecting tier order: exhaust the
-            remaining Tier 1 candidates before falling into Tier 2).
-
-            If nothing qualifies in either tier, print a one-line
-            summary and exit cleanly without committing.
+            If no `status: pending` feature exists in either tier,
+            print a one-line summary and exit cleanly without
+            committing.
 
             ### Step 2 — branch on PR + branch state
 
-            With feature file picked and `<branch>` derived:
+            **Branch resolution prelude.** Derive the slash-command's
+            base branch name (e.g. `task-<slug>`). Walk candidates
+            `task-<slug>`, `task-<slug>-2`, `task-<slug>-3`, … and
+            stop at the first one whose `gh pr list --head <name>
+            --state closed --json number --limit 1` returns no rows.
+            That's the **active branch** for this run — every
+            reference to `<branch>` below means that resolved name.
+
+            Why: a closed PR signals the prior attempt was rejected
+            (review pushback, scope mismatch, dead-end work). Reusing
+            its branch would drag the closed commits into the new
+            attempt; reopening the closed PR would carry stale review
+            comments and a misleading title. A fresh suffixed branch
+            keeps the prior attempt's history intact for reference
+            and gives the new attempt a clean slate. Open PRs still
+            win — if the active branch turns out to have an open PR,
+            we resume it (case (a) below); the suffix only ratchets
+            past **closed** PRs.
+
+            With feature file picked and `<branch>` resolved:
 
               a. **Open PR exists** (`gh pr list --head <branch>
                  --state open --json number,url` returns a row) →

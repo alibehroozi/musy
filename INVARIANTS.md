@@ -97,15 +97,15 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## SEC — authorization and credential hygiene
 
-| ID     | Invariant                                                                                                                                                                                           | Severity |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line                        | Critical |
-| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                 | Critical |
-| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`) return 401 without a valid session cookie | Critical |
-| SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                     | Critical |
-| SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                 | Critical |
-| SEC-06 | `interest_scores` documents are scoped per-user: events written by user A never appear in any HTTP response served to user B, and the repository filters every read by the authenticated `userId`   | Critical |
-| SEC-07 | The configured `SOUNDCLOUD_USER_AGENT` value and the SoundCloud `client_id` extracted from upstream HTML never appear in any HTTP response body served by `apps/api`                                | Critical |
+| ID     | Invariant                                                                                                                                                                                                                     | Severity |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| SEC-01 | The session cookie value, the `oauth_state` cookie value, the `SESSION_SECRET`, and the `GOOGLE_CLIENT_SECRET` never appear in any HTTP response body or structured log line                                                  | Critical |
+| SEC-02 | `GET /api/auth/google/callback` returns a 4xx error when the `state` query param is missing or does not match the value in the `oauth_state` cookie                                                                           | Critical |
+| SEC-03 | Routes outside the public allowlist (`GET /health`, `GET /api/auth/google`, `GET /api/auth/google/callback`, `POST /api/auth/logout`, `POST /api/search`, `POST /api/play/resolve`) return 401 without a valid session cookie | Critical |
+| SEC-04 | `GENIUS_ACCESS_TOKEN` never appears in any HTTP response body at any route, whether or not the request succeeds                                                                                                               | Critical |
+| SEC-05 | `GET /api/search/history` for user A never returns entries owned by user B; the endpoint scopes all results to the authenticated session's `userId`                                                                           | Critical |
+| SEC-06 | `interest_scores` documents are scoped per-user: events written by user A never appear in any HTTP response served to user B, and the repository filters every read by the authenticated `userId`                             | Critical |
+| SEC-07 | The configured `SOUNDCLOUD_USER_AGENT` value and the SoundCloud `client_id` extracted from upstream HTML never appear in any HTTP response body served by `apps/api`                                                          | Critical |
 
 **Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`, `tests/invariants/sec/play.test.ts`
 

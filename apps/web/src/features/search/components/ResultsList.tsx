@@ -48,15 +48,23 @@ interface InteractiveRowProps {
   source: ProviderName;
   externalId: string;
   snapshot: SongSnapshot;
+  exploreLabel: string;
   onExplore: (id: { source: ProviderName; externalId: string; snapshot: SongSnapshot }) => void;
   onSave: (id: { source: ProviderName; externalId: string; snapshot: SongSnapshot }) => void;
-  children: (saveButton: JSX.Element) => JSX.Element;
+  children: JSX.Element;
 }
 
+/**
+ * Visual flash + click target for the row. The SaveButton sits as a
+ * sibling below (absolutely positioned over the trailing slot) so it
+ * is NOT a descendant of the role=button — keeping the DOM free of
+ * nested-interactive a11y violations.
+ */
 function InteractiveRow({
   source,
   externalId,
   snapshot,
+  exploreLabel,
   onExplore,
   onSave,
   children,
@@ -91,16 +99,22 @@ function InteractiveRow({
   const flashClasses = flashing ? "bg-primary/10" : "bg-bg";
   const cls = `${baseClasses} ${flashClasses}`;
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleExplore}
-      onKeyDown={handleKey}
-      className={cls}
-      style={{ transitionDuration: "var(--transition-fast)" }}
-      data-testid="interactive-row"
-    >
-      {children(<SaveButton saved={saved} onSave={handleSave} />)}
+    <div className="relative" data-testid="interactive-row-wrapper">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={exploreLabel}
+        onClick={handleExplore}
+        onKeyDown={handleKey}
+        className={cls}
+        style={{ transitionDuration: "var(--transition-fast)" }}
+        data-testid="interactive-row"
+      >
+        {children}
+      </div>
+      <div className="absolute right-4 top-1/2 -translate-y-1/2">
+        <SaveButton saved={saved} onSave={handleSave} />
+      </div>
     </div>
   );
 }
@@ -120,6 +134,12 @@ export function ResultsList({ data }: ResultsListProps): JSX.Element {
     );
   }
 
+  // Spacer reserves room in ResultRow's trailing slot for the absolutely
+  // positioned SaveButton — keeps the visual layout intact while the
+  // SaveButton lives outside the role=button subtree (avoids
+  // nested-interactive a11y violations).
+  const trailingSpacer = <div className="size-11 shrink-0" aria-hidden />;
+
   return (
     <>
       <div data-testid="results-list">
@@ -130,20 +150,19 @@ export function ResultsList({ data }: ResultsListProps): JSX.Element {
               source={result.provider}
               externalId={result.providerId}
               snapshot={trackSnapshot(result)}
+              exploreLabel={`Explore ${result.title} by ${result.artist}`}
               onExplore={onExplore}
               onSave={onSave}
             >
-              {(saveButton) => (
-                <ResultRow
-                  variant="track"
-                  title={result.title}
-                  artist={result.artist}
-                  {...(result.duration !== undefined ? { duration: result.duration } : {})}
-                  {...(result.artworkUrl !== undefined ? { artworkUrl: result.artworkUrl } : {})}
-                  sourceBadge={providerLabel(result.provider)}
-                  trailing={saveButton}
-                />
-              )}
+              <ResultRow
+                variant="track"
+                title={result.title}
+                artist={result.artist}
+                {...(result.duration !== undefined ? { duration: result.duration } : {})}
+                {...(result.artworkUrl !== undefined ? { artworkUrl: result.artworkUrl } : {})}
+                sourceBadge={providerLabel(result.provider)}
+                trailing={trailingSpacer}
+              />
             </InteractiveRow>
           ) : (
             <InteractiveRow
@@ -151,19 +170,18 @@ export function ResultsList({ data }: ResultsListProps): JSX.Element {
               source={result.provider}
               externalId={result.providerId}
               snapshot={stationSnapshot(result)}
+              exploreLabel={`Explore ${result.name}`}
               onExplore={onExplore}
               onSave={onSave}
             >
-              {(saveButton) => (
-                <ResultRow
-                  variant="station"
-                  name={result.name}
-                  {...(result.country !== undefined ? { country: result.country } : {})}
-                  {...(result.favicon !== undefined ? { artworkUrl: result.favicon } : {})}
-                  sourceBadge={providerLabel(result.provider)}
-                  trailing={saveButton}
-                />
-              )}
+              <ResultRow
+                variant="station"
+                name={result.name}
+                {...(result.country !== undefined ? { country: result.country } : {})}
+                {...(result.favicon !== undefined ? { artworkUrl: result.favicon } : {})}
+                sourceBadge={providerLabel(result.provider)}
+                trailing={trailingSpacer}
+              />
             </InteractiveRow>
           ),
         )}

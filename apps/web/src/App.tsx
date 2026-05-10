@@ -3,6 +3,7 @@ import { BottomNav, type BottomNavTab } from "@moc/design-system";
 import { AppRoutes } from "./routes.js";
 import { PlayerProvider } from "./features/player/PlayerProvider.js";
 import { MiniPlayerHost } from "./features/player/MiniPlayerHost.js";
+import { NowPlayingOverlay } from "./features/player/NowPlayingOverlay.js";
 
 const NAV_TABS: BottomNavTab[] = [
   { id: "explore", label: "Explore", icon: "compass", href: "/explore" },
@@ -23,6 +24,7 @@ export function App(): JSX.Element {
         <MiniPlayerHost />
         <BottomNav tabs={NAV_TABS} activePath={location.pathname} onNavigate={navigate} />
       </div>
+      <NowPlayingOverlay />
     </PlayerProvider>
   );
 }

@@ -14,6 +14,7 @@ import type { AudioDriver, EngineState } from "@moc/web-core";
 import type { ProviderName, SongSnapshot } from "@moc/contracts";
 import { resolveStream, recordPlayStarted, recordPlayCompleted } from "./api.js";
 import { useAuth } from "../../hooks/useAuth.js";
+import { useMediaSession } from "./useMediaSession.js";
 
 export interface PlayerContextValue {
   engineState: EngineState;
@@ -21,8 +22,16 @@ export interface PlayerContextValue {
   failedTitle: string | null;
   /** Source and externalId of the currently-loaded track (for overlay logic). */
   currentSource: { source: ProviderName; externalId: string } | null;
+  /** Whether the now-playing overlay is currently expanded. */
+  isExpanded: boolean;
   playSnapshot: (snapshot: SongSnapshot, source: ProviderName, externalId: string) => void;
   togglePlay: () => void;
+  /** Seek to an absolute position in milliseconds. */
+  seek: (positionMs: number) => void;
+  /** Skip-back in v1: rewind to 0 (no queue). */
+  skipBack: () => void;
+  expand: () => void;
+  collapse: () => void;
   dismissFailed: () => void;
 }
 
@@ -37,12 +46,19 @@ const NOOP_CONTEXT: PlayerContextValue = {
   engineState: NOOP_PLAYER_STATE,
   failedTitle: null,
   currentSource: null,
+  isExpanded: false,
   playSnapshot: () => {},
   togglePlay: () => {},
+  seek: () => {},
+  skipBack: () => {},
+  expand: () => {},
+  collapse: () => {},
   dismissFailed: () => {},
 };
 
 export const PlayerContext = createContext<PlayerContextValue>(NOOP_CONTEXT);
+
+const OVERLAY_HISTORY_STATE = "now-playing-overlay";
 
 export function PlayerProvider({ children }: { children: ReactNode }): JSX.Element {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -61,6 +77,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     externalId: string;
   } | null>(null);
   const [failedTitle, setFailedTitle] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // Initialize the audio element and engine once.
   useEffect(() => {
@@ -163,6 +180,14 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     engineRef.current?.togglePlay();
   }, []);
 
+  const seek = useCallback((positionMs: number) => {
+    engineRef.current?.seek(positionMs);
+  }, []);
+
+  const skipBack = useCallback(() => {
+    engineRef.current?.seek(0);
+  }, []);
+
   const dismissFailed = useCallback(() => {
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -180,6 +205,49 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     });
     setCurrentSource(null);
     setFailedTitle(null);
+    setIsExpanded(false);
+  }, []);
+
+  // Push a history entry on expand so the browser back-button collapses
+  // the overlay instead of navigating the underlying route. Pop the entry
+  // when collapsing programmatically (chevron-down) so history stays clean.
+  const expand = useCallback(() => {
+    setIsExpanded((prev) => {
+      if (prev) return prev;
+      try {
+        window.history.pushState({ overlay: OVERLAY_HISTORY_STATE }, "");
+      } catch {
+        // history.pushState fails in very old browsers; the overlay still works.
+      }
+      return true;
+    });
+  }, []);
+
+  const collapse = useCallback(() => {
+    setIsExpanded((prev) => {
+      if (!prev) return prev;
+      try {
+        const state = window.history.state as { overlay?: string } | null;
+        if (state && state.overlay === OVERLAY_HISTORY_STATE) {
+          window.history.back();
+        }
+      } catch {
+        // Same fallback — visual close still happens.
+      }
+      return false;
+    });
+  }, []);
+
+  // popstate fires on browser-back. If the overlay is currently expanded,
+  // the back removes our pushed entry — collapse the overlay (without
+  // calling history.back() again) instead of letting the route change.
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onPop = (): void => {
+      setIsExpanded(false);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   // Merge failedTitle into engineState's status so consumers see "failed".
@@ -188,16 +256,43 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     [engineState, failedTitle],
   );
 
+  const currentSnapshot = effectiveState.currentTrack?.snapshot ?? null;
+  const isPlaying = effectiveState.status === "playing";
+
+  useMediaSession({
+    snapshot: currentSnapshot,
+    isPlaying,
+    onPlayPause: togglePlay,
+    onSkipBack: skipBack,
+  });
+
   const value = useMemo<PlayerContextValue>(
     () => ({
       engineState: effectiveState,
       failedTitle,
       currentSource,
+      isExpanded,
       playSnapshot,
       togglePlay,
+      seek,
+      skipBack,
+      expand,
+      collapse,
       dismissFailed,
     }),
-    [effectiveState, failedTitle, currentSource, playSnapshot, togglePlay, dismissFailed],
+    [
+      effectiveState,
+      failedTitle,
+      currentSource,
+      isExpanded,
+      playSnapshot,
+      togglePlay,
+      seek,
+      skipBack,
+      expand,
+      collapse,
+      dismissFailed,
+    ],
   );
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;

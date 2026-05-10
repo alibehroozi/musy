@@ -62,3 +62,29 @@ export const TasteProfileLLMOutput = z.object({
   summaryText: z.string().max(500),
 });
 export type TasteProfileLLMOutput = z.infer<typeof TasteProfileLLMOutput>;
+
+// ── Explore queue (feature 05) ───────────────────────────────────────
+//
+// `GET /api/explore/next` returns the user's pre-fetched swipe queue
+// for the Explore tab. Three phases drive sourcing:
+//   - "discovery"          — committed seed-genre snapshots, no provider
+//                            calls, used until the user has right-swiped
+//                            in ≥ 3 distinct genres.
+//   - "artist-refinement"  — provider search per liked genre, [1 common,
+//                            2 niche] split, used until the profile has
+//                            ≥ 8 strong-signal artists.
+//   - "personalized"       — heuristic candidate pool reranked by an LLM
+//                            using the profile summary.
+// `partial: true` means the queue is shorter than `count` (provider
+// outage degraded the build). It is never empty when any candidate
+// could be sourced.
+
+export const QueuePhase = z.enum(["discovery", "artist-refinement", "personalized"]);
+export type QueuePhase = z.infer<typeof QueuePhase>;
+
+export const NextResponse = z.object({
+  items: z.array(SongSnapshot),
+  phase: QueuePhase,
+  partial: z.boolean(),
+});
+export type NextResponse = z.infer<typeof NextResponse>;

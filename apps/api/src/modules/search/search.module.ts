@@ -14,6 +14,7 @@ import { AudiusClient } from "./providers/audius.client.js";
 import { DeezerClient } from "./providers/deezer.client.js";
 import { RadioBrowserClient } from "./providers/radio-browser.client.js";
 import { GeniusClient } from "./providers/genius.client.js";
+import { SoundCloudClient } from "./providers/soundcloud.client.js";
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { GeniusClient } from "./providers/genius.client.js";
     DeezerClient,
     RadioBrowserClient,
     GeniusClient,
+    SoundCloudClient,
   ],
   exports: [InterestScoresRepository],
 })

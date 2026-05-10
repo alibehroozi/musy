@@ -62,6 +62,62 @@ describe("SEC-07: SOUNDCLOUD_USER_AGENT and the SoundCloud client_id never appea
   });
 });
 
+import { buildSearchTestApp, SEARCH_TEST_ENV } from "../_helpers/search-test-app.js";
+import type { SearchTestAppHandle } from "../_helpers/search-test-app.js";
+
+describe("SEC-07 (search code path): SOUNDCLOUD_USER_AGENT and SoundCloud client_id never appear in /api/search responses", () => {
+  let h: SearchTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  it("the SOUNDCLOUD_USER_AGENT value is not present in a successful /api/search response", async () => {
+    h = await buildSearchTestApp();
+    h.soundcloud.results = [
+      {
+        type: "track",
+        id: "soundcloud:1",
+        title: "Sample",
+        artist: "Sample Artist",
+        provider: "soundcloud",
+        providerId: "1",
+        sources: ["soundcloud"],
+      },
+    ];
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "sample" })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(200);
+    const bodyText = JSON.stringify(res.body ?? "");
+    expect(bodyText).not.toContain(SEARCH_TEST_ENV.SOUNDCLOUD_USER_AGENT);
+  });
+
+  it("the SOUNDCLOUD_USER_AGENT value is not present in a /api/search response when the provider failed", async () => {
+    h = await buildSearchTestApp();
+    h.soundcloud.shouldFail = true;
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "sample" })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(200);
+    const bodyText = JSON.stringify(res.body ?? "");
+    expect(bodyText).not.toContain(SEARCH_TEST_ENV.SOUNDCLOUD_USER_AGENT);
+  });
+
+  it("the SOUNDCLOUD_USER_AGENT value is not present in a 400 ErrorResponse from /api/search", async () => {
+    h = await buildSearchTestApp();
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "" })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(400);
+    const bodyText = JSON.stringify(res.body ?? "");
+    expect(bodyText).not.toContain(SEARCH_TEST_ENV.SOUNDCLOUD_USER_AGENT);
+  });
+});
+
 import {
   buildPlayEventsTestApp,
   type PlayEventsTestAppHandle,

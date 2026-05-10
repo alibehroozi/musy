@@ -71,6 +71,7 @@ describe("API-04: POST /api/search always returns 200 + SearchResponse, even whe
     h.deezer.shouldFail = true;
     h.radioBrowser.shouldFail = true;
     h.genius.shouldFail = true;
+    h.soundcloud.shouldFail = true;
 
     const res = await request(h.app.getHttpServer())
       .post("/api/search")
@@ -80,7 +81,7 @@ describe("API-04: POST /api/search always returns 200 + SearchResponse, even whe
     const body = SearchResponse.parse(res.body);
     expect(body.results).toHaveLength(0);
     expect(body.partial).toBe(true);
-    expect(body.failedProviders).toHaveLength(4);
+    expect(body.failedProviders).toHaveLength(5);
   });
 
   it("response includes cached: false on first request, cached: true on cache hit", async () => {
@@ -300,16 +301,90 @@ describe("API-07: POST /api/search/explored and POST /api/search/saved require a
 });
 
 describe("API-13: SoundCloud failure adds 'soundcloud' to failedProviders; success does not", () => {
-  it.todo(
-    "POST /api/search lists 'soundcloud' in failedProviders when the SoundCloud provider rejects",
-  );
-  it.todo(
-    "POST /api/search lists 'soundcloud' in failedProviders when the SoundCloud provider times out",
-  );
-  it.todo(
-    "POST /api/search does NOT list 'soundcloud' in failedProviders when SoundCloud responds successfully (zero or many results)",
-  );
-  it.todo(
-    "POST /api/search response continues to match SearchResponse Zod schema regardless of SoundCloud's outcome",
-  );
+  let h: SearchTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  it("POST /api/search lists 'soundcloud' in failedProviders when the SoundCloud provider rejects", async () => {
+    h = await buildSearchTestApp();
+    h.soundcloud.shouldFail = true;
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "dua lipa levitating" })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(200);
+    const body = SearchResponse.parse(res.body);
+    expect(body.failedProviders).toContain("soundcloud");
+    expect(body.partial).toBe(true);
+  });
+
+  it("POST /api/search lists 'soundcloud' in failedProviders when the SoundCloud provider hangs past the per-call timeout", async () => {
+    h = await buildSearchTestApp();
+    h.soundcloud.shouldHang = true;
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "lo-fi study beats" })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(200);
+    const body = SearchResponse.parse(res.body);
+    expect(body.failedProviders).toContain("soundcloud");
+  }, 10_000);
+
+  it("POST /api/search does NOT list 'soundcloud' in failedProviders when SoundCloud responds successfully with zero results", async () => {
+    h = await buildSearchTestApp();
+    // Default fake state: shouldFail=false, results=[]; this models a clean
+    // upstream response with no matches — the provider succeeded, just nothing
+    // to return. Distinguishing this from "errored" is the heart of API-13.
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "asdkjhasdkjh" })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(200);
+    const body = SearchResponse.parse(res.body);
+    expect(body.failedProviders).not.toContain("soundcloud");
+  });
+
+  it("POST /api/search does NOT list 'soundcloud' in failedProviders when SoundCloud responds successfully with results", async () => {
+    h = await buildSearchTestApp();
+    h.soundcloud.results = [
+      {
+        type: "track",
+        id: "soundcloud:1",
+        title: "Levitating",
+        artist: "Dua Lipa",
+        provider: "soundcloud",
+        providerId: "1",
+        sources: ["soundcloud"],
+      },
+    ];
+    const res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "dua lipa levitating" })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(200);
+    const body = SearchResponse.parse(res.body);
+    expect(body.failedProviders).not.toContain("soundcloud");
+    expect(body.results.some((r) => r.type === "track" && r.sources.includes("soundcloud"))).toBe(
+      true,
+    );
+  });
+
+  it("response body matches SearchResponse Zod schema regardless of SoundCloud's outcome", async () => {
+    h = await buildSearchTestApp();
+    // Success path
+    let res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "queen" })
+      .set("Content-Type", "application/json");
+    expect(() => SearchResponse.parse(res.body)).not.toThrow();
+    // Failure path
+    h.soundcloud.shouldFail = true;
+    res = await request(h.app.getHttpServer())
+      .post("/api/search")
+      .send({ q: "radiohead" })
+      .set("Content-Type", "application/json");
+    expect(() => SearchResponse.parse(res.body)).not.toThrow();
+  });
 });

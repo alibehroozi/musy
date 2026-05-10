@@ -23,6 +23,7 @@ import { AudiusClient } from "../../../apps/api/src/modules/search/providers/aud
 import { DeezerClient } from "../../../apps/api/src/modules/search/providers/deezer.client.js";
 import { RadioBrowserClient } from "../../../apps/api/src/modules/search/providers/radio-browser.client.js";
 import { GeniusClient } from "../../../apps/api/src/modules/search/providers/genius.client.js";
+import { SoundCloudClient } from "../../../apps/api/src/modules/search/providers/soundcloud.client.js";
 import { SearchRateLimiterGuard } from "../../../apps/api/src/modules/search/search-rate-limiter.guard.js";
 import { FakeUsersRepository } from "./test-app.js";
 
@@ -34,6 +35,7 @@ export const SEARCH_TEST_ENV = {
   GOOGLE_REDIRECT_URI: "http://localhost:5173/api/auth/google/callback",
   WEB_ORIGIN: "http://localhost:5173",
   SESSION_SECRET: "test-session-secret-32-bytes-for-search-tests",
+  SOUNDCLOUD_USER_AGENT: "test-soundcloud-ua-DO-NOT-LEAK",
   NODE_ENV: "test",
 };
 
@@ -96,6 +98,19 @@ export class FakeGeniusClient {
   }
 }
 
+export class FakeSoundCloudClient {
+  results: TrackResult[] = [];
+  shouldFail = false;
+  shouldHang = false;
+  async search(_query: string): Promise<TrackResult[]> {
+    if (this.shouldFail) throw new Error("SoundCloud failed");
+    if (this.shouldHang) {
+      await new Promise<never>(() => undefined);
+    }
+    return [...this.results];
+  }
+}
+
 export class FakeSearchHistoryRepository {
   async upsert(_userId: string, _query: string): Promise<void> {}
   async findByUser(_userId: string, _limit: number, _cursor?: string) {
@@ -109,6 +124,7 @@ const fakeAudiusToken = Symbol.for("test:fake-audius");
 const fakeDeezerToken = Symbol.for("test:fake-deezer");
 const fakeRadioBrowserToken = Symbol.for("test:fake-radio-browser");
 const fakeGeniusToken = Symbol.for("test:fake-genius");
+const fakeSoundCloudToken = Symbol.for("test:fake-soundcloud");
 const fakeUsersToken = Symbol.for("test:fake-users-repo-search");
 
 @Module({
@@ -196,6 +212,15 @@ const fakeUsersToken = Symbol.for("test:fake-users-repo-search");
       useFactory: (fake: FakeGeniusClient) => fake as unknown as GeniusClient,
       inject: [fakeGeniusToken],
     },
+    {
+      provide: fakeSoundCloudToken,
+      useFactory: () => new FakeSoundCloudClient(),
+    },
+    {
+      provide: SoundCloudClient,
+      useFactory: (fake: FakeSoundCloudClient) => fake as unknown as SoundCloudClient,
+      inject: [fakeSoundCloudToken],
+    },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -209,6 +234,7 @@ export interface SearchTestAppHandle {
   deezer: FakeDeezerClient;
   radioBrowser: FakeRadioBrowserClient;
   genius: FakeGeniusClient;
+  soundcloud: FakeSoundCloudClient;
   env: typeof SEARCH_TEST_ENV;
 }
 
@@ -225,6 +251,7 @@ export async function buildSearchTestApp(): Promise<SearchTestAppHandle> {
   const deezer = app.get<FakeDeezerClient>(fakeDeezerToken);
   const radioBrowser = app.get<FakeRadioBrowserClient>(fakeRadioBrowserToken);
   const genius = app.get<FakeGeniusClient>(fakeGeniusToken);
+  const soundcloud = app.get<FakeSoundCloudClient>(fakeSoundCloudToken);
 
-  return { app, repo, audius, deezer, radioBrowser, genius, env: SEARCH_TEST_ENV };
+  return { app, repo, audius, deezer, radioBrowser, genius, soundcloud, env: SEARCH_TEST_ENV };
 }

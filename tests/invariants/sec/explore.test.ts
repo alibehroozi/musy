@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under SEC-09.
+// Invariants verified here are listed in INVARIANTS.md under SEC-09, SEC-10.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -83,4 +83,13 @@ describe("SEC-09: /api/explore/swipe always derives userId from the session, nev
     expect(aScores.every((d) => d.userId === userA)).toBe(true);
     expect(bScores).toHaveLength(0);
   });
+});
+
+describe("SEC-10: GET /api/explore/profile is owner-scoped — user A never sees user B's profile", () => {
+  it.todo(
+    "with user A's session, the response is the profile written for A — never the one written for B",
+  );
+  it.todo(
+    "the repository read used to serve /profile filters by the authenticated session's userId",
+  );
 });

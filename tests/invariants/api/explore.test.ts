@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-14.
+// Invariants verified here are listed in INVARIANTS.md under API-14, API-15.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -137,4 +137,12 @@ describe("API-14: POST /api/explore/swipe contract — auth, body validation, le
     expect(scores).toHaveLength(1);
     expect(scores[0]!.score).toBe(8);
   });
+});
+
+describe("API-15: GET /api/explore/profile contract — auth gating + TasteProfileResponse shape", () => {
+  it.todo("returns 401 + ErrorResponse without a session cookie");
+  it.todo("returns 200 with body null for a user below the build threshold");
+  it.todo(
+    "returns 200 with a body matching TasteProfile when a profile has been built for the session user",
+  );
 });

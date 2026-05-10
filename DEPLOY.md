@@ -143,10 +143,11 @@ echo -n "$SESSION_SECRET"  | gcloud secrets create musy-session-secret --data-fi
 echo -n "<google client id>"     | gcloud secrets create musy-google-client-id --data-file=-
 echo -n "<google client secret>" | gcloud secrets create musy-google-client-secret --data-file=-
 echo -n "<musy-genius-access-token>" | gcloud secrets create musy-genius-access-token --data-file=-
+echo -n "<musy-anthropic-api-key>" | gcloud secrets create musy-anthropic-api-key --data-file=-
 
 # Grant the Cloud Run runtime service account access to these secrets
 RUNTIME_SA="$(gcloud projects describe musy-prod --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
-for secret in musy-mongo-uri musy-session-secret musy-google-client-id musy-google-client-secret musy-genius-access-token; do
+for secret in musy-mongo-uri musy-session-secret musy-google-client-id musy-google-client-secret musy-genius-access-token musy-anthropic-api-key; do
   gcloud secrets add-iam-policy-binding "$secret" \
     --member="serviceAccount:$RUNTIME_SA" \
     --role="roles/secretmanager.secretAccessor"

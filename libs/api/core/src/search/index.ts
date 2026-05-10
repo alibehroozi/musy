@@ -6,3 +6,4 @@ export * from "./normalizers/audius.js";
 export * from "./normalizers/deezer.js";
 export * from "./normalizers/radio-browser.js";
 export * from "./normalizers/genius.js";
+export * from "./normalizers/soundcloud.js";

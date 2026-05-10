@@ -192,10 +192,36 @@ describe("LOGIC: songKeyOf composes a stable per-(source, externalId) key", () =
   });
 });
 
+import { normalizeSoundCloudSearchHit } from "@moc/api-core";
+
 describe("LOGIC-13: SoundCloud search-hit normalizer is deterministic and stamps provider/sources", () => {
-  it.todo("the same raw search hit always normalizes to the same TrackResult (or null)");
-  it.todo(
-    "non-null normalized results carry provider === 'soundcloud' and sources === ['soundcloud']",
-  );
-  it.todo("inputs missing required fields (id, title, permalink) normalize to null");
+  const raw = {
+    id: 12345678,
+    title: "Sample Track",
+    permalink_url: "https://soundcloud.com/sample/track",
+    duration: 234_000,
+    artwork_url: "https://i1.sndcdn.com/artworks-sample-large.jpg",
+    user: { username: "Sample Artist" },
+    publisher_metadata: { isrc: "USRC12345678" },
+  };
+
+  it("the same raw search hit always normalizes to the same TrackResult (or null)", () => {
+    const a = normalizeSoundCloudSearchHit(raw);
+    const b = normalizeSoundCloudSearchHit(raw);
+    expect(a).toEqual(b);
+    expect(a).not.toBeNull();
+  });
+
+  it("non-null normalized results carry provider === 'soundcloud' and sources === ['soundcloud']", () => {
+    const normalized = normalizeSoundCloudSearchHit(raw);
+    expect(normalized).not.toBeNull();
+    expect(normalized?.provider).toBe("soundcloud");
+    expect(normalized?.sources).toEqual(["soundcloud"]);
+  });
+
+  it("inputs missing required fields (id, title, permalink) normalize to null", () => {
+    expect(normalizeSoundCloudSearchHit({ ...raw, id: undefined })).toBeNull();
+    expect(normalizeSoundCloudSearchHit({ ...raw, title: undefined })).toBeNull();
+    expect(normalizeSoundCloudSearchHit({ ...raw, permalink_url: undefined })).toBeNull();
+  });
 });

@@ -4,6 +4,7 @@ import type { SongSnapshot } from "@moc/contracts";
 import {
   extractSourceFromHtml,
   extractClientId,
+  isPlayableTranscoding,
   pickBestMatch,
   type AudiusCandidate,
 } from "@moc/api-core";
@@ -50,16 +51,18 @@ export class SoundCloudStreamClient {
       ? await this.fetchSearchItems(query, clientId, 20)
       : collectSearchHydration(html);
 
-    // Phase 1: verify the best strict (title+artist) match can actually stream non-snipped.
-    // SoundCloud search results omit media.transcodings, so we use the resolve API
-    // (a lightweight JSON call) to confirm the track is not snippet-gated.
+    // Phase 1: verify the best strict (title+artist) match yields a playable
+    // (non-snipped, non-DRM) stream. SoundCloud search results omit media.transcodings,
+    // so we use the resolve API (a lightweight JSON call) to inspect the track's
+    // protocols and probe the transcoding endpoint.
     const strictBest = this.pickFromItems(snapshot, primaryItems);
     if (strictBest && clientId) {
-      if (await this.canStreamNonSnipped(strictBest.sourceLocator, clientId)) return strictBest;
+      if (await this.canStreamPlayable(strictBest.sourceLocator, clientId)) return strictBest;
     }
 
-    // Phase 2: title-only broader search — finds remixes/covers/different artists
-    // when the best strict match is snippet-gated (e.g. major-label restriction).
+    // Phase 2: title-only broader search — finds remixes/covers/user-uploads with
+    // playable transcodings when the best strict match is snippet-gated or DRM-only
+    // (e.g. major-label SoundCloud-Go content).
     if (clientId && snapshot.title) {
       const titleItems = await this.fetchSearchItems(snapshot.title, clientId, 20);
       const titleCandidates = titleItems
@@ -71,7 +74,7 @@ export class SoundCloudStreamClient {
         const batch = titleCandidates.slice(i, i + 4);
         const results = await Promise.all(
           batch.map((c) =>
-            this.canStreamNonSnipped(c.permalink, clientId).then((ok) => (ok ? c : null)),
+            this.canStreamPlayable(c.permalink, clientId).then((ok) => (ok ? c : null)),
           ),
         );
         const winner = results.find((r) => r !== null);
@@ -79,7 +82,9 @@ export class SoundCloudStreamClient {
       }
     }
 
-    // Phase 3: last resort — return the best strict match regardless of snipped status.
+    // Phase 3: last resort — return the best strict match. Downstream
+    // produceStreamUrl will still refuse to hand back a DRM URL, so the resolver
+    // gracefully degrades to streamUrl: null if even this candidate is unplayable.
     return strictBest;
   }
 
@@ -138,12 +143,13 @@ export class SoundCloudStreamClient {
     return { sourceTrackId: winner.id, sourceLocator: winner.permalink };
   }
 
-  // Verifies that a SoundCloud track at `permalink` can actually produce a non-preview
-  // stream URL. Uses the resolve API to get transcodings, then calls the transcoding
-  // endpoint to confirm the URL is real and not gated (SoundCloud Go). The `snipped`
-  // field in the API response is not reliable for Go-gated major-label tracks, so we
-  // probe the actual endpoint.
-  private async canStreamNonSnipped(permalink: string, clientId: string): Promise<boolean> {
+  // Verifies that a SoundCloud track at `permalink` can actually produce a playable
+  // stream URL: non-snipped, non-DRM (no FairPlay/Widevine), and not a preview
+  // response. Uses the resolve API to get transcodings, filters with
+  // isPlayableTranscoding (closed allowlist of progressive/hls), then probes the
+  // transcoding endpoint to confirm the URL is real (SoundCloud advertises
+  // transcodings it won't actually serve to anonymous users).
+  private async canStreamPlayable(permalink: string, clientId: string): Promise<boolean> {
     try {
       const resolveUrl = new URL("https://api-v2.soundcloud.com/resolve");
       resolveUrl.searchParams.set("url", permalink);
@@ -158,14 +164,19 @@ export class SoundCloudStreamClient {
       const track = (await res.json()) as Track;
       const transcodings = track.media?.transcodings ?? [];
 
-      // Prefer non-snipped progressive; fall back to any non-snipped.
-      const candidate =
-        transcodings.find((t) => t.format?.protocol === "progressive" && t.snipped !== true) ??
-        transcodings.find((t) => t.snipped !== true);
+      const playable = transcodings.filter((t) => {
+        if (typeof t.url !== "string" || t.url.length === 0) return false;
+        const protocol = t.format?.protocol;
+        if (typeof protocol !== "string") return false;
+        return isPlayableTranscoding({ protocol, snipped: t.snipped === true });
+      });
+      // Prefer progressive (mp3, smallest playback overhead); fall back to plain HLS.
+      const candidate = playable.find((t) => t.format?.protocol === "progressive") ?? playable[0];
       if (!candidate?.url) return false;
 
-      // Probe the transcoding endpoint — the actual URL determines whether SoundCloud
-      // serves a real stream or a Go-gated/preview response.
+      // Probe the transcoding endpoint — SoundCloud lists transcodings it won't
+      // actually serve to anonymous users (404), so the listing alone is not
+      // sufficient evidence of playability.
       const transcodingUrl = new URL(candidate.url);
       transcodingUrl.searchParams.set("client_id", clientId);
       const streamRes = await fetch(transcodingUrl.toString(), {
@@ -184,11 +195,12 @@ export class SoundCloudStreamClient {
     parsed: ReturnType<typeof extractSourceFromHtml>,
   ): Promise<SoundCloudStreamUrlResult | null> {
     if (!parsed) return null;
-    // Prefer full (non-snipped) progressive; fall back to any non-snipped transcoding (e.g. HLS).
-    // Never return a snipped/preview transcoding — callers expect a full stream URL.
-    const transcoding =
-      parsed.transcodings.find((t) => t.protocol === "progressive" && !t.snipped) ??
-      parsed.transcodings.find((t) => !t.snipped);
+    // Closed allowlist via isPlayableTranscoding: only non-snipped progressive/hls.
+    // Never return a snipped/preview transcoding, and never an encrypted variant
+    // (cbc-encrypted-hls / ctr-encrypted-hls) — those need FairPlay/Widevine EME
+    // which we don't implement. Prefer progressive over plain HLS.
+    const playable = parsed.transcodings.filter(isPlayableTranscoding);
+    const transcoding = playable.find((t) => t.protocol === "progressive") ?? playable[0];
     if (!transcoding) return null;
 
     const transcodingUrl = new URL(transcoding.url);
@@ -219,16 +231,19 @@ export class SoundCloudStreamClient {
 
       type RawTranscoding = { url?: string; format?: { protocol?: string }; snipped?: boolean };
       const track = (await res.json()) as { media?: { transcodings?: RawTranscoding[] } };
-      const transcodings = Array.isArray(track.media?.transcodings)
-        ? track.media.transcodings
-        : [];
-      // Prefer full (non-snipped) progressive; fall back to any non-snipped transcoding (e.g. HLS).
-      const progressive =
-        transcodings.find((t) => t.format?.protocol === "progressive" && t.snipped !== true) ??
-        transcodings.find((t) => t.snipped !== true);
-      if (!progressive?.url) return null;
+      const transcodings = Array.isArray(track.media?.transcodings) ? track.media.transcodings : [];
+      // Closed allowlist via isPlayableTranscoding: only non-snipped progressive/hls;
+      // encrypted variants (cbc-encrypted-hls / ctr-encrypted-hls) are excluded.
+      const playable = transcodings.filter((t) => {
+        if (typeof t.url !== "string" || t.url.length === 0) return false;
+        const protocol = t.format?.protocol;
+        if (typeof protocol !== "string") return false;
+        return isPlayableTranscoding({ protocol, snipped: t.snipped === true });
+      });
+      const candidate = playable.find((t) => t.format?.protocol === "progressive") ?? playable[0];
+      if (!candidate?.url) return null;
 
-      const transcodingUrl = new URL(progressive.url);
+      const transcodingUrl = new URL(candidate.url);
       transcodingUrl.searchParams.set("client_id", clientId);
       const streamRes = await fetch(transcodingUrl.toString(), {
         headers: { Accept: "application/json", "User-Agent": this.userAgent },

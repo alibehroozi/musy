@@ -75,17 +75,22 @@ function SwipeCard({ snapshot, isTop, depth, onSwipe, overlay }: SwipeCardProps)
     onSwipe(dir);
   }
 
-  // Top card is draggable. Behind cards are static at scale/translate.
+  // Top card is draggable. Behind cards are static at scale/translate +
+  // opacity 0.55. They render only the artwork (no text) — text rendered
+  // through the opacity layer drops below WCAG AA contrast (axe-core
+  // measures effective contrast, not the un-multiplied source colors),
+  // and there's no UX value in unreadable peeking labels anyway.
   if (!isTop) {
     return (
       <motion.div
         data-explore-position="behind"
+        aria-hidden
         initial={false}
         animate={{ scale: baseScale, y: baseY, opacity: baseOpacity }}
         transition={{ type: "spring", stiffness: 200, damping: 30 }}
         className="absolute inset-0"
       >
-        <CardContent snapshot={snapshot} />
+        <CardArtwork snapshot={snapshot} />
       </motion.div>
     );
   }
@@ -132,24 +137,32 @@ function SwipeCard({ snapshot, isTop, depth, onSwipe, overlay }: SwipeCardProps)
 function CardContent({ snapshot }: { snapshot: SongSnapshot }): JSX.Element {
   return (
     <Card className="h-full flex flex-col gap-3 p-4">
-      <div
-        data-testid="explore-artwork"
-        className="flex-1 min-h-0 rounded-md overflow-hidden bg-border flex items-center justify-center"
-      >
-        {snapshot.coverUrl !== undefined ? (
-          <img src={snapshot.coverUrl} alt="" className="size-full object-cover" />
-        ) : (
-          <Typography variant="caption">No artwork</Typography>
-        )}
-      </div>
+      <CardArtwork snapshot={snapshot} />
       <div className="flex flex-col gap-1">
         <Typography variant="h3" className="truncate">
           {snapshot.title}
         </Typography>
-        <Typography variant="caption" className="truncate">
+        <Typography variant="body" className="truncate text-text">
           {snapshot.artist}
         </Typography>
       </div>
     </Card>
+  );
+}
+
+function CardArtwork({ snapshot }: { snapshot: SongSnapshot }): JSX.Element {
+  return (
+    <div
+      data-testid="explore-artwork"
+      className="flex-1 min-h-0 rounded-md overflow-hidden bg-border"
+      role="img"
+      aria-label={
+        snapshot.coverUrl !== undefined ? `${snapshot.title} cover art` : "Artwork unavailable"
+      }
+    >
+      {snapshot.coverUrl !== undefined && (
+        <img src={snapshot.coverUrl} alt="" className="size-full object-cover" />
+      )}
+    </div>
   );
 }

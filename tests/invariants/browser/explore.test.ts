@@ -9,17 +9,25 @@ import { describe, it } from "vitest";
 
 describe("BROWSER-05: explore card stack + action row mobile layout", () => {
   it.todo(
-    "on a 375×667 viewport each IconButton in the action row has a touch target ≥ 44×44 px (Layer 3 — Playwright)",
+    "on a 375×667 viewport each IconButton in the action row has a touch target ≥ 44×44 px (apps/web/tests/e2e/explore-page-ui.spec.ts)",
   );
-  it.todo("the action row fits without horizontal scroll on 375×667 (Layer 3 — Playwright)");
   it.todo(
-    "the explore card stack fits without horizontal scroll and the topmost card's artwork is ≥ 240×240 px on 375×667 (Layer 3 — Playwright)",
+    "the action row fits without horizontal scroll on 375×667 (apps/web/tests/e2e/explore-page-ui.spec.ts)",
+  );
+  it.todo(
+    "the explore card stack fits without horizontal scroll and the topmost card's artwork is ≥ 240×240 px on 375×667 (apps/web/tests/e2e/explore-page-ui.spec.ts)",
   );
 });
 
 describe("BROWSER-06: WCAG 2.1 AA passes on every Explore state", () => {
-  it.todo("default state passes axe-core WCAG 2.1 AA (Layer 3 — Playwright)");
-  it.todo("mid-swipe-right state passes axe-core WCAG 2.1 AA (Layer 3 — Playwright)");
-  it.todo("refilling state passes axe-core WCAG 2.1 AA (Layer 3 — Playwright)");
-  it.todo("onboarding state passes axe-core WCAG 2.1 AA (Layer 3 — Playwright)");
+  it.todo("default state passes axe-core WCAG 2.1 AA (apps/web/tests/e2e/explore-page-ui.spec.ts)");
+  it.todo(
+    "refilling state passes axe-core WCAG 2.1 AA (apps/web/tests/e2e/explore-page-ui.spec.ts)",
+  );
+  it.todo(
+    "onboarding state passes axe-core WCAG 2.1 AA (apps/web/tests/e2e/explore-page-ui.spec.ts)",
+  );
+  it.todo(
+    "375×667 mobile state passes axe-core WCAG 2.1 AA (apps/web/tests/e2e/explore-page-ui.spec.ts)",
+  );
 });

@@ -1,0 +1,371 @@
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { v4 as uuidv4 } from "uuid";
+import {
+  buildRerankPrompt,
+  classifyByListenCount,
+  computeSnapshotHash,
+  phaseFor,
+  seedSnapshots,
+  type PromptCandidate,
+} from "@moc/api-core";
+import type {
+  NextResponse,
+  QueuePhase,
+  SongSnapshot,
+  TasteProfile,
+  TrackResult,
+} from "@moc/contracts";
+
+import { SwipesRepository } from "./explore.repository.js";
+import { TasteProfilesRepository } from "./taste-profile.repository.js";
+import { ExploreQueueRepository } from "./explore-queue.repository.js";
+import { ProfileBuilderService } from "./profile-builder.service.js";
+import { AnthropicClient } from "./anthropic.client.js";
+import { AudiusClient } from "../search/providers/audius.client.js";
+import { SoundCloudClient } from "../search/providers/soundcloud.client.js";
+import { PlayService } from "../play/play.service.js";
+
+const PRE_RESOLVE_TOP_N = 5;
+const REFILL_THRESHOLD = 5;
+const MAX_COUNT = 50;
+const MIN_COUNT = 1;
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+const RERANK_MAX_TOKENS = 4096;
+
+interface RerankItem {
+  title: string;
+  artist: string;
+  source: string;
+  score: number;
+}
+
+@Injectable()
+export class QueueBuilderService {
+  private readonly logger = new Logger(QueueBuilderService.name);
+
+  constructor(
+    @Inject(SwipesRepository) private readonly swipes: SwipesRepository,
+    @Inject(TasteProfilesRepository)
+    private readonly profiles: TasteProfilesRepository,
+    @Inject(ExploreQueueRepository)
+    private readonly queues: ExploreQueueRepository,
+    @Inject(ProfileBuilderService)
+    private readonly profileBuilder: ProfileBuilderService,
+    @Inject(AnthropicClient) private readonly anthropic: AnthropicClient,
+    @Inject(AudiusClient) private readonly audius: AudiusClient,
+    @Inject(SoundCloudClient) private readonly soundcloud: SoundCloudClient,
+    @Inject(PlayService) private readonly play: PlayService,
+    @Inject(ConfigService) private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * Top-level read for `GET /api/explore/next`. Returns the user's
+   * current queue, building one if no queue exists yet. The build is
+   * synchronous on first hit so the response is never `partial: true`
+   * for the empty-queue case (the seed-genre Phase 1 path is local).
+   *
+   * `count` is clamped to [MIN_COUNT, MAX_COUNT]; the response carries
+   * the top `count` items of the queue.
+   */
+  async getNext(userId: string, count: number): Promise<NextResponse> {
+    const safeCount = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Math.floor(count)));
+    let queue = await this.queues.findForUser(userId);
+    if (!queue) {
+      await this.rebuildQueue(userId);
+      queue = await this.queues.findForUser(userId);
+    }
+    if (!queue) {
+      // Best-effort fallback — a build that produced nothing still
+      // surfaces the seed-genre snapshots so the UI is never empty.
+      const seeds = seedSnapshots().slice(0, safeCount);
+      return { items: seeds, phase: "discovery", partial: true };
+    }
+    const items = queue.items.slice(0, safeCount);
+    return {
+      items,
+      phase: queue.phase,
+      partial: items.length < safeCount,
+    };
+  }
+
+  /**
+   * Force-rebuild the queue. Per spec, this is also fired by the swipe
+   * handler when the queue dips below REFILL_THRESHOLD items.
+   */
+  async rebuildQueue(userId: string): Promise<void> {
+    this.logger.log(
+      { event: "explore_queue_rebuild_started", userId },
+      "explore_queue_rebuild_started",
+    );
+
+    const swipeDocs = await this.swipes.findSwipesForUser(userId);
+    const profile = await this.profileBuilder.getProfile(userId);
+    const phase = phaseFor(profile, swipeDocs.length);
+
+    const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
+    let items: SongSnapshot[];
+    try {
+      items = await this.sourceCandidates(phase, profile, seenHashes);
+    } catch (err) {
+      this.logger.warn(
+        {
+          event: "explore_queue_source_failed",
+          userId,
+          err: errToString(err),
+        },
+        "explore_queue_source_failed",
+      );
+      items = seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
+    }
+
+    if (items.length === 0) {
+      this.logger.warn(
+        { event: "explore_queue_rebuild_empty", userId },
+        "explore_queue_rebuild_empty",
+      );
+      return;
+    }
+
+    await this.queues.upsertForUser({
+      id: uuidv4(),
+      userId,
+      items,
+      phase,
+      generatedAt: new Date(),
+      swipesSeenAtBuild: swipeDocs.length,
+    });
+
+    // Pre-resolve in parallel; failures are logged but don't block the queue.
+    await Promise.allSettled(
+      items.slice(0, PRE_RESOLVE_TOP_N).map((s) =>
+        this.play.resolve(s).catch((err: unknown) => {
+          this.logger.warn(
+            {
+              event: "explore_queue_preresolve_failed",
+              userId,
+              err: errToString(err),
+            },
+            "explore_queue_preresolve_failed",
+          );
+          return null;
+        }),
+      ),
+    );
+
+    this.logger.log(
+      { event: "explore_queue_rebuild_completed", userId, phase, size: items.length },
+      "explore_queue_rebuild_completed",
+    );
+  }
+
+  /**
+   * Refill trigger: called by the swipe handler. If the queue is short,
+   * fire-and-forget a rebuild. Caller does not await.
+   */
+  async maybeRefill(userId: string): Promise<void> {
+    const queue = await this.queues.findForUser(userId);
+    const length = queue?.items.length ?? 0;
+    if (length >= REFILL_THRESHOLD) return;
+    this.logger.log(
+      { event: "explore_queue_refill_triggered", userId, length },
+      "explore_queue_refill_triggered",
+    );
+    void this.rebuildQueue(userId).catch((err: unknown) => {
+      this.logger.error(
+        { event: "explore_queue_refill_failed", userId, err: errToString(err) },
+        "explore_queue_refill_failed",
+      );
+    });
+  }
+
+  private async sourceCandidates(
+    phase: QueuePhase,
+    profile: TasteProfile | null,
+    seenHashes: Set<string>,
+  ): Promise<SongSnapshot[]> {
+    if (phase === "discovery") {
+      return seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
+    }
+
+    if (phase === "artist-refinement") {
+      return await this.sourceArtistRefinement(profile, seenHashes);
+    }
+
+    return await this.sourcePersonalized(profile, seenHashes);
+  }
+
+  private async sourceArtistRefinement(
+    profile: TasteProfile | null,
+    seenHashes: Set<string>,
+  ): Promise<SongSnapshot[]> {
+    if (!profile) return [];
+    const topGenres = profile.genres.slice(0, 3).map((g) => g.name);
+    const out: SongSnapshot[] = [];
+    for (const genre of topGenres) {
+      const [audius, sc] = await Promise.allSettled([
+        this.audius.search(genre).catch(() => [] as TrackResult[]),
+        this.soundcloud.search(genre).catch(() => [] as TrackResult[]),
+      ]);
+      const tracks = combineFulfilled(audius, sc);
+      const { common, niche } = splitByPopularity(tracks);
+      if (common[0]) out.push(toSnapshot(common[0]));
+      if (niche[0]) out.push(toSnapshot(niche[0]));
+      if (niche[1]) out.push(toSnapshot(niche[1]));
+    }
+    return dedupeBySnapshotHash(out, seenHashes);
+  }
+
+  private async sourcePersonalized(
+    profile: TasteProfile | null,
+    seenHashes: Set<string>,
+  ): Promise<SongSnapshot[]> {
+    if (!profile) return [];
+    const topArtists = profile.artists.slice(0, 5).map((a) => a.name);
+    const topGenres = profile.genres.slice(0, 3).map((g) => g.name);
+    const queries = [...topArtists, ...topGenres];
+
+    const settled = await Promise.allSettled(
+      queries.flatMap((q) => [
+        this.audius.search(q).catch(() => [] as TrackResult[]),
+        this.soundcloud.search(q).catch(() => [] as TrackResult[]),
+      ]),
+    );
+    const pool = settled
+      .filter((r): r is PromiseFulfilledResult<TrackResult[]> => r.status === "fulfilled")
+      .flatMap((r) => r.value);
+    const dedupedPool = dedupeBySnapshotHash(pool.map(toSnapshot), seenHashes);
+    if (dedupedPool.length === 0) return [];
+
+    // Rerank via LLM. Failure → fall through to heuristic top-N (the
+    // pool order itself, after dedupe).
+    const candidatePool: PromptCandidate[] = dedupedPool.slice(0, 50).map((s, idx) => ({
+      title: s.title,
+      artist: s.artist,
+      source: pool[idx]?.provider ?? "audius",
+    }));
+    const { system, userMessage } = buildRerankPrompt({
+      candidatePool,
+      profileSummary: profile.summaryText,
+    });
+
+    let ranked: RerankItem[] | null = null;
+    try {
+      const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
+      const response = await this.anthropic.complete({
+        system,
+        userMessage,
+        model,
+        maxTokens: RERANK_MAX_TOKENS,
+      });
+      ranked = parseRerankResponse(response.text);
+    } catch (err) {
+      this.logger.warn(
+        { event: "explore_queue_rerank_failed", err: errToString(err) },
+        "explore_queue_rerank_failed",
+      );
+    }
+
+    if (ranked && ranked.length > 0) {
+      const byKey = new Map(dedupedPool.map((s) => [`${s.title}::${s.artist}`, s]));
+      const ordered: SongSnapshot[] = [];
+      for (const r of ranked) {
+        const key = `${r.title}::${r.artist}`;
+        const snap = byKey.get(key);
+        if (snap) ordered.push(snap);
+      }
+      // Backfill anything the model dropped so we never lose candidates.
+      for (const snap of dedupedPool) {
+        if (!ordered.find((o) => o.title === snap.title && o.artist === snap.artist)) {
+          ordered.push(snap);
+        }
+      }
+      return ordered;
+    }
+
+    return dedupedPool;
+  }
+}
+
+function toSnapshot(track: TrackResult): SongSnapshot {
+  return {
+    title: track.title,
+    artist: track.artist,
+    kind: "track",
+    ...(track.artworkUrl !== undefined ? { coverUrl: track.artworkUrl } : {}),
+    ...(track.duration !== undefined ? { durationSec: track.duration } : {}),
+  };
+}
+
+function dedupeBySnapshotHash(snapshots: SongSnapshot[], alreadySeen: Set<string>): SongSnapshot[] {
+  const seen = new Set<string>(alreadySeen);
+  const out: SongSnapshot[] = [];
+  for (const s of snapshots) {
+    const h = computeSnapshotHash(s);
+    if (seen.has(h)) continue;
+    seen.add(h);
+    out.push(s);
+  }
+  return out;
+}
+
+function combineFulfilled(...settled: PromiseSettledResult<TrackResult[]>[]): TrackResult[] {
+  const out: TrackResult[] = [];
+  for (const r of settled) {
+    if (r.status === "fulfilled") out.push(...r.value);
+  }
+  return out;
+}
+
+interface MaybePopular {
+  playback_count?: number;
+  play_count?: number;
+}
+
+function splitByPopularity(tracks: TrackResult[]): { common: TrackResult[]; niche: TrackResult[] } {
+  const common: TrackResult[] = [];
+  const niche: TrackResult[] = [];
+  for (const t of tracks) {
+    const raw = t as unknown as MaybePopular;
+    const count = raw.playback_count ?? raw.play_count ?? null;
+    const cls = classifyByListenCount(count);
+    if (cls === "common") common.push(t);
+    else niche.push(t);
+  }
+  return { common, niche };
+}
+
+function parseRerankResponse(text: string): RerankItem[] | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object") return null;
+    const ranked = (parsed as { ranked?: unknown }).ranked;
+    if (!Array.isArray(ranked)) return null;
+    const out: RerankItem[] = [];
+    for (const r of ranked) {
+      if (!r || typeof r !== "object") continue;
+      const item = r as Partial<RerankItem>;
+      if (
+        typeof item.title === "string" &&
+        typeof item.artist === "string" &&
+        typeof item.source === "string" &&
+        typeof item.score === "number"
+      ) {
+        out.push({
+          title: item.title,
+          artist: item.artist,
+          source: item.source,
+          score: item.score,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function errToString(err: unknown): string {
+  if (err instanceof Error) return `${err.name}: ${err.message}`;
+  return String(err);
+}

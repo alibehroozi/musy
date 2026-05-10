@@ -36,7 +36,8 @@ import { SearchModule } from "../search/search.module.js";
     SoundCloudStreamClient,
   ],
   // Re-exported so ExploreModule's ProfileBuilderService can read recent
-  // listening events for the prompt without a duplicate Mongoose binding.
-  exports: [ListeningEventsRepository],
+  // listening events for the prompt without a duplicate Mongoose binding,
+  // and so the queue builder can pre-resolve the top 5 items per DATA-08.
+  exports: [ListeningEventsRepository, PlayService],
 })
 export class PlayModule {}

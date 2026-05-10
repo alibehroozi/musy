@@ -1,7 +1,8 @@
 ---
 epic: explore
-status: pending
+status: done
 estimated-invariants: 7
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/26
 ---
 
 # Feature 05: Explore queue and pre-resolution

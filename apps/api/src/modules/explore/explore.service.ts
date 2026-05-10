@@ -4,6 +4,7 @@ import { computeSnapshotHash } from "@moc/api-core";
 import { SwipesRepository } from "./explore.repository.js";
 import { InterestScoresRepository } from "../search/interest-scores.repository.js";
 import { ProfileBuilderService } from "./profile-builder.service.js";
+import { QueueBuilderService } from "./queue-builder.service.js";
 
 interface RecordSwipeInput {
   userId: string;
@@ -22,6 +23,9 @@ export class ExploreService {
     @Optional()
     @Inject(ProfileBuilderService)
     private readonly profileBuilder?: ProfileBuilderService,
+    @Optional()
+    @Inject(QueueBuilderService)
+    private readonly queueBuilder?: QueueBuilderService,
   ) {}
 
   /**
@@ -57,6 +61,16 @@ export class ExploreService {
         this.logger.error(
           { event: "taste_profile_enqueue_failed", err: errToString(err) },
           "taste_profile_enqueue_failed",
+        );
+      });
+    }
+    // Spec: after each swipe write, check the queue length; if < 5 trigger
+    // an async refill. Same fire-and-forget posture as the profile builder.
+    if (this.queueBuilder) {
+      void this.queueBuilder.maybeRefill(input.userId).catch((err) => {
+        this.logger.error(
+          { event: "explore_queue_refill_enqueue_failed", err: errToString(err) },
+          "explore_queue_refill_enqueue_failed",
         );
       });
     }

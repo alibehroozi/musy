@@ -1,10 +1,10 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-14, API-15.
+// Invariants verified here are listed in INVARIANTS.md under API-14, API-15, API-16.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
-import { ErrorResponse, TasteProfile } from "@moc/contracts";
+import { ErrorResponse, NextResponse, TasteProfile } from "@moc/contracts";
 import {
   buildExploreEventsTestApp,
   makeSnapshot,
@@ -184,5 +184,89 @@ describe("API-15: GET /api/explore/profile contract — auth gating + TasteProfi
     expect(res.status).toBe(200);
     expect(() => TasteProfile.parse(res.body)).not.toThrow();
     expect(res.body.userId).toBe(userId);
+  });
+});
+
+describe("API-16: GET /api/explore/next contract — auth, NextResponse shape, count clamping, LLM degradation", () => {
+  let h: ExploreEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  it("returns 401 + ErrorResponse without a session cookie", async () => {
+    h = await buildExploreEventsTestApp();
+    const res = await request(h.app.getHttpServer()).get("/api/explore/next");
+    expect(res.status).toBe(401);
+    expect(() => ErrorResponse.parse(res.body)).not.toThrow();
+  });
+
+  it("returns 200 with a body matching NextResponse for a fresh user", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440801";
+    const token = h.authService.signSession({ uid: userId, gid: "g_next_fresh" });
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: Array.from({ length: 20 }, (_, i) =>
+        makeSnapshot({ title: `Seed ${i}`, artist: `Artist ${i}` }),
+      ),
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(() => NextResponse.parse(res.body)).not.toThrow();
+    expect(res.body.phase).toBe("discovery");
+    expect(res.body.items).toHaveLength(20);
+    expect(res.body.partial).toBe(false);
+  });
+
+  it("count defaults to 20 when omitted", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440802";
+    const token = h.authService.signSession({ uid: userId, gid: "g_next_default" });
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: Array.from({ length: 30 }, (_, i) =>
+        makeSnapshot({ title: `T${i}`, artist: `A${i}` }),
+      ),
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(20);
+  });
+
+  it("count is clamped to a maximum of 50", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440803";
+    const token = h.authService.signSession({ uid: userId, gid: "g_next_clamp_max" });
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: Array.from({ length: 100 }, (_, i) =>
+        makeSnapshot({ title: `T${i}`, artist: `A${i}` }),
+      ),
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next?count=999")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(50);
+  });
+
+  it("count is clamped to at least 1", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440804";
+    const token = h.authService.signSession({ uid: userId, gid: "g_next_clamp_min" });
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: [makeSnapshot({ title: "T0", artist: "A0" })],
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next?count=0")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBeGreaterThanOrEqual(1);
   });
 });

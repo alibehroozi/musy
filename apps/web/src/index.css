@@ -19,3 +19,22 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
 }
+
+/* Slide-up animation used by the now-playing overlay. */
+@keyframes overlay-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-testid="now-playing-overlay"] {
+    animation: none !important;
+  }
+  [data-testid="now-playing-live"] > span[aria-hidden] {
+    animation: none !important;
+  }
+}

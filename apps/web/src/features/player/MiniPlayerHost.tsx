@@ -22,7 +22,7 @@ function engineStatusToMiniPlayerState(status: string): MiniPlayerState | null {
  * Returns null when no track has ever been played (idle state).
  */
 export function MiniPlayerHost(): JSX.Element | null {
-  const { engineState, failedTitle, togglePlay, dismissFailed } = usePlayer();
+  const { engineState, failedTitle, togglePlay, dismissFailed, expand } = usePlayer();
   const { status, currentTrack } = engineState;
 
   if (status === "idle" || currentTrack === null) {
@@ -43,9 +43,7 @@ export function MiniPlayerHost(): JSX.Element | null {
       progressFraction={progressFraction}
       state={miniState}
       onPlayPause={togglePlay}
-      onExpand={() => {
-        // Feature 4 will wire this to the now-playing screen.
-      }}
+      onExpand={expand}
       onDismiss={dismissFailed}
       {...(failedTitle !== null ? { failedTitle } : {})}
     />

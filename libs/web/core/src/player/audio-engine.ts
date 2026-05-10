@@ -14,6 +14,9 @@ export interface AudioDriver {
   setSrc: (url: string) => void;
   play: () => Promise<void>;
   pause: () => void;
+  /** Set playback position in seconds. The buffer may not yet cover the target;
+   *  it's the caller/driver's responsibility to handle the resulting loading state. */
+  seek: (positionSec: number) => void;
   on: (event: string, handler: () => void) => () => void;
   getCurrentTime: () => number;
   getDuration: () => number;
@@ -67,6 +70,20 @@ export class AudioEngine {
       this._emit("stateChange");
       void this.driver.play().catch(() => {});
     }
+  }
+
+  /**
+   * Move playback to `positionMs`. Clamped to [0, durationMs]. No-op when no
+   * track is loaded. Optimistically advances `progressMs` so the UI doesn't
+   * snap back to the old position before the next `timeupdate` fires.
+   */
+  seek(positionMs: number): void {
+    if (this._track === null) return;
+    const duration = this._durationMs > 0 ? this._durationMs : Number.POSITIVE_INFINITY;
+    const safe = !Number.isFinite(positionMs) ? 0 : Math.max(0, Math.min(positionMs, duration));
+    this.driver.seek(safe / 1000);
+    this._progressMs = safe;
+    this._emit("stateChange");
   }
 
   get state(): EngineState {

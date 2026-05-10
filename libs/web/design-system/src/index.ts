@@ -38,3 +38,6 @@ export type {
   MiniPlayerState,
   TrackSnapshot,
 } from "./components/MiniPlayer/MiniPlayer.js";
+
+export { ProgressSlider } from "./components/ProgressSlider/ProgressSlider.js";
+export type { ProgressSliderProps } from "./components/ProgressSlider/ProgressSlider.js";

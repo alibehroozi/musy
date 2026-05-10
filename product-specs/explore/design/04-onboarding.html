@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=375, initial-scale=1" />
+    <title>Explore — onboarding overlay</title>
+    <link rel="stylesheet" href="./tokens.css" />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        background: var(--color-bg);
+        color: var(--color-text);
+        font-size: var(--text-md);
+        line-height: var(--leading-normal);
+        width: 375px;
+        min-height: 100vh;
+      }
+      .screen {
+        display: flex;
+        flex-direction: column;
+        width: 375px;
+        height: 667px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 48px;
+        padding: 0 var(--spacing-4);
+        flex-shrink: 0;
+      }
+      .topbar h1 {
+        margin: 0;
+        font-size: var(--text-lg);
+        font-weight: var(--font-weight-semibold);
+      }
+      .phase-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-2);
+        padding: var(--spacing-1) var(--spacing-3);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-full);
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+      }
+      .phase-pill .dot {
+        width: 6px;
+        height: 6px;
+        background: var(--color-accent);
+        border-radius: var(--radius-full);
+      }
+
+      .stack-area {
+        flex: 1;
+        position: relative;
+        padding: var(--spacing-4);
+      }
+      .card {
+        position: absolute;
+        left: var(--spacing-4);
+        right: var(--spacing-4);
+        top: 0;
+        bottom: 0;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-lg);
+        padding: var(--spacing-4);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-3);
+        overflow: hidden;
+      }
+      .artwork {
+        width: 100%;
+        flex: 1;
+        min-height: 0;
+        border-radius: var(--radius-md);
+        background:
+          radial-gradient(
+            120% 100% at 30% 20%,
+            oklch(0.45 0.18 320) 0%,
+            oklch(0.32 0.12 280) 60%,
+            oklch(0.22 0.05 260) 100%
+          );
+        position: relative;
+        overflow: hidden;
+        filter: brightness(0.6);
+      }
+      .title {
+        margin: 0;
+        font-size: var(--text-xl);
+        font-weight: var(--font-weight-semibold);
+        line-height: var(--leading-tight);
+        opacity: 0.5;
+      }
+      .artist-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-2);
+        opacity: 0.5;
+      }
+      .artist {
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+      }
+      .source-badge {
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+        padding: var(--spacing-1) var(--spacing-2);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+      }
+
+      /* Onboarding overlay covers the card */
+      .onboard-overlay {
+        position: absolute;
+        inset: var(--spacing-3);
+        background: oklch(0.22 0.01 270 / 0.94);
+        border-radius: var(--radius-md);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-4);
+        padding: var(--spacing-6);
+        text-align: center;
+        backdrop-filter: blur(2px);
+      }
+      .onboard-title {
+        margin: 0;
+        font-size: var(--text-2xl);
+        font-weight: var(--font-weight-semibold);
+        line-height: var(--leading-tight);
+      }
+      .onboard-body {
+        margin: 0;
+        font-size: var(--text-md);
+        color: var(--color-text);
+        line-height: var(--leading-relaxed);
+      }
+      .arrows {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-6);
+        font-size: var(--text-3xl);
+        color: var(--color-text-muted);
+      }
+      .arrow.left {
+        color: var(--color-danger);
+      }
+      .arrow.right {
+        color: var(--color-success);
+      }
+      .onboard-caption {
+        margin: 0;
+        font-size: var(--text-sm);
+        color: var(--color-text-muted);
+      }
+      .got-it-btn {
+        margin-top: var(--spacing-2);
+        padding: var(--spacing-3) var(--spacing-8);
+        border-radius: var(--radius-md);
+        background: var(--color-primary);
+        border: 1px solid var(--color-primary);
+        color: var(--color-text);
+        font-size: var(--text-md);
+        font-weight: var(--font-weight-semibold);
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-around;
+        height: 80px;
+        padding: 0 var(--spacing-6);
+        flex-shrink: 0;
+        opacity: 0.4;
+      }
+      .action-btn {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-full);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: var(--text-xl);
+      }
+      .action-btn.pass {
+        color: var(--color-danger);
+      }
+      .action-btn.play {
+        color: var(--color-text);
+      }
+      .action-btn.like {
+        color: var(--color-success);
+      }
+
+      .bottom-nav {
+        display: flex;
+        height: 56px;
+        background: var(--color-surface);
+        border-top: 1px solid var(--color-border);
+        flex-shrink: 0;
+      }
+      .nav-tab {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-1);
+        font-size: var(--text-xs);
+        color: var(--color-text-muted);
+      }
+      .nav-tab.active {
+        color: var(--color-primary);
+      }
+      .nav-icon {
+        font-size: var(--text-lg);
+        line-height: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="screen">
+      <header class="topbar">
+        <h1>Explore</h1>
+      </header>
+
+      <main class="stack-area">
+        <article class="card">
+          <div class="artwork"></div>
+          <h2 class="title">Bohemian Rhapsody</h2>
+          <div class="artist-row">
+            <span class="artist">Queen</span>
+            <span class="source-badge">Audius</span>
+          </div>
+
+          <div class="onboard-overlay">
+            <h2 class="onboard-title">Welcome to Explore</h2>
+            <p class="onboard-body">
+              Swipe right if you like it.<br />
+              Left if you don't.
+            </p>
+            <div class="arrows">
+              <span class="arrow left">←</span>
+              <span>—</span>
+              <span class="arrow right">→</span>
+            </div>
+            <p class="onboard-caption">We'll learn fast.</p>
+            <button class="got-it-btn">Got it</button>
+          </div>
+        </article>
+      </main>
+
+      <div class="actions">
+        <button class="action-btn pass" aria-label="Pass">✕</button>
+        <button class="action-btn play" aria-label="Pause">⏸</button>
+        <button class="action-btn like" aria-label="Like">♥</button>
+      </div>
+
+      <nav class="bottom-nav">
+        <div class="nav-tab active">
+          <span class="nav-icon">⊙</span>
+          <span>Explore</span>
+        </div>
+        <div class="nav-tab">
+          <span class="nav-icon">♡</span>
+          <span>Taste</span>
+        </div>
+        <div class="nav-tab">
+          <span class="nav-icon">⌕</span>
+          <span>Search</span>
+        </div>
+      </nav>
+    </div>
+  </body>
+</html>

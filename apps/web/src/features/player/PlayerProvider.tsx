@@ -8,8 +8,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import Hls from "hls.js";
 import { AudioEngine } from "@moc/web-core";
-import type { EngineState } from "@moc/web-core";
+import type { AudioDriver, EngineState } from "@moc/web-core";
 import type { ProviderName, SongSnapshot } from "@moc/contracts";
 import { resolveStream, recordPlayStarted, recordPlayCompleted } from "./api.js";
 import { useAuth } from "../../hooks/useAuth.js";
@@ -43,25 +44,10 @@ const NOOP_CONTEXT: PlayerContextValue = {
 
 export const PlayerContext = createContext<PlayerContextValue>(NOOP_CONTEXT);
 
-function makeHtmlAudioDriver(el: HTMLAudioElement) {
-  return {
-    setSrc: (url: string) => {
-      el.src = url;
-    },
-    play: () => el.play(),
-    pause: () => el.pause(),
-    on: (event: string, handler: () => void) => {
-      el.addEventListener(event, handler);
-      return () => el.removeEventListener(event, handler);
-    },
-    getCurrentTime: () => el.currentTime,
-    getDuration: () => (isFinite(el.duration) ? el.duration : 0),
-  };
-}
-
 export function PlayerProvider({ children }: { children: ReactNode }): JSX.Element {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const engineRef = useRef<AudioEngine | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const { state: authState } = useAuth();
 
   const [engineState, setEngineState] = useState<EngineState>({
@@ -80,7 +66,35 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   useEffect(() => {
     const audio = new Audio();
     audioRef.current = audio;
-    const engine = new AudioEngine(makeHtmlAudioDriver(audio));
+
+    const driver: AudioDriver = {
+      setSrc: (url: string) => {
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+        // m3u8 = HLS stream; use hls.js on browsers that support MSE (Chrome, Firefox, Edge).
+        // Safari supports HLS natively via the plain src assignment path below.
+        if (/\.m3u8(\?|$)/.test(url) && Hls.isSupported()) {
+          const hls = new Hls();
+          hls.loadSource(url);
+          hls.attachMedia(audio);
+          hlsRef.current = hls;
+        } else {
+          audio.src = url;
+        }
+      },
+      play: () => audio.play(),
+      pause: () => audio.pause(),
+      on: (event: string, handler: () => void) => {
+        audio.addEventListener(event, handler);
+        return () => audio.removeEventListener(event, handler);
+      },
+      getCurrentTime: () => audio.currentTime,
+      getDuration: () => (isFinite(audio.duration) ? audio.duration : 0),
+    };
+
+    const engine = new AudioEngine(driver);
     engineRef.current = engine;
 
     const offState = engine.on("stateChange", () => {
@@ -91,6 +105,8 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       offState();
       audio.pause();
       audio.src = "";
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
     };
   }, []);
 
@@ -145,6 +161,10 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   }, []);
 
   const dismissFailed = useCallback(() => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.src = "";

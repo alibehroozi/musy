@@ -40,8 +40,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | DATA-08 | Every `play_resolutions` document has `expiresAt` strictly after `resolvedAt`; the TTL index drops it at `expiresAt`; `snapshotHash` is unique in the collection                                                                                                                        | High     |
 | DATA-09 | Every `listening_events` document has `userId`, `songKey`, `eventType ∈ {"started","completed"}`, and `at` populated, with `elapsedMs >= 0`; the collection has a compound index on `(userId, songKey, at)`                                                                             | High     |
 | DATA-10 | Every `swipes` document has `userId`, `snapshot`, `snapshotHash`, `direction ∈ {"right","left"}`, and `at` populated; the collection has compound indexes on `(userId, at)` and `(userId, snapshotHash)` and is append-only — repeating the same swipe creates a new document each time | High     |
+| DATA-11 | Every `taste_profiles` document has `userId`, `lastBuiltAt`, and `swipeCountAtLastBuild` populated, with `summaryText` ≤ 500 characters; the collection enforces a unique index on `userId` so each user has at most one profile                                                        | Critical |
 
-**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/interest-scores.test.ts`, `tests/invariants/data/play.test.ts`, `tests/invariants/data/listening-events.test.ts`, `tests/invariants/data/swipes.test.ts`
+**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/interest-scores.test.ts`, `tests/invariants/data/play.test.ts`, `tests/invariants/data/listening-events.test.ts`, `tests/invariants/data/swipes.test.ts`, `tests/invariants/data/taste-profiles.test.ts`
 
 ---
 
@@ -86,6 +87,7 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | API-12 | When `POST /api/play/resolve` returns a non-null `streamUrl`, that URL points to a stream playable by every standards-compliant browser without DRM; concretely it never resolves to SoundCloud's encrypted pipeline (host `playback.media-streaming.soundcloud.cloud` or path containing `/cbcs/` or `/cenc/`). When the strict-best SoundCloud match has only DRM-encrypted transcodings, the resolver falls through to a candidate with a non-DRM transcoding (or returns `streamUrl: null` if no playable candidate exists) | Critical |
 | API-13 | When the SoundCloud provider call rejects or times out during `POST /api/search`, the response's `failedProviders` array contains the literal `"soundcloud"`; when SoundCloud responds successfully (whether with zero or many results) `failedProviders` does not contain `"soundcloud"`. The response body always continues to match the `SearchResponse` Zod schema regardless of SoundCloud's outcome                                                                                                                       | Critical |
 | API-14 | `POST /api/explore/swipe` returns 401 + `ErrorResponse` without a valid session cookie; with a valid cookie and a body matching `SwipeRequest`, returns 204 with no body; returns 400 + `ErrorResponse` when the body fails the schema. A right-swipe upserts an `interest_scores` document with `score >= 8` for the same user; a left-swipe leaves `interest_scores` unmodified                                                                                                                                               | Critical |
+| API-15 | `GET /api/explore/profile` returns 401 + `ErrorResponse` without a valid session cookie; with a valid session it returns 200 with a body matching `TasteProfileResponse` — `null` for users below the build threshold, otherwise an object matching `TasteProfile`                                                                                                                                                                                                                                                              | Critical |
 
 **Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`, `tests/invariants/api/play.test.ts`, `tests/invariants/api/explore.test.ts`
 
@@ -128,6 +130,7 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | SEC-07 | The configured `SOUNDCLOUD_USER_AGENT` value and the SoundCloud `client_id` extracted from upstream HTML never appear in any HTTP response body served by `apps/api`                                                                                 | Critical |
 | SEC-08 | `POST /api/play/started` and `POST /api/play/completed` always derive `userId` from the authenticated session; any `userId` field present in the request body is ignored, so user A cannot write to user B's `listening_events` or `interest_scores` | Critical |
 | SEC-09 | `POST /api/explore/swipe` always derives `userId` from the authenticated session; any `userId` field present in the request body is ignored, so user A cannot write to user B's `swipes` or `interest_scores` (extends SEC-08)                       | Critical |
+| SEC-10 | `GET /api/explore/profile` for user A never returns user B's `taste_profiles` document; the repository scopes every read by the authenticated `userId` (extends SEC-06)                                                                              | Critical |
 
 **Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`, `tests/invariants/sec/play.test.ts`, `tests/invariants/sec/explore.test.ts`
 
@@ -144,18 +147,21 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | PRIVACY-05 | The browser's audio-fetch URL set on `<audio src>` is the raw stream URL from the resolver response; the FE code adds no user-identifier, session, or fingerprinting query parameters to it                                                                                                                                                                     | Critical |
 | PRIVACY-06 | Outgoing HTTP requests made by the SoundCloud search provider (the `soundcloud.com/search/sounds*` HTML scrape and the `api-v2.soundcloud.com/search/tracks` JSON call) carry only the query string and our spoofed `SOUNDCLOUD_USER_AGENT`; no user identifier, session cookie, or `X-Forwarded-*` header is added by our aggregator code (extends PRIVACY-01) | Critical |
 | PRIVACY-07 | `POST /api/explore/swipe` makes no outgoing third-party HTTP request; swipes stay in the database tier and never reach providers, telemetry, or LLM prompts (mirrors PRIVACY-04)                                                                                                                                                                                | Critical |
+| PRIVACY-08 | The taste-profile build prompt's user message is a pure function of `(recentSwipes, recentListens, previousSummary)` read from our DB — `userId`, `email`, IP, session cookie, and any field outside that explicit set never appear anywhere in the rendered system prompt or user message bodies                                                               | Critical |
 
-**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`, `tests/invariants/privacy/player-web.test.ts`, `tests/invariants/privacy/explore.test.ts`
+**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`, `tests/invariants/privacy/player-web.test.ts`, `tests/invariants/privacy/explore.test.ts`, `tests/invariants/privacy/taste-profile.test.ts`
 
 ---
 
 ## AI — LLM and embedding contracts
 
-_No invariants yet. Examples:_
+| ID    | Invariant                                                                                                                                                                                                                                                                                                                                                                                                          | Severity |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| AI-01 | The `buildTastePrompt` pure helper produces a `(system, userMessage)` pair whose serialized bytes never contain the substring of any `userId`, `email`, IP address, session token, or other identity field passed to the build pipeline — it only ever sees `recentSwipes`, `recentListens`, and `previousSummary`, and only the snapshot fields `(title, artist, kind)` from each swipe / listen reach the prompt | Critical |
+| AI-02 | `buildTastePrompt` is deterministic: equal `(recentSwipes, recentListens, previousSummary)` inputs produce byte-identical `(system, userMessage)` pairs, so two users with identical inputs derive the same prompt-cache key (which the Anthropic SDK derives from the system prompt + user-message bytes — never from user identity)                                                                              | Critical |
+| AI-03 | `buildTastePrompt` enforces a bounded prompt: at most `N=200` swipes and `M=100` listens reach the user message, and `previousSummary` is truncated to ≤ 4 KB. Inputs above the limit are dropped newest-first (the most recent entries are always retained), and the helper never throws on oversized inputs                                                                                                      | Critical |
 
-- _Embedding vectors written to and queried from the taste store have the same dimensionality as the configured model._
-- _A given `(userId, tasteInput)` produces a deterministic cache key — re-runs hit the cache, not the model._
-- _Prompts never exceed the configured context budget; the truncation policy is invariant-tested._
+**Test files:** `tests/invariants/ai/taste-profile.test.ts`
 
 ---
 

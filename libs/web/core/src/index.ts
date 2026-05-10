@@ -6,3 +6,6 @@ export * from "./playFetcher.js";
 export * from "./player/audio-engine.js";
 export * from "./player/resolve-and-play.js";
 export * from "./player/format-progress.js";
+export * from "./explore/direction-from-drag.js";
+export * from "./explore/snapshot-match.js";
+export * from "./explore/explore-fetcher.js";

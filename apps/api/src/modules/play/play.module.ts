@@ -35,5 +35,8 @@ import { SearchModule } from "../search/search.module.js";
     AudiusStreamClient,
     SoundCloudStreamClient,
   ],
+  // Re-exported so ExploreModule's ProfileBuilderService can read recent
+  // listening events for the prompt without a duplicate Mongoose binding.
+  exports: [ListeningEventsRepository],
 })
 export class PlayModule {}

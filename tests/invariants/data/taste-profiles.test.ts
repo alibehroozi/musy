@@ -2,10 +2,35 @@
 //
 // Invariants verified here are listed in INVARIANTS.md under DATA-11.
 
-import { describe, it } from "vitest";
+import { describe, it, expect } from "vitest";
+import { TasteProfilesSchemaDefinition } from "../../../apps/api/src/modules/explore/taste-profile.schema.js";
 
 describe("DATA-11: taste_profiles document shape and unique userId index", () => {
-  it.todo("schema marks userId, lastBuiltAt, swipeCountAtLastBuild as required");
-  it.todo("schema enforces summaryText.maxlength = 500");
-  it.todo("schema declares a unique single-field index on userId");
+  it("schema marks userId, lastBuiltAt, swipeCountAtLastBuild as required", () => {
+    const paths = TasteProfilesSchemaDefinition.paths;
+    for (const p of ["userId", "lastBuiltAt", "swipeCountAtLastBuild"]) {
+      const opts = (paths[p] as unknown as { options?: { required?: unknown } }).options;
+      expect(opts?.required, `${p} should be required`).toBe(true);
+    }
+  });
+
+  it("schema enforces summaryText.maxlength = 500", () => {
+    const opts = (
+      TasteProfilesSchemaDefinition.paths["summaryText"] as unknown as {
+        options?: { maxlength?: number };
+      }
+    ).options;
+    expect(opts?.maxlength).toBe(500);
+  });
+
+  it("schema declares a unique single-field index on userId", () => {
+    const indexes = TasteProfilesSchemaDefinition.indexes();
+    const userIdIndex = indexes.find(([fields]) => {
+      const f = fields as Record<string, unknown>;
+      return Object.keys(f).length === 1 && "userId" in f;
+    });
+    expect(userIdIndex, "(userId) index").toBeDefined();
+    const opts = userIdIndex![1] as { unique?: boolean };
+    expect(opts.unique).toBe(true);
+  });
 });

@@ -86,10 +86,53 @@ describe("SEC-09: /api/explore/swipe always derives userId from the session, nev
 });
 
 describe("SEC-10: GET /api/explore/profile is owner-scoped — user A never sees user B's profile", () => {
-  it.todo(
-    "with user A's session, the response is the profile written for A — never the one written for B",
-  );
-  it.todo(
-    "the repository read used to serve /profile filters by the authenticated session's userId",
-  );
+  let h: ExploreEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  function makeProfile(userId: string, summary: string) {
+    return {
+      userId,
+      genres: [{ name: "house", score: 0.7 }],
+      artists: [{ name: "DJ Test", score: 0.7 }],
+      tempoBucket: "mid" as const,
+      remixPreference: "original" as const,
+      summaryText: summary,
+      lastBuiltAt: "2026-05-10T00:00:00.000Z",
+      swipeCountAtLastBuild: 20,
+    };
+  }
+
+  it("with user A's session, the response is the profile written for A — never the one written for B", async () => {
+    h = await buildExploreEventsTestApp();
+    const userA = "550e8400-e29b-41d4-a716-446655440700";
+    const userB = "550e8400-e29b-41d4-a716-446655440701";
+    h.profileBuilder.profilesByUser.set(userA, makeProfile(userA, "alice loves house"));
+    h.profileBuilder.profilesByUser.set(userB, makeProfile(userB, "bob loves techno"));
+    const tokenA = h.authService.signSession({ uid: userA, gid: "g_profile_owner_a" });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/profile")
+      .set("Cookie", `session=${tokenA}`);
+    expect(res.status).toBe(200);
+    expect(res.body.userId).toBe(userA);
+    expect(res.body.summaryText).toBe("alice loves house");
+    expect(res.body.summaryText).not.toBe("bob loves techno");
+  });
+
+  it("the repository read used to serve /profile filters by the authenticated session's userId", async () => {
+    h = await buildExploreEventsTestApp();
+    const userA = "550e8400-e29b-41d4-a716-446655440710";
+    const userB = "550e8400-e29b-41d4-a716-446655440711";
+    h.profileBuilder.profilesByUser.set(userB, makeProfile(userB, "victim profile"));
+    // userA has no profile written; querying as A must return null even
+    // though B has one — this proves the read scopes by session.uid.
+    const tokenA = h.authService.signSession({ uid: userA, gid: "g_profile_a_no_profile" });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/profile")
+      .set("Cookie", `session=${tokenA}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBeNull();
+  });
 });

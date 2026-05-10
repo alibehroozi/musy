@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under PRIVACY-01.
+// Invariants verified here are listed in INVARIANTS.md under PRIVACY-01, PRIVACY-06.
 
 import { describe, it, expect } from "vitest";
 import { AudiusClient } from "../../../apps/api/src/modules/search/providers/audius.client.js";
@@ -103,4 +103,14 @@ describe("PRIVACY-02: search_history content never leaves the database tier; pro
     );
     expect(httpNames).toHaveLength(0);
   });
+});
+
+describe("PRIVACY-06: SoundCloud search outgoing requests carry only the query and the spoofed UA", () => {
+  it.todo("SoundCloudClient.search method takes exactly one parameter (query: string)");
+  it.todo(
+    "outgoing fetches to soundcloud.com / api-v2.soundcloud.com carry no Cookie, Authorization, or X-Forwarded-* header; only Accept and User-Agent are added",
+  );
+  it.todo(
+    "the User-Agent set on outgoing SoundCloud requests is the configured SOUNDCLOUD_USER_AGENT (or the default), never derived from the inbound request's user-agent",
+  );
 });

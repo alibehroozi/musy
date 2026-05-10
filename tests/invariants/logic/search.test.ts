@@ -191,3 +191,11 @@ describe("LOGIC: songKeyOf composes a stable per-(source, externalId) key", () =
     expect(songKeyOf("radio-browser", "station-uuid")).toBe("radio-browser:station-uuid");
   });
 });
+
+describe("LOGIC-13: SoundCloud search-hit normalizer is deterministic and stamps provider/sources", () => {
+  it.todo("the same raw search hit always normalizes to the same TrackResult (or null)");
+  it.todo(
+    "non-null normalized results carry provider === 'soundcloud' and sources === ['soundcloud']",
+  );
+  it.todo("inputs missing required fields (id, title, permalink) normalize to null");
+});

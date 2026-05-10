@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-03, API-04, API-05, API-06, API-07.
+// Invariants verified here are listed in INVARIANTS.md under API-03, API-04, API-05, API-06, API-07, API-13.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -297,4 +297,19 @@ describe("API-07: POST /api/search/explored and POST /api/search/saved require a
     expect(res.status).toBe(400);
     expect(() => ErrorResponse.parse(res.body)).not.toThrow();
   });
+});
+
+describe("API-13: SoundCloud failure adds 'soundcloud' to failedProviders; success does not", () => {
+  it.todo(
+    "POST /api/search lists 'soundcloud' in failedProviders when the SoundCloud provider rejects",
+  );
+  it.todo(
+    "POST /api/search lists 'soundcloud' in failedProviders when the SoundCloud provider times out",
+  );
+  it.todo(
+    "POST /api/search does NOT list 'soundcloud' in failedProviders when SoundCloud responds successfully (zero or many results)",
+  );
+  it.todo(
+    "POST /api/search response continues to match SearchResponse Zod schema regardless of SoundCloud's outcome",
+  );
 });

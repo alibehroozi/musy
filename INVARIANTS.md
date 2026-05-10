@@ -28,19 +28,20 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 
 ## DATA — data shape and integrity
 
-| ID      | Invariant                                                                                                                                                                                                       | Severity |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| DATA-01 | Every `User` document has a non-empty `id` (uuid v4) and a unique, lowercase `email`                                                                                                                            | Critical |
-| DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)                                                                                                                               | Critical |
-| DATA-03 | Every `search_cache` document has `expiresAt` set strictly after its creation time; the TTL index drops it at `expiresAt`; `queryHash` is unique in the collection                                              | High     |
-| DATA-04 | `search_history` has a unique compound index `(userId, query)`; submitting the same normalized query twice for the same user creates exactly one document (dedupe at the DB level) and increments `searchCount` | High     |
-| DATA-05 | `interest_scores` has a unique compound index `(userId, songKey)`; any combination of explored/saved events for the same `(userId, source, externalId)` produces exactly one document                           | Critical |
-| DATA-06 | `interest_scores.score` is monotonically non-decreasing per `(userId, songKey)`: every event upsert satisfies `newDoc.score >= oldDoc.score` (max-rule)                                                         | Critical |
-| DATA-07 | `interest_scores.snapshot` is written on the first event for a given `(userId, songKey)` and is never overwritten by subsequent events on the same key                                                          | High     |
-| DATA-08 | Every `play_resolutions` document has `expiresAt` strictly after `resolvedAt`; the TTL index drops it at `expiresAt`; `snapshotHash` is unique in the collection                                                | High     |
-| DATA-09 | Every `listening_events` document has `userId`, `songKey`, `eventType ∈ {"started","completed"}`, and `at` populated, with `elapsedMs >= 0`; the collection has a compound index on `(userId, songKey, at)`     | High     |
+| ID      | Invariant                                                                                                                                                                                                                                                                               | Severity |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| DATA-01 | Every `User` document has a non-empty `id` (uuid v4) and a unique, lowercase `email`                                                                                                                                                                                                    | Critical |
+| DATA-02 | Every `User` document has a non-empty, unique `googleId` (the Google `sub` claim)                                                                                                                                                                                                       | Critical |
+| DATA-03 | Every `search_cache` document has `expiresAt` set strictly after its creation time; the TTL index drops it at `expiresAt`; `queryHash` is unique in the collection                                                                                                                      | High     |
+| DATA-04 | `search_history` has a unique compound index `(userId, query)`; submitting the same normalized query twice for the same user creates exactly one document (dedupe at the DB level) and increments `searchCount`                                                                         | High     |
+| DATA-05 | `interest_scores` has a unique compound index `(userId, songKey)`; any combination of explored/saved events for the same `(userId, source, externalId)` produces exactly one document                                                                                                   | Critical |
+| DATA-06 | `interest_scores.score` is monotonically non-decreasing per `(userId, songKey)`: every event upsert satisfies `newDoc.score >= oldDoc.score` (max-rule)                                                                                                                                 | Critical |
+| DATA-07 | `interest_scores.snapshot` is written on the first event for a given `(userId, songKey)` and is never overwritten by subsequent events on the same key                                                                                                                                  | High     |
+| DATA-08 | Every `play_resolutions` document has `expiresAt` strictly after `resolvedAt`; the TTL index drops it at `expiresAt`; `snapshotHash` is unique in the collection                                                                                                                        | High     |
+| DATA-09 | Every `listening_events` document has `userId`, `songKey`, `eventType ∈ {"started","completed"}`, and `at` populated, with `elapsedMs >= 0`; the collection has a compound index on `(userId, songKey, at)`                                                                             | High     |
+| DATA-10 | Every `swipes` document has `userId`, `snapshot`, `snapshotHash`, `direction ∈ {"right","left"}`, and `at` populated; the collection has compound indexes on `(userId, at)` and `(userId, snapshotHash)` and is append-only — repeating the same swipe creates a new document each time | High     |
 
-**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/interest-scores.test.ts`, `tests/invariants/data/play.test.ts`, `tests/invariants/data/listening-events.test.ts`
+**Test files:** `tests/invariants/data/users.test.ts`, `tests/invariants/data/search.test.ts`, `tests/invariants/data/interest-scores.test.ts`, `tests/invariants/data/play.test.ts`, `tests/invariants/data/listening-events.test.ts`, `tests/invariants/data/swipes.test.ts`
 
 ---
 
@@ -61,8 +62,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | LOGIC-11 | The pure helper `formatProgress(currentMs, durationMs)` is deterministic and total: it returns `{ fraction, currentLabel, remainingLabel }` where `fraction` is in `[0, 1]`; `durationMs <= 0`, NaN, or non-finite inputs collapse to `{ fraction: 0, currentLabel: "0:00", remainingLabel: "-0:00" }`; `currentMs >= durationMs` clamps `fraction` to `1` and `remainingLabel` to `"-0:00"`; labels follow the `m:ss` (or `h:mm:ss` ≥ 1h) shape | High     |
 | LOGIC-12 | The audio engine's `seek(positionMs)` method calls the driver with the equivalent seconds, updates `progressMs` to the requested target, never advances `progressMs` to negative or beyond `durationMs`, emits exactly one `stateChange`, and is a no-op when no track is loaded                                                                                                                                                                 | High     |
 | LOGIC-13 | The pure SoundCloud search-hit normalizer is deterministic: the same raw search hit always produces the same `TrackResult` (or `null`); whenever it produces a non-null result, that result satisfies `provider === "soundcloud"` and `sources` is exactly `["soundcloud"]`                                                                                                                                                                      | High     |
+| LOGIC-14 | The pure helper `bumpScore`, extended to accept swipe event types, returns `max(oldScore, 8)` for `"swiped_right"` and `oldScore` for `"swiped_left"`; the result is never less than `oldScore` and the function is deterministic (extends LOGIC-07)                                                                                                                                                                                             | High     |
 
-**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/play.test.ts`, `tests/invariants/logic/player.test.ts`, `tests/invariants/logic/now-playing.test.ts`
+**Test files:** `tests/invariants/logic/search.test.ts`, `tests/invariants/logic/search-web.test.ts`, `tests/invariants/logic/play.test.ts`, `tests/invariants/logic/player.test.ts`, `tests/invariants/logic/now-playing.test.ts`, `tests/invariants/logic/explore.test.ts`
 
 ---
 
@@ -83,8 +85,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | API-11 | `POST /api/play/started` and `POST /api/play/completed` return 400 + `ErrorResponse` when the request body fails the `PlayStartedRequest` / `PlayCompletedRequest` schema; the server never reads `userId` from the body                                                                                                                                                                                                                                                                                                        | Critical |
 | API-12 | When `POST /api/play/resolve` returns a non-null `streamUrl`, that URL points to a stream playable by every standards-compliant browser without DRM; concretely it never resolves to SoundCloud's encrypted pipeline (host `playback.media-streaming.soundcloud.cloud` or path containing `/cbcs/` or `/cenc/`). When the strict-best SoundCloud match has only DRM-encrypted transcodings, the resolver falls through to a candidate with a non-DRM transcoding (or returns `streamUrl: null` if no playable candidate exists) | Critical |
 | API-13 | When the SoundCloud provider call rejects or times out during `POST /api/search`, the response's `failedProviders` array contains the literal `"soundcloud"`; when SoundCloud responds successfully (whether with zero or many results) `failedProviders` does not contain `"soundcloud"`. The response body always continues to match the `SearchResponse` Zod schema regardless of SoundCloud's outcome                                                                                                                       | Critical |
+| API-14 | `POST /api/explore/swipe` returns 401 + `ErrorResponse` without a valid session cookie; with a valid cookie and a body matching `SwipeRequest`, returns 204 with no body; returns 400 + `ErrorResponse` when the body fails the schema. A right-swipe upserts an `interest_scores` document with `score >= 8` for the same user; a left-swipe leaves `interest_scores` unmodified                                                                                                                                               | Critical |
 
-**Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`, `tests/invariants/api/play.test.ts`
+**Test files:** `tests/invariants/api/auth.test.ts`, `tests/invariants/api/search.test.ts`, `tests/invariants/api/play.test.ts`, `tests/invariants/api/explore.test.ts`
 
 ---
 
@@ -124,8 +127,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | SEC-06 | `interest_scores` documents are scoped per-user: events written by user A never appear in any HTTP response served to user B, and the repository filters every read by the authenticated `userId`                                                    | Critical |
 | SEC-07 | The configured `SOUNDCLOUD_USER_AGENT` value and the SoundCloud `client_id` extracted from upstream HTML never appear in any HTTP response body served by `apps/api`                                                                                 | Critical |
 | SEC-08 | `POST /api/play/started` and `POST /api/play/completed` always derive `userId` from the authenticated session; any `userId` field present in the request body is ignored, so user A cannot write to user B's `listening_events` or `interest_scores` | Critical |
+| SEC-09 | `POST /api/explore/swipe` always derives `userId` from the authenticated session; any `userId` field present in the request body is ignored, so user A cannot write to user B's `swipes` or `interest_scores` (extends SEC-08)                       | Critical |
 
-**Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`, `tests/invariants/sec/play.test.ts`
+**Test files:** `tests/invariants/sec/auth.test.ts`, `tests/invariants/sec/search.test.ts`, `tests/invariants/sec/play.test.ts`, `tests/invariants/sec/explore.test.ts`
 
 ---
 
@@ -139,8 +143,9 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | PRIVACY-04 | `POST /api/play/started` and `POST /api/play/completed` make no outgoing third-party HTTP request; listening events stay in the database tier and never reach providers, telemetry, or LLM prompts                                                                                                                                                              | Critical |
 | PRIVACY-05 | The browser's audio-fetch URL set on `<audio src>` is the raw stream URL from the resolver response; the FE code adds no user-identifier, session, or fingerprinting query parameters to it                                                                                                                                                                     | Critical |
 | PRIVACY-06 | Outgoing HTTP requests made by the SoundCloud search provider (the `soundcloud.com/search/sounds*` HTML scrape and the `api-v2.soundcloud.com/search/tracks` JSON call) carry only the query string and our spoofed `SOUNDCLOUD_USER_AGENT`; no user identifier, session cookie, or `X-Forwarded-*` header is added by our aggregator code (extends PRIVACY-01) | Critical |
+| PRIVACY-07 | `POST /api/explore/swipe` makes no outgoing third-party HTTP request; swipes stay in the database tier and never reach providers, telemetry, or LLM prompts (mirrors PRIVACY-04)                                                                                                                                                                                | Critical |
 
-**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`, `tests/invariants/privacy/player-web.test.ts`
+**Test files:** `tests/invariants/privacy/search.test.ts`, `tests/invariants/privacy/play.test.ts`, `tests/invariants/privacy/player-web.test.ts`, `tests/invariants/privacy/explore.test.ts`
 
 ---
 

@@ -1,18 +1,26 @@
 import type { PlayEventType } from "@moc/contracts";
 
-const PLAY_EVENT_SCORE: Record<PlayEventType, number> = {
+export type SwipeScoreEventType = "swiped_right" | "swiped_left";
+export type ScoreEventType = PlayEventType | SwipeScoreEventType;
+
+const SCORE_EVENT_FLOOR: Record<Exclude<ScoreEventType, "swiped_left">, number> = {
   started: 3,
   completed: 5,
+  swiped_right: 8,
 };
 
 /**
- * Pure max-rule for play-event score bumps.
+ * Pure max-rule for interest-score bumps.
  *
- * "started" matches the explored signal (3); "completed" is a stronger
- * play-through signal (5). Both never erase a higher prior score (e.g.
- * 8 from a /search/saved). Deterministic, no I/O — used by both the
- * play service and tests.
+ * "started" / "completed" come from listening events (LOGIC-07).
+ * "swiped_right" matches the saved=8 strength from the Search epic; an
+ * Explore right-swipe is treated as equivalently strong evidence of
+ * "I like this" (LOGIC-14). "swiped_left" is a no-op here — the swipes
+ * ledger is the only record; the interest score is positive-only.
+ *
+ * Deterministic, no I/O. Result is never less than oldScore (monotonic).
  */
-export function bumpScore(oldScore: number, eventType: PlayEventType): number {
-  return Math.max(oldScore, PLAY_EVENT_SCORE[eventType]);
+export function bumpScore(oldScore: number, eventType: ScoreEventType): number {
+  if (eventType === "swiped_left") return oldScore;
+  return Math.max(oldScore, SCORE_EVENT_FLOOR[eventType]);
 }

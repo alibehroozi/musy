@@ -138,6 +138,48 @@ describe("SEC-10: GET /api/explore/profile is owner-scoped — user A never sees
 });
 
 describe("SEC-11: GET /api/explore/next is owner-scoped — user A never sees user B's queue items", () => {
-  it.todo("queue items returned for user A are scoped to A's queue, never B's");
-  it.todo("the queue read used to serve /next filters by the authenticated session's userId");
+  let h: ExploreEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  it("with user A's session, the response is queue items written for A — never B's", async () => {
+    h = await buildExploreEventsTestApp();
+    const userA = "550e8400-e29b-41d4-a716-446655440900";
+    const userB = "550e8400-e29b-41d4-a716-446655440901";
+    h.queueBuilder.queuesByUser.set(userA, {
+      items: [{ title: "alice-track", artist: "AA", kind: "track" }],
+      phase: "discovery",
+    });
+    h.queueBuilder.queuesByUser.set(userB, {
+      items: [{ title: "bob-track", artist: "BB", kind: "track" }],
+      phase: "discovery",
+    });
+    const tokenA = h.authService.signSession({ uid: userA, gid: "g_next_owner_a" });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next")
+      .set("Cookie", `session=${tokenA}`);
+    expect(res.status).toBe(200);
+    const titles = res.body.items.map((i: { title: string }) => i.title);
+    expect(titles).toContain("alice-track");
+    expect(titles).not.toContain("bob-track");
+  });
+
+  it("the queue read used to serve /next filters by the authenticated session's userId", async () => {
+    h = await buildExploreEventsTestApp();
+    const userA = "550e8400-e29b-41d4-a716-446655440910";
+    const userB = "550e8400-e29b-41d4-a716-446655440911";
+    h.queueBuilder.queuesByUser.set(userB, {
+      items: [{ title: "victim-track", artist: "VV", kind: "track" }],
+      phase: "discovery",
+    });
+    const tokenA = h.authService.signSession({ uid: userA, gid: "g_next_a_no_queue" });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next")
+      .set("Cookie", `session=${tokenA}`);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(0);
+    expect(res.body.partial).toBe(true);
+  });
 });

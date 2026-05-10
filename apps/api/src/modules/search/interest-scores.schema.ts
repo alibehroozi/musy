@@ -5,8 +5,13 @@ export const INTEREST_SCORES_MODEL = "InterestScores";
 
 export interface InterestScoresDocument extends Document {
   userId: string;
-  source: ProviderName;
-  externalId: string;
+  // source / externalId are present for provider-keyed events (search /
+  // play). Snapshot-keyed events (Explore swipes — feature 03) have
+  // neither, since the swipe body carries only a snapshot. The unique
+  // identity is always (userId, songKey); source / externalId are
+  // descriptive metadata, not the key.
+  source?: ProviderName;
+  externalId?: string;
   songKey: string;
   snapshot: SongSnapshot;
   score: number;
@@ -19,8 +24,8 @@ export interface InterestScoresDocument extends Document {
 export const InterestScoresSchemaDefinition = new Schema<InterestScoresDocument>(
   {
     userId: { type: String, required: true },
-    source: { type: String, required: true },
-    externalId: { type: String, required: true },
+    source: { type: String, required: false },
+    externalId: { type: String, required: false },
     songKey: { type: String, required: true },
     snapshot: { type: Schema.Types.Mixed, required: true },
     score: { type: Number, required: true, min: 1, max: 10 },

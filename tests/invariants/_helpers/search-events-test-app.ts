@@ -5,7 +5,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { APP_FILTER, APP_GUARD, NestFactory } from "@nestjs/core";
 import cookieParser from "cookie-parser";
 import type { InterestEventType, ProviderName, SongSnapshot } from "@moc/contracts";
-import { applyInterestEvent, songKeyOf } from "@moc/api-core";
+import { applyInterestEvent, computeSnapshotHash, songKeyOf } from "@moc/api-core";
 
 import { AllExceptionsFilter } from "../../../apps/api/src/common/all-exceptions.filter.js";
 import { AuthGuard } from "../../../apps/api/src/common/auth.guard.js";
@@ -28,8 +28,8 @@ export const EVENTS_TEST_ENV = {
 
 export interface FakeInterestDoc {
   userId: string;
-  source: ProviderName;
-  externalId: string;
+  source?: ProviderName;
+  externalId?: string;
   songKey: string;
   snapshot: SongSnapshot;
   score: number;
@@ -58,8 +58,43 @@ export class FakeInterestScoresRepository {
     snapshot: SongSnapshot;
     eventType: InterestEventType;
   }): Promise<void> {
-    const songKey = songKeyOf(input.source, input.externalId);
-    const k = this.keyOf(input.userId, songKey);
+    await this.applyUpsert({
+      userId: input.userId,
+      songKey: songKeyOf(input.source, input.externalId),
+      source: input.source,
+      externalId: input.externalId,
+      snapshot: input.snapshot,
+      eventType: input.eventType,
+    });
+  }
+
+  async upsertEventBySnapshot(input: {
+    userId: string;
+    snapshot: SongSnapshot;
+    eventType: InterestEventType;
+  }): Promise<void> {
+    const snapshotHash = computeSnapshotHash(input.snapshot);
+    await this.applyUpsert({
+      userId: input.userId,
+      songKey: `snap:${snapshotHash}`,
+      snapshot: input.snapshot,
+      eventType: input.eventType,
+    });
+  }
+
+  async findScoresForUser(userId: string): Promise<FakeInterestDoc[]> {
+    return Array.from(this.docs.values()).filter((d) => d.userId === userId);
+  }
+
+  private async applyUpsert(input: {
+    userId: string;
+    songKey: string;
+    source?: ProviderName;
+    externalId?: string;
+    snapshot: SongSnapshot;
+    eventType: InterestEventType;
+  }): Promise<void> {
+    const k = this.keyOf(input.userId, input.songKey);
     const existing = this.docs.get(k);
     const { score: nextScore } = applyInterestEvent(existing?.score ?? null, input.eventType);
     const now = new Date();
@@ -73,9 +108,9 @@ export class FakeInterestScoresRepository {
     } else {
       this.docs.set(k, {
         userId: input.userId,
-        source: input.source,
-        externalId: input.externalId,
-        songKey,
+        ...(input.source !== undefined ? { source: input.source } : {}),
+        ...(input.externalId !== undefined ? { externalId: input.externalId } : {}),
+        songKey: input.songKey,
         snapshot: input.snapshot,
         score: nextScore,
         firstEventType: input.eventType,
@@ -84,10 +119,6 @@ export class FakeInterestScoresRepository {
         lastEventAt: now,
       });
     }
-  }
-
-  async findScoresForUser(userId: string): Promise<FakeInterestDoc[]> {
-    return Array.from(this.docs.values()).filter((d) => d.userId === userId);
   }
 }
 

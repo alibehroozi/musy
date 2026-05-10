@@ -31,19 +31,13 @@ describe("DATA-05: interest_scores has a unique compound index (userId, songKey)
     expect(opts?.["unique"]).toBe(true);
   });
 
-  it("schema marks songKey, userId, source, externalId as required", () => {
+  it("schema marks userId and songKey as required (the unique-index columns)", () => {
     const paths = InterestScoresSchemaDefinition.paths;
     expect(
       (paths["userId"] as unknown as { options?: { required?: unknown } }).options?.required,
     ).toBe(true);
     expect(
       (paths["songKey"] as unknown as { options?: { required?: unknown } }).options?.required,
-    ).toBe(true);
-    expect(
-      (paths["source"] as unknown as { options?: { required?: unknown } }).options?.required,
-    ).toBe(true);
-    expect(
-      (paths["externalId"] as unknown as { options?: { required?: unknown } }).options?.required,
     ).toBe(true);
   });
 

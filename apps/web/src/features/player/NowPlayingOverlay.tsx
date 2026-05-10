@@ -96,7 +96,6 @@ interface OverlayBodyProps {
   isPlaying: boolean;
   progressMs: number;
   durationMs: number;
-  onCollapse: () => void;
   onTogglePlay: () => void;
   onSkipBack: () => void;
   onSeek: (positionMs: number) => void;
@@ -110,7 +109,6 @@ function TrackVariant(props: OverlayBodyProps): JSX.Element {
     isPlaying,
     progressMs,
     durationMs,
-    onCollapse,
     onTogglePlay,
     onSkipBack,
     onSeek,
@@ -120,7 +118,7 @@ function TrackVariant(props: OverlayBodyProps): JSX.Element {
   const { fraction, currentLabel, remainingLabel } = formatProgress(display, durationMs);
 
   return (
-    <div className="flex flex-col flex-1 gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex justify-center">
         <CoverArt snapshot={snapshot} />
       </div>
@@ -160,8 +158,6 @@ function TrackVariant(props: OverlayBodyProps): JSX.Element {
         skipBackDisabled={false}
         skipForwardDisabled
       />
-
-      <Footer onCollapse={onCollapse} source={source} />
     </div>
   );
 }
@@ -169,10 +165,10 @@ function TrackVariant(props: OverlayBodyProps): JSX.Element {
 function StationVariant(
   props: Omit<OverlayBodyProps, "progressMs" | "durationMs" | "onSeek">,
 ): JSX.Element {
-  const { snapshot, source, externalId, isPlaying, onCollapse, onTogglePlay } = props;
+  const { snapshot, source, externalId, isPlaying, onTogglePlay } = props;
 
   return (
-    <div className="flex flex-col flex-1 gap-6">
+    <div className="flex flex-col gap-6">
       <div className="flex justify-center">
         <CoverArt snapshot={snapshot} />
       </div>
@@ -200,8 +196,6 @@ function StationVariant(
         skipBackDisabled
         skipForwardDisabled
       />
-
-      <Footer onCollapse={onCollapse} source={source} />
     </div>
   );
 }
@@ -250,20 +244,6 @@ function Transport({
   );
 }
 
-function Footer({
-  onCollapse: _onCollapse,
-  source,
-}: {
-  onCollapse: () => void;
-  source: ProviderName;
-}): JSX.Element {
-  return (
-    <div className="mt-auto flex justify-end pt-4">
-      <ProviderBadge source={source} />
-    </div>
-  );
-}
-
 export function NowPlayingOverlay(): JSX.Element | null {
   const { isExpanded, engineState, currentSource, collapse, togglePlay, skipBack, seek } =
     usePlayer();
@@ -295,14 +275,13 @@ export function NowPlayingOverlay(): JSX.Element | null {
         </IconButton>
       </div>
 
-      <div className="flex flex-col flex-1 items-stretch min-h-0 mt-6">
+      <div className="flex flex-col flex-1 justify-center items-stretch min-h-0 px-2">
         {snapshot.kind === "station" ? (
           <StationVariant
             snapshot={snapshot}
             source={currentSource.source}
             externalId={currentSource.externalId}
             isPlaying={isPlaying}
-            onCollapse={collapse}
             onTogglePlay={togglePlay}
             onSkipBack={skipBack}
           />
@@ -314,12 +293,15 @@ export function NowPlayingOverlay(): JSX.Element | null {
             isPlaying={isPlaying}
             progressMs={engineState.progressMs}
             durationMs={engineState.durationMs}
-            onCollapse={collapse}
             onTogglePlay={togglePlay}
             onSkipBack={skipBack}
             onSeek={seek}
           />
         )}
+      </div>
+
+      <div className="shrink-0 flex justify-end pt-4">
+        <ProviderBadge source={currentSource.source} />
       </div>
     </div>
   );

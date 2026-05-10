@@ -42,7 +42,25 @@ describe("IconButton", () => {
     expect(screen.getByRole("button").className).toContain("bg-primary");
   });
 
-  it("applies sm/md size classes (44×44 minimum touch target)", () => {
+  it("applies the success variant (token-driven color)", () => {
+    render(
+      <IconButton aria-label="Like" variant="success">
+        x
+      </IconButton>,
+    );
+    expect(screen.getByRole("button").className).toContain("text-success");
+  });
+
+  it("applies the danger variant (token-driven color)", () => {
+    render(
+      <IconButton aria-label="Pass" variant="danger">
+        x
+      </IconButton>,
+    );
+    expect(screen.getByRole("button").className).toContain("text-danger");
+  });
+
+  it("applies sm/md/lg size classes (44×44 minimum touch target, 56×56 for lg)", () => {
     const { rerender } = render(
       <IconButton aria-label="Save" size="sm">
         x
@@ -55,6 +73,12 @@ describe("IconButton", () => {
       </IconButton>,
     );
     expect(screen.getByRole("button").className).toContain("size-12");
+    rerender(
+      <IconButton aria-label="Save" size="lg">
+        x
+      </IconButton>,
+    );
+    expect(screen.getByRole("button").className).toContain("size-14");
   });
 
   it("does not call onClick when disabled", () => {

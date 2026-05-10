@@ -100,5 +100,8 @@ export type ExploredEventRequest = z.infer<typeof ExploredEventRequest>;
 export const SavedEventRequest = InterestEventBody;
 export type SavedEventRequest = z.infer<typeof SavedEventRequest>;
 
-export const InterestEventType = z.enum(["explored", "saved"]);
+// "explored" — score 3, set by /search/explored or /play/started
+// "completed" — score 5, set by /play/completed (audio reached the end)
+// "saved" — score 8, set by /search/saved
+export const InterestEventType = z.enum(["explored", "completed", "saved"]);
 export type InterestEventType = z.infer<typeof InterestEventType>;

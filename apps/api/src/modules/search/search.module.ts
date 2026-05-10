@@ -34,5 +34,6 @@ import { GeniusClient } from "./providers/genius.client.js";
     RadioBrowserClient,
     GeniusClient,
   ],
+  exports: [InterestScoresRepository],
 })
 export class SearchModule {}

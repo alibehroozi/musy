@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under SEC-07.
+// Invariants verified here are listed in INVARIANTS.md under SEC-07, SEC-08.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -59,5 +59,84 @@ describe("SEC-07: SOUNDCLOUD_USER_AGENT and the SoundCloud client_id never appea
     expect(res.status).toBe(400);
     const bodyText = JSON.stringify(res.body ?? "");
     expect(bodyText).not.toContain(PLAY_TEST_ENV.SOUNDCLOUD_USER_AGENT);
+  });
+});
+
+import {
+  buildPlayEventsTestApp,
+  type PlayEventsTestAppHandle,
+} from "../_helpers/play-events-test-app.js";
+
+const VALID_BODY = {
+  source: "audius" as const,
+  externalId: "abc123",
+  snapshot: { title: "Get Lucky", artist: "Daft Punk", kind: "track" as const },
+};
+
+describe("SEC-08: /play/started and /play/completed always derive userId from the session, never from the body", () => {
+  let eventsHandle: PlayEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (eventsHandle) await eventsHandle.app.close();
+    eventsHandle = undefined;
+  });
+
+  it("a body field 'userId' targeting victimId is ignored — the upsert lands under the session's uid", async () => {
+    eventsHandle = await buildPlayEventsTestApp();
+    const sessionUid = "550e8400-e29b-41d4-a716-446655440300";
+    const victimId = "550e8400-e29b-41d4-a716-446655440301";
+    const token = eventsHandle.authService.signSession({ uid: sessionUid, gid: "g_sec_smuggle" });
+    const res = await request(eventsHandle.app.getHttpServer())
+      .post("/api/play/started")
+      .send({ ...VALID_BODY, userId: victimId })
+      .set("Content-Type", "application/json")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(204);
+    expect(await eventsHandle.interestRepo.findScoresForUser(sessionUid)).toHaveLength(1);
+    expect(await eventsHandle.interestRepo.findScoresForUser(victimId)).toHaveLength(0);
+    expect(await eventsHandle.listeningRepo.findEventsForUser(sessionUid)).toHaveLength(1);
+    expect(await eventsHandle.listeningRepo.findEventsForUser(victimId)).toHaveLength(0);
+  });
+
+  it("with no session cookie the call is rejected with 401 before any DB write happens", async () => {
+    eventsHandle = await buildPlayEventsTestApp();
+    const res = await request(eventsHandle.app.getHttpServer())
+      .post("/api/play/completed")
+      .send({ ...VALID_BODY, elapsedMs: 1234 })
+      .set("Content-Type", "application/json");
+    expect(res.status).toBe(401);
+    expect(eventsHandle.listeningRepo.events).toHaveLength(0);
+    expect(eventsHandle.interestRepo.docs.size).toBe(0);
+  });
+
+  it("user A's listening_events / interest_scores writes are scoped to A's userId, not B's", async () => {
+    eventsHandle = await buildPlayEventsTestApp();
+    const userA = "550e8400-e29b-41d4-a716-446655440310";
+    const userB = "550e8400-e29b-41d4-a716-446655440311";
+    const tokenA = eventsHandle.authService.signSession({ uid: userA, gid: "g_user_a" });
+    const tokenB = eventsHandle.authService.signSession({ uid: userB, gid: "g_user_b" });
+    await request(eventsHandle.app.getHttpServer())
+      .post("/api/play/started")
+      .send(VALID_BODY)
+      .set("Content-Type", "application/json")
+      .set("Cookie", `session=${tokenA}`)
+      .expect(204);
+    await request(eventsHandle.app.getHttpServer())
+      .post("/api/play/completed")
+      .send({ ...VALID_BODY, elapsedMs: 60_000 })
+      .set("Content-Type", "application/json")
+      .set("Cookie", `session=${tokenB}`)
+      .expect(204);
+
+    const aScores = await eventsHandle.interestRepo.findScoresForUser(userA);
+    const bScores = await eventsHandle.interestRepo.findScoresForUser(userB);
+    expect(aScores.every((d) => d.userId === userA)).toBe(true);
+    expect(bScores.every((d) => d.userId === userB)).toBe(true);
+    expect(aScores.find((d) => d.userId === userB)).toBeUndefined();
+    expect(bScores.find((d) => d.userId === userA)).toBeUndefined();
+
+    const aEvents = await eventsHandle.listeningRepo.findEventsForUser(userA);
+    const bEvents = await eventsHandle.listeningRepo.findEventsForUser(userB);
+    expect(aEvents.every((e) => e.userId === userA)).toBe(true);
+    expect(bEvents.every((e) => e.userId === userB)).toBe(true);
   });
 });

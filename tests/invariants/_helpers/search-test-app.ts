@@ -34,6 +34,7 @@ export const SEARCH_TEST_ENV = {
   GOOGLE_REDIRECT_URI: "http://localhost:5173/api/auth/google/callback",
   WEB_ORIGIN: "http://localhost:5173",
   SESSION_SECRET: "test-session-secret-32-bytes-for-search-tests",
+  SOUNDCLOUD_USER_AGENT: "test-soundcloud-ua-DO-NOT-LEAK",
   NODE_ENV: "test",
 };
 

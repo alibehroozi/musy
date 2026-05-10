@@ -1,7 +1,8 @@
 ---
 epic: explore
-status: pending
+status: done
 estimated-invariants: 5
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/23
 ---
 
 # Feature 02: SoundCloud search backend

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ProviderName = z.enum(["audius", "deezer", "radio-browser", "genius"]);
+export const ProviderName = z.enum(["audius", "deezer", "radio-browser", "genius", "soundcloud"]);
 export type ProviderName = z.infer<typeof ProviderName>;
 
 export const TrackResult = z.object({

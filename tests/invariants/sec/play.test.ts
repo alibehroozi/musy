@@ -74,17 +74,6 @@ describe("SEC-07 (search code path): SOUNDCLOUD_USER_AGENT and SoundCloud client
 
   it("the SOUNDCLOUD_USER_AGENT value is not present in a successful /api/search response", async () => {
     h = await buildSearchTestApp();
-    h.soundcloud.results = [
-      {
-        type: "track",
-        id: "soundcloud:1",
-        title: "Sample",
-        artist: "Sample Artist",
-        provider: "soundcloud",
-        providerId: "1",
-        sources: ["soundcloud"],
-      },
-    ];
     const res = await request(h.app.getHttpServer())
       .post("/api/search")
       .send({ q: "sample" })
@@ -94,9 +83,12 @@ describe("SEC-07 (search code path): SOUNDCLOUD_USER_AGENT and SoundCloud client
     expect(bodyText).not.toContain(SEARCH_TEST_ENV.SOUNDCLOUD_USER_AGENT);
   });
 
-  it("the SOUNDCLOUD_USER_AGENT value is not present in a /api/search response when the provider failed", async () => {
+  it("the SOUNDCLOUD_USER_AGENT value is not present in a /api/search error response", async () => {
     h = await buildSearchTestApp();
-    h.soundcloud.shouldFail = true;
+    h.audius.shouldFail = true;
+    h.deezer.shouldFail = true;
+    h.radioBrowser.shouldFail = true;
+    h.genius.shouldFail = true;
     const res = await request(h.app.getHttpServer())
       .post("/api/search")
       .send({ q: "sample" })

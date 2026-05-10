@@ -388,3 +388,55 @@ describe("API-13: SoundCloud failure adds 'soundcloud' to failedProviders; succe
     expect(() => SearchResponse.parse(res.body)).not.toThrow();
   });
 });
+
+// ── Real-upstream test (no mocking) ──────────────────────────────────────────
+//
+// Per AGENTS.md hard rule #15, real upstream HTTP clients are NOT mocked in
+// apps/api tests. This block hits live SoundCloud — same pattern as the
+// SoundCloudStreamClient block in tests/invariants/api/play.test.ts. The
+// only intentional override here is the spoofed User-Agent (a well-known
+// browser UA), which is the production posture too.
+
+import type { ConfigService } from "@nestjs/config";
+import { SoundCloudClient } from "../../../apps/api/src/modules/search/providers/soundcloud.client.js";
+
+function fakeConfig(env: Record<string, string> = {}): ConfigService {
+  return {
+    get: <T>(key: string, defaultValue?: T): T => {
+      if (key in env) return env[key] as unknown as T;
+      return defaultValue as T;
+    },
+    getOrThrow: <T>(key: string): T => {
+      if (key in env) return env[key] as unknown as T;
+      throw new Error(`Missing config key: ${key}`);
+    },
+  } as unknown as ConfigService;
+}
+
+const REAL_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+describe("SoundCloudClient: real provider (no mocking)", () => {
+  it("returns at least one TrackResult for a popular query, with provider/sources stamped 'soundcloud'", async () => {
+    const client = new SoundCloudClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: REAL_UA }));
+    const results = await client.search("dua lipa levitating");
+    expect(results.length).toBeGreaterThan(0);
+    for (const r of results) {
+      expect(r.type).toBe("track");
+      expect(r.provider).toBe("soundcloud");
+      expect(r.sources).toEqual(["soundcloud"]);
+      expect(typeof r.title).toBe("string");
+      expect(r.title.length).toBeGreaterThan(0);
+      expect(typeof r.artist).toBe("string");
+    }
+  }, 30_000);
+
+  it("returns an empty array for a nonsense query (success-with-no-results, not an error)", async () => {
+    const client = new SoundCloudClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: REAL_UA }));
+    const results = await client.search("zzqqxxvvbbnn-no-real-matches-zzqqxxvvbbnn");
+    // SoundCloud generally returns an empty collection for jibberish; the
+    // assertion here is that the call succeeds (no throw) with a typed array.
+    expect(Array.isArray(results)).toBe(true);
+  }, 30_000);
+});

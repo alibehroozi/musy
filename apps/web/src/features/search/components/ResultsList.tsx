@@ -23,7 +23,6 @@ function providerLabel(provider: string): string {
     deezer: "Deezer",
     "radio-browser": "Radio",
     genius: "Genius",
-    soundcloud: "SoundCloud",
   };
   return map[provider] ?? provider;
 }

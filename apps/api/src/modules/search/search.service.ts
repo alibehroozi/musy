@@ -5,14 +5,10 @@ import { AudiusClient } from "./providers/audius.client.js";
 import { DeezerClient } from "./providers/deezer.client.js";
 import { RadioBrowserClient } from "./providers/radio-browser.client.js";
 import { GeniusClient } from "./providers/genius.client.js";
-import { SoundCloudClient } from "./providers/soundcloud.client.js";
 import { SearchRepository } from "./search.repository.js";
 import { SearchHistoryRepository } from "./search-history.repository.js";
 
 const PROVIDER_TIMEOUT_MS = 2500;
-// SoundCloud's search needs a sequential page-fetch + API call to obtain a
-// client_id; the longer budget covers both legs without blocking the response.
-const SOUNDCLOUD_TIMEOUT_MS = 4000;
 
 @Injectable()
 export class SearchService {
@@ -23,7 +19,6 @@ export class SearchService {
     @Inject(DeezerClient) private readonly deezer: DeezerClient,
     @Inject(RadioBrowserClient) private readonly radioBrowser: RadioBrowserClient,
     @Inject(GeniusClient) private readonly genius: GeniusClient,
-    @Inject(SoundCloudClient) private readonly soundcloud: SoundCloudClient,
     @Inject(SearchRepository) private readonly repository: SearchRepository,
     @Inject(SearchHistoryRepository)
     private readonly historyRepository: SearchHistoryRepository,
@@ -50,14 +45,12 @@ export class SearchService {
       };
     }
 
-    const [audiusResult, deezerResult, radioResult, geniusResult, soundcloudResult] =
-      await Promise.allSettled([
-        withTimeout(this.audius.search(query), PROVIDER_TIMEOUT_MS),
-        withTimeout(this.deezer.search(query), PROVIDER_TIMEOUT_MS),
-        withTimeout(this.radioBrowser.search(query), PROVIDER_TIMEOUT_MS),
-        withTimeout(this.genius.search(query), PROVIDER_TIMEOUT_MS),
-        withTimeout(this.soundcloud.search(query), SOUNDCLOUD_TIMEOUT_MS),
-      ]);
+    const [audiusResult, deezerResult, radioResult, geniusResult] = await Promise.allSettled([
+      withTimeout(this.audius.search(query), PROVIDER_TIMEOUT_MS),
+      withTimeout(this.deezer.search(query), PROVIDER_TIMEOUT_MS),
+      withTimeout(this.radioBrowser.search(query), PROVIDER_TIMEOUT_MS),
+      withTimeout(this.genius.search(query), PROVIDER_TIMEOUT_MS),
+    ]);
 
     const allResults: SearchResult[] = [];
     const failedProviders: ProviderName[] = [];
@@ -67,7 +60,6 @@ export class SearchService {
       [deezerResult, "deezer"],
       [radioResult, "radio-browser"],
       [geniusResult, "genius"],
-      [soundcloudResult, "soundcloud"],
     ];
 
     for (const [result, name] of providerResults) {

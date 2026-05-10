@@ -1,7 +1,8 @@
 ---
 epic: explore
-status: pending
+status: done
 estimated-invariants: 6
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/24
 ---
 
 # Feature 03: Swipe ledger and interest-score extension

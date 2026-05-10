@@ -48,7 +48,7 @@ function LiveIndicator(): JSX.Element {
   return (
     <div
       className="flex items-center gap-2 text-danger text-sm font-semibold tracking-wider"
-      data-testid="live-indicator"
+      data-testid="now-playing-live"
     >
       <span aria-hidden className="size-2 rounded-full bg-danger motion-safe:animate-pulse" />
       <span>LIVE</span>

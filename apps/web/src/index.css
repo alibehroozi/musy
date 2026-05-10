@@ -34,7 +34,7 @@ body {
   [data-testid="now-playing-overlay"] {
     animation: none !important;
   }
-  [data-testid="live-indicator"] > span[aria-hidden] {
+  [data-testid="now-playing-live"] > span[aria-hidden] {
     animation: none !important;
   }
 }

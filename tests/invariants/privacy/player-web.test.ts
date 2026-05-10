@@ -19,6 +19,7 @@ function makeMockDriver() {
     setSrc: vi.fn(),
     play: vi.fn().mockResolvedValue(undefined),
     pause: vi.fn(),
+    seek: vi.fn(),
     on: vi.fn((event: string, handler: () => void) => {
       if (!handlers.has(event)) handlers.set(event, new Set());
       handlers.get(event)!.add(handler);

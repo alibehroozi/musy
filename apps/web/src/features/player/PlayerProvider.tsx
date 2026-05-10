@@ -86,6 +86,9 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       },
       play: () => audio.play(),
       pause: () => audio.pause(),
+      seek: (positionSec: number) => {
+        audio.currentTime = positionSec;
+      },
       on: (event: string, handler: () => void) => {
         audio.addEventListener(event, handler);
         return () => audio.removeEventListener(event, handler);

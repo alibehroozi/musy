@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-08, API-09, API-10, API-11.
+// Invariants verified here are listed in INVARIANTS.md under API-08, API-09, API-10, API-11, API-12.
 // Real-provider integration tests (no mocking) are at the bottom of this file.
 // Per hard rule #15, SoundCloud and Audius clients call the actual upstream.
 
@@ -158,6 +158,10 @@ const SC_TRACK_API_PATH = {
 };
 // "Ghosts N Stuff" by deadmau5 is confirmed available directly on Audius.
 const AUDIUS_TRACK = { title: "Ghosts N Stuff", artist: "deadmau5", kind: "track" as const };
+// "Without Me" by Eminem — Eminem's official upload is SoundCloud-Go-gated and
+// only exposes DRM-encrypted (FairPlay/Widevine) transcodings. Used to verify the
+// resolver falls through to a non-DRM alternative (remix / sped-up edit / cover).
+const SC_DRM_TRACK = { title: "Without Me", artist: "Eminem", kind: "track" as const };
 
 describe("SoundCloudStreamClient: real provider (no mocking)", () => {
   it("findMatch returns a non-null result with sourceTrackId and a soundcloud.com permalink", async () => {
@@ -214,6 +218,26 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
     expect(stream?.streamUrl).toMatch(/^https?:\/\//);
     expect(stream?.streamUrl).not.toContain("/preview/");
   }, 55_000);
+
+  it("API-12: Without Me by Eminem (SoundCloud-Go-gated, DRM-only on the official upload) resolves to a non-DRM playable URL via fallback to a remix/user upload", async () => {
+    const client = new SoundCloudStreamClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }));
+    const match = await client.findMatch(SC_DRM_TRACK);
+    if (!match) {
+      throw new Error("SoundCloud findMatch returned null for Eminem — integration is broken");
+    }
+    expect(match.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+    const stream = await client.produceStreamUrl(match.sourceLocator);
+    expect(stream).not.toBeNull();
+    expect(stream?.streamUrl).toMatch(/^https?:\/\//);
+    // Must not be a snipped/preview URL
+    expect(stream?.streamUrl).not.toContain("/preview/");
+    // And must not be one of SoundCloud's DRM-encrypted CDN paths — Chrome/Firefox/
+    // Edge cannot decrypt FairPlay (cbcs) or Widevine (cenc) without an EME license
+    // flow we do not implement.
+    expect(stream?.streamUrl).not.toContain("/cbcs/");
+    expect(stream?.streamUrl).not.toContain("/cenc/");
+    expect(stream?.streamUrl).not.toContain("playback.media-streaming.soundcloud.cloud");
+  }, 60_000);
 });
 
 import {

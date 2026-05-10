@@ -1,9 +1,14 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under LOGIC-05, LOGIC-06, LOGIC-07.
+// Invariants verified here are listed in INVARIANTS.md under LOGIC-05, LOGIC-06, LOGIC-07, LOGIC-10.
 
 import { describe, it, expect } from "vitest";
-import { bumpScore, computeSnapshotHash, extractSourceFromHtml } from "@moc/api-core";
+import {
+  bumpScore,
+  computeSnapshotHash,
+  extractSourceFromHtml,
+  isPlayableTranscoding,
+} from "@moc/api-core";
 import type { SongSnapshot } from "@moc/contracts";
 
 function snap(overrides: Partial<SongSnapshot> = {}): SongSnapshot {
@@ -111,6 +116,49 @@ describe("LOGIC-07: bumpScore is a deterministic max-rule keyed on play event ty
       expect(bumpScore(0, "started")).toBe(3);
       expect(bumpScore(0, "completed")).toBe(5);
       expect(bumpScore(8, "completed")).toBe(8);
+    }
+  });
+});
+
+describe("LOGIC-10: isPlayableTranscoding accepts non-snipped progressive/hls and rejects encrypted/snipped variants", () => {
+  it("accepts non-snipped progressive (mp3)", () => {
+    expect(isPlayableTranscoding({ protocol: "progressive", snipped: false })).toBe(true);
+  });
+
+  it("accepts non-snipped plain hls (unencrypted m3u8)", () => {
+    expect(isPlayableTranscoding({ protocol: "hls", snipped: false })).toBe(true);
+  });
+
+  it("rejects cbc-encrypted-hls (Apple FairPlay — Safari only)", () => {
+    expect(isPlayableTranscoding({ protocol: "cbc-encrypted-hls", snipped: false })).toBe(false);
+  });
+
+  it("rejects ctr-encrypted-hls (Widevine — requires EME license server we do not implement)", () => {
+    expect(isPlayableTranscoding({ protocol: "ctr-encrypted-hls", snipped: false })).toBe(false);
+  });
+
+  it("rejects any unknown protocol whose name contains 'encrypted'", () => {
+    expect(isPlayableTranscoding({ protocol: "encrypted-dash", snipped: false })).toBe(false);
+    expect(isPlayableTranscoding({ protocol: "ENCRYPTED-HLS", snipped: false })).toBe(false);
+  });
+
+  it("rejects snipped progressive (preview-only)", () => {
+    expect(isPlayableTranscoding({ protocol: "progressive", snipped: true })).toBe(false);
+  });
+
+  it("rejects snipped hls (preview-only)", () => {
+    expect(isPlayableTranscoding({ protocol: "hls", snipped: true })).toBe(false);
+  });
+
+  it("rejects unknown non-encrypted protocols (closed allowlist)", () => {
+    expect(isPlayableTranscoding({ protocol: "dash", snipped: false })).toBe(false);
+    expect(isPlayableTranscoding({ protocol: "rtmp", snipped: false })).toBe(false);
+  });
+
+  it("is deterministic: identical inputs produce identical outputs across calls", () => {
+    for (let i = 0; i < 5; i++) {
+      expect(isPlayableTranscoding({ protocol: "progressive", snipped: false })).toBe(true);
+      expect(isPlayableTranscoding({ protocol: "cbc-encrypted-hls", snipped: false })).toBe(false);
     }
   });
 });

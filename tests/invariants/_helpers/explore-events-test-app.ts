@@ -1,0 +1,156 @@
+import "reflect-metadata";
+import { Module, RequestMethod, type INestApplication } from "@nestjs/common";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { JwtModule } from "@nestjs/jwt";
+import { APP_FILTER, APP_GUARD, NestFactory } from "@nestjs/core";
+import cookieParser from "cookie-parser";
+import type { SongSnapshot, SwipeDirection } from "@moc/contracts";
+
+import { AllExceptionsFilter } from "../../../apps/api/src/common/all-exceptions.filter.js";
+import { AuthGuard } from "../../../apps/api/src/common/auth.guard.js";
+import { HealthController } from "../../../apps/api/src/health.controller.js";
+import { AuthService } from "../../../apps/api/src/modules/auth/auth.service.js";
+import { UsersRepository } from "../../../apps/api/src/modules/users/users.repository.js";
+import { UsersService } from "../../../apps/api/src/modules/users/users.service.js";
+import { ExploreController } from "../../../apps/api/src/modules/explore/explore.controller.js";
+import { ExploreService } from "../../../apps/api/src/modules/explore/explore.service.js";
+import { SwipesRepository } from "../../../apps/api/src/modules/explore/explore.repository.js";
+import { InterestScoresRepository } from "../../../apps/api/src/modules/search/interest-scores.repository.js";
+import { FakeUsersRepository } from "./test-app.js";
+import { FakeInterestScoresRepository } from "./search-events-test-app.js";
+
+export const EXPLORE_EVENTS_TEST_ENV = {
+  GOOGLE_CLIENT_ID: "test-google-client-id",
+  GOOGLE_CLIENT_SECRET: "test-google-client-secret",
+  GOOGLE_REDIRECT_URI: "http://localhost:5173/api/auth/google/callback",
+  WEB_ORIGIN: "http://localhost:5173",
+  SESSION_SECRET: "test-session-secret-32-bytes-explore-swipes-aaa",
+  NODE_ENV: "test",
+};
+
+export interface FakeSwipeDoc {
+  userId: string;
+  snapshot: SongSnapshot;
+  snapshotHash: string;
+  direction: SwipeDirection;
+  at: Date;
+}
+
+/**
+ * In-memory stand-in for SwipesRepository — append-only log mirroring
+ * the production .record / .findSwipesForUser surface.
+ */
+export class FakeSwipesRepository {
+  swipes: FakeSwipeDoc[] = [];
+
+  async record(input: {
+    userId: string;
+    snapshot: SongSnapshot;
+    snapshotHash: string;
+    direction: SwipeDirection;
+  }): Promise<void> {
+    this.swipes.push({
+      userId: input.userId,
+      snapshot: input.snapshot,
+      snapshotHash: input.snapshotHash,
+      direction: input.direction,
+      at: new Date(),
+    });
+  }
+
+  async findSwipesForUser(userId: string): Promise<FakeSwipeDoc[]> {
+    return this.swipes.filter((s) => s.userId === userId);
+  }
+}
+
+const fakeUsersToken = Symbol.for("test:fake-users-repo-explore");
+const fakeSwipesRepoToken = Symbol.for("test:fake-swipes-repo");
+const fakeInterestRepoToken = Symbol.for("test:fake-interest-repo-explore");
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      ignoreEnvFile: true,
+      load: [() => ({ ...EXPLORE_EVENTS_TEST_ENV })],
+    }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.getOrThrow<string>("SESSION_SECRET"),
+        signOptions: { expiresIn: "7d" },
+      }),
+    }),
+  ],
+  controllers: [ExploreController, HealthController],
+  providers: [
+    ExploreService,
+    AuthService,
+    UsersService,
+    {
+      provide: fakeUsersToken,
+      useFactory: () => new FakeUsersRepository(),
+    },
+    {
+      provide: UsersRepository,
+      useFactory: (fake: FakeUsersRepository) => fake as unknown as UsersRepository,
+      inject: [fakeUsersToken],
+    },
+    {
+      provide: fakeSwipesRepoToken,
+      useFactory: () => new FakeSwipesRepository(),
+    },
+    {
+      provide: SwipesRepository,
+      useFactory: (fake: FakeSwipesRepository) => fake as unknown as SwipesRepository,
+      inject: [fakeSwipesRepoToken],
+    },
+    {
+      provide: fakeInterestRepoToken,
+      useFactory: () => new FakeInterestScoresRepository(),
+    },
+    {
+      provide: InterestScoresRepository,
+      useFactory: (fake: FakeInterestScoresRepository) =>
+        fake as unknown as InterestScoresRepository,
+      inject: [fakeInterestRepoToken],
+    },
+    { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_GUARD, useClass: AuthGuard },
+  ],
+})
+class TestExploreEventsModule {}
+
+export interface ExploreEventsTestAppHandle {
+  app: INestApplication;
+  swipesRepo: FakeSwipesRepository;
+  interestRepo: FakeInterestScoresRepository;
+  authService: AuthService;
+  env: typeof EXPLORE_EVENTS_TEST_ENV;
+}
+
+export async function buildExploreEventsTestApp(): Promise<ExploreEventsTestAppHandle> {
+  const app = await NestFactory.create(TestExploreEventsModule, { logger: false });
+  app.use(cookieParser());
+  app.setGlobalPrefix("api", {
+    exclude: [{ path: "health", method: RequestMethod.GET }],
+  });
+  await app.init();
+
+  const swipesRepo = app.get<FakeSwipesRepository>(fakeSwipesRepoToken);
+  const interestRepo = app.get<FakeInterestScoresRepository>(fakeInterestRepoToken);
+  const authService = app.get(AuthService);
+  return { app, swipesRepo, interestRepo, authService, env: EXPLORE_EVENTS_TEST_ENV };
+}
+
+export function makeSnapshot(overrides: Partial<SongSnapshot> = {}): SongSnapshot {
+  return {
+    title: overrides.title ?? "Bohemian Rhapsody",
+    artist: overrides.artist ?? "Queen",
+    kind: overrides.kind ?? "track",
+    ...(overrides.coverUrl !== undefined ? { coverUrl: overrides.coverUrl } : {}),
+    ...(overrides.year !== undefined ? { year: overrides.year } : {}),
+    ...(overrides.durationSec !== undefined ? { durationSec: overrides.durationSec } : {}),
+  };
+}

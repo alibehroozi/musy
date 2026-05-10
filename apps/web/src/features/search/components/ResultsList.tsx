@@ -8,6 +8,8 @@ import type {
   TrackResult,
 } from "@moc/contracts";
 import { useInterestActions } from "../useInterestActions.js";
+import { usePlayer } from "../../player/usePlayer.js";
+import { useAuth } from "../../../hooks/useAuth.js";
 import { SaveButton } from "./SaveButton.js";
 import { SignInModal } from "./SignInModal.js";
 
@@ -49,7 +51,9 @@ interface InteractiveRowProps {
   externalId: string;
   snapshot: SongSnapshot;
   exploreLabel: string;
+  isPlaying: boolean;
   onExplore: (id: { source: ProviderName; externalId: string; snapshot: SongSnapshot }) => void;
+  onPlay: (id: { source: ProviderName; externalId: string; snapshot: SongSnapshot }) => void;
   onSave: (id: { source: ProviderName; externalId: string; snapshot: SongSnapshot }) => void;
   children: JSX.Element;
 }
@@ -65,7 +69,9 @@ function InteractiveRow({
   externalId,
   snapshot,
   exploreLabel,
+  isPlaying,
   onExplore,
+  onPlay,
   onSave,
   children,
 }: InteractiveRowProps): JSX.Element {
@@ -80,7 +86,8 @@ function InteractiveRow({
   const handleExplore = useCallback(() => {
     triggerFlash();
     onExplore({ source, externalId, snapshot });
-  }, [triggerFlash, onExplore, source, externalId, snapshot]);
+    onPlay({ source, externalId, snapshot });
+  }, [triggerFlash, onExplore, onPlay, source, externalId, snapshot]);
 
   const handleSave = useCallback(() => {
     setSaved(true);
@@ -99,7 +106,11 @@ function InteractiveRow({
   const flashClasses = flashing ? "bg-primary/10" : "bg-bg";
   const cls = `${baseClasses} ${flashClasses}`;
   return (
-    <div className="relative" data-testid="interactive-row-wrapper">
+    <div
+      className="relative"
+      data-testid="interactive-row-wrapper"
+      {...(isPlaying ? { "data-playing": "true" } : {})}
+    >
       <div
         role="button"
         tabIndex={0}
@@ -122,6 +133,27 @@ function InteractiveRow({
 export function ResultsList({ data }: ResultsListProps): JSX.Element {
   const { results, partial, failedProviders } = data;
   const { signInOpen, closeSignIn, onExplore, onSave } = useInterestActions();
+  const { playSnapshot, currentSource } = usePlayer();
+  const { state: authState } = useAuth();
+
+  const isAuthed = authState.status === "authenticated";
+
+  const onPlay = useCallback(
+    ({
+      source,
+      externalId,
+      snapshot,
+    }: {
+      source: ProviderName;
+      externalId: string;
+      snapshot: SongSnapshot;
+    }) => {
+      if (isAuthed) {
+        playSnapshot(snapshot, source, externalId);
+      }
+    },
+    [isAuthed, playSnapshot],
+  );
 
   if (results.length === 0) {
     return (
@@ -143,15 +175,22 @@ export function ResultsList({ data }: ResultsListProps): JSX.Element {
   return (
     <>
       <div data-testid="results-list">
-        {results.map((result) =>
-          result.type === "track" ? (
+        {results.map((result) => {
+          const isPlaying =
+            currentSource !== null &&
+            currentSource.source === result.provider &&
+            currentSource.externalId === result.providerId;
+
+          return result.type === "track" ? (
             <InteractiveRow
               key={result.id}
               source={result.provider}
               externalId={result.providerId}
               snapshot={trackSnapshot(result)}
               exploreLabel={`Explore ${result.title} by ${result.artist}`}
+              isPlaying={isPlaying}
               onExplore={onExplore}
+              onPlay={onPlay}
               onSave={onSave}
             >
               <ResultRow
@@ -162,6 +201,7 @@ export function ResultsList({ data }: ResultsListProps): JSX.Element {
                 {...(result.artworkUrl !== undefined ? { artworkUrl: result.artworkUrl } : {})}
                 sourceBadge={providerLabel(result.provider)}
                 trailing={trailingSpacer}
+                playingOverlay={isPlaying}
               />
             </InteractiveRow>
           ) : (
@@ -171,7 +211,9 @@ export function ResultsList({ data }: ResultsListProps): JSX.Element {
               externalId={result.providerId}
               snapshot={stationSnapshot(result)}
               exploreLabel={`Explore ${result.name}`}
+              isPlaying={isPlaying}
               onExplore={onExplore}
+              onPlay={onPlay}
               onSave={onSave}
             >
               <ResultRow
@@ -183,8 +225,8 @@ export function ResultsList({ data }: ResultsListProps): JSX.Element {
                 trailing={trailingSpacer}
               />
             </InteractiveRow>
-          ),
-        )}
+          );
+        })}
       </div>
       <SignInModal open={signInOpen} onClose={closeSignIn} />
     </>

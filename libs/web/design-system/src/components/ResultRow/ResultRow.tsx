@@ -9,6 +9,8 @@ interface TrackRowProps {
   artworkUrl?: string | undefined;
   sourceBadge: string;
   trailing?: ReactNode;
+  /** Shows a small play indicator overlay on the artwork. */
+  playingOverlay?: boolean;
 }
 
 interface StationRowProps {
@@ -32,18 +34,44 @@ function formatDuration(seconds: number): string {
 interface ArtworkProps {
   url?: string | undefined;
   title: string;
+  playingOverlay?: boolean | undefined;
 }
 
-function Artwork({ url, title }: ArtworkProps): JSX.Element {
+function Artwork({ url, title, playingOverlay }: ArtworkProps): JSX.Element {
+  const overlay = playingOverlay ? (
+    <div
+      className="absolute inset-0 rounded flex items-center justify-center bg-black/40"
+      aria-hidden
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className="size-6 text-white"
+        aria-hidden
+      >
+        <polygon points="5,3 19,12 5,21" />
+      </svg>
+    </div>
+  ) : null;
+
   if (url !== undefined) {
-    return <img src={url} alt="" aria-hidden className="size-14 rounded object-cover shrink-0" />;
+    return (
+      <div className="relative shrink-0 size-14">
+        <img src={url} alt="" aria-hidden className="size-14 rounded object-cover" />
+        {overlay}
+      </div>
+    );
   }
   return (
-    <div
-      aria-hidden
-      className="size-14 rounded bg-surface flex items-center justify-center text-xl font-semibold text-text-muted shrink-0"
-    >
-      {title.charAt(0).toUpperCase()}
+    <div className="relative shrink-0 size-14">
+      <div
+        aria-hidden
+        className="size-14 rounded bg-surface flex items-center justify-center text-xl font-semibold text-text-muted"
+      >
+        {title.charAt(0).toUpperCase()}
+      </div>
+      {overlay}
     </div>
   );
 }
@@ -58,13 +86,14 @@ function SourceBadge({ label }: { label: string }): JSX.Element {
 
 export function ResultRow(props: ResultRowProps): JSX.Element {
   if (props.variant === "track") {
-    const { title, artist, year, duration, artworkUrl, sourceBadge, trailing } = props;
+    const { title, artist, year, duration, artworkUrl, sourceBadge, trailing, playingOverlay } =
+      props;
     const meta = [artist, year, duration !== undefined ? formatDuration(duration) : undefined]
       .filter(Boolean)
       .join(" · ");
     return (
       <div className="flex items-center gap-3 px-4 py-2">
-        <Artwork url={artworkUrl} title={title} />
+        <Artwork url={artworkUrl} title={title} playingOverlay={playingOverlay} />
         <div className="flex-1 min-w-0">
           <p className="text-md font-semibold text-text truncate">{title}</p>
           <p className="text-sm text-text-muted truncate">{meta}</p>

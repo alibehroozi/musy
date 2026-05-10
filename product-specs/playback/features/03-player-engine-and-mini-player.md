@@ -1,7 +1,8 @@
 ---
 epic: playback
-status: pending
+status: done
 estimated-invariants: 7
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/20
 ---
 
 # Feature 03: Player engine + mini-player UI

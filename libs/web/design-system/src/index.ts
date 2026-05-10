@@ -31,3 +31,10 @@ export type {
   IconButtonVariant,
   IconButtonSize,
 } from "./components/IconButton/IconButton.js";
+
+export { MiniPlayer } from "./components/MiniPlayer/MiniPlayer.js";
+export type {
+  MiniPlayerProps,
+  MiniPlayerState,
+  TrackSnapshot,
+} from "./components/MiniPlayer/MiniPlayer.js";

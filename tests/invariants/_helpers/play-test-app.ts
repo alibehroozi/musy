@@ -89,8 +89,10 @@ export class FakeAudiusStreamClient {
 
 export class FakeSoundCloudStreamClient {
   match: SoundCloudFindResult | null = null;
+  matchQueue: Array<SoundCloudFindResult | null> = [];
   shouldFailFind = false;
   produceResult: SoundCloudStreamUrlResult | null = null;
+  produceByLocator = new Map<string, SoundCloudStreamUrlResult | null>();
   shouldFailProduce = false;
   findCalls: SongSnapshot[] = [];
   produceCalls: string[] = [];
@@ -98,12 +100,16 @@ export class FakeSoundCloudStreamClient {
   async findMatch(snapshot: SongSnapshot): Promise<SoundCloudFindResult | null> {
     this.findCalls.push(snapshot);
     if (this.shouldFailFind) throw new Error("SoundCloud findMatch failed");
+    if (this.matchQueue.length > 0) return this.matchQueue.shift() ?? null;
     return this.match;
   }
 
   async produceStreamUrl(sourceLocator: string): Promise<SoundCloudStreamUrlResult | null> {
     this.produceCalls.push(sourceLocator);
     if (this.shouldFailProduce) throw new Error("SoundCloud produceStreamUrl failed");
+    if (this.produceByLocator.has(sourceLocator)) {
+      return this.produceByLocator.get(sourceLocator) ?? null;
+    }
     return this.produceResult;
   }
 }

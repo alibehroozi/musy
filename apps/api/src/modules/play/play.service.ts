@@ -27,6 +27,7 @@ export class PlayService {
     const hash = computeSnapshotHash(snapshot);
 
     let cached = await this.repository.findByHash(hash);
+    const cameFromCache = cached !== null;
     if (!cached) {
       cached = await this.lookup(snapshot);
       // Best-effort cache write — never fail the request on a cache write error.
@@ -35,7 +36,24 @@ export class PlayService {
       });
     }
 
-    return await this.produceResponse(cached);
+    let response = await this.produceResponse(cached);
+
+    // Self-heal stale cache entries. A cached SoundCloud locator can become
+    // unplayable after-the-fact (e.g. SoundCloud retroactively gates a track to
+    // DRM-only, or the track's transcodings change upstream). When that happens
+    // produceStreamUrl returns null and the cache would otherwise pin us to the
+    // bad locator until TTL. Re-run lookup once and rewrite the cache so the
+    // next request hits a fresh, playable resolution. Bounded by cameFromCache:
+    // a fresh lookup that yielded null means no playable candidate exists today.
+    if (cameFromCache && response.streamUrl === null && cached.source === "soundcloud") {
+      cached = await this.lookup(snapshot);
+      this.repository.save(hash, snapshot, cached).catch((err: unknown) => {
+        this.logger.warn(`Cache rewrite after stale SC resolution failed: ${String(err)}`);
+      });
+      response = await this.produceResponse(cached);
+    }
+
+    return response;
   }
 
   private async lookup(snapshot: SongSnapshot): Promise<CachedResolution> {

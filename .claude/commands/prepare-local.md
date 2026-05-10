@@ -99,10 +99,10 @@ Use `Write` (whole file) when `.env.local` is missing; use `Edit` (per-key) when
 
 **Keys this command seeds but doesn't overwrite.** Written once on file creation; preserved on subsequent runs so the user can edit freely.
 
-| File                  | Seeded keys                                                                                                                                                                                                                                                                                                                                                       |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/api/.env.local` | `NODE_ENV=development`, `MONGO_URI=mongodb://localhost:27117/musy`, `ANTHROPIC_API_KEY=`, `OPENAI_API_KEY=`, `GOOGLE_CLIENT_ID=`, `GOOGLE_CLIENT_SECRET=`, `GOOGLE_REDIRECT_URI=http://localhost:<web_port>/api/auth/google/callback`, `SESSION_SECRET=<freshly generated random bytes>`, `GENIUS_ACCESS_TOKEN=`, `AUDIUS_APP_NAME=moc`, `SOUNDCLOUD_USER_AGENT=` |
-| `apps/web/.env.local` | `VITE_API_URL=/api`                                                                                                                                                                                                                                                                                                                                               |
+| File                  | Seeded keys                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/api/.env.local` | `NODE_ENV=development`, `MONGO_URI=mongodb://localhost:27117/musy`, `ANTHROPIC_API_KEY=`, `ANTHROPIC_MODEL=`, `OPENAI_API_KEY=`, `GOOGLE_CLIENT_ID=`, `GOOGLE_CLIENT_SECRET=`, `GOOGLE_REDIRECT_URI=http://localhost:<web_port>/api/auth/google/callback`, `SESSION_SECRET=<freshly generated random bytes>`, `GENIUS_ACCESS_TOKEN=`, `AUDIUS_APP_NAME=moc`, `SOUNDCLOUD_USER_AGENT=` |
+| `apps/web/.env.local` | `VITE_API_URL=/api`                                                                                                                                                                                                                                                                                                                                                                   |
 
 For `SESSION_SECRET`, generate a fresh value at file creation:
 
@@ -122,15 +122,18 @@ For `GOOGLE_REDIRECT_URI`, default to `http://localhost:<web_port>/api/auth/goog
 
 # Owned keys (rewritten on every run): API_PORT, WEB_ORIGIN
 
-# Seeded keys (preserved if you edit them): MONGO_URI, ANTHROPIC_API_KEY, OPENAI_API_KEY,
+# Seeded keys (preserved if you edit them): MONGO_URI, ANTHROPIC_API_KEY,
 
-# GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, SESSION_SECRET
+# ANTHROPIC_MODEL, OPENAI_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+
+# GOOGLE_REDIRECT_URI, SESSION_SECRET
 
 NODE_ENV=development
 API_PORT=<api_port>
 WEB_ORIGIN=http://localhost:<web_port>
 MONGO_URI=mongodb://localhost:27117/musy
 ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=
 OPENAI_API_KEY=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=

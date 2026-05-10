@@ -25,6 +25,12 @@ export interface PlayerContextValue {
   /** Whether the now-playing overlay is currently expanded. */
   isExpanded: boolean;
   playSnapshot: (snapshot: SongSnapshot, source: ProviderName, externalId: string) => void;
+  /**
+   * Resolve + play a snapshot without recording listening events. Used
+   * by the Explore swipe deck where each top card auto-previews — the
+   * swipe verdict is the signal, not the listen.
+   */
+  playPreview: (snapshot: SongSnapshot) => void;
   togglePlay: () => void;
   /** Seek to an absolute position in milliseconds. */
   seek: (positionMs: number) => void;
@@ -48,6 +54,7 @@ const NOOP_CONTEXT: PlayerContextValue = {
   currentSource: null,
   isExpanded: false,
   playSnapshot: () => {},
+  playPreview: () => {},
   togglePlay: () => {},
   seek: () => {},
   skipBack: () => {},
@@ -176,6 +183,33 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     [isAuthed],
   );
 
+  const playPreview = useCallback((snapshot: SongSnapshot) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    setCurrentSource(null);
+    setFailedTitle(null);
+    setEngineState((prev) => ({
+      ...prev,
+      status: "loading",
+      currentTrack: { snapshot, streamUrl: "" },
+    }));
+
+    resolveStream({ snapshot })
+      .then((result) => {
+        if (result.streamUrl === null) {
+          setFailedTitle(`Couldn't play '${snapshot.title}'`);
+          setEngineState((prev) => ({ ...prev, status: "failed" }));
+          return;
+        }
+        engine.load(snapshot, result.streamUrl);
+      })
+      .catch(() => {
+        setFailedTitle("Couldn't reach the player service");
+        setEngineState((prev) => ({ ...prev, status: "failed" }));
+      });
+  }, []);
+
   const togglePlay = useCallback(() => {
     engineRef.current?.togglePlay();
   }, []);
@@ -273,6 +307,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       currentSource,
       isExpanded,
       playSnapshot,
+      playPreview,
       togglePlay,
       seek,
       skipBack,
@@ -286,6 +321,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       currentSource,
       isExpanded,
       playSnapshot,
+      playPreview,
       togglePlay,
       seek,
       skipBack,

@@ -4,6 +4,7 @@ import { AppRoutes } from "./routes.js";
 import { PlayerProvider } from "./features/player/PlayerProvider.js";
 import { MiniPlayerHost } from "./features/player/MiniPlayerHost.js";
 import { NowPlayingOverlay } from "./features/player/NowPlayingOverlay.js";
+import { ExploreTopCardProvider } from "./features/explore/ExploreTopCardContext.js";
 
 const NAV_TABS: BottomNavTab[] = [
   { id: "explore", label: "Explore", icon: "compass", href: "/explore" },
@@ -16,15 +17,17 @@ export function App(): JSX.Element {
   const location = useLocation();
 
   return (
-    <PlayerProvider>
-      <div className="fixed inset-0 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
-          <AppRoutes />
+    <ExploreTopCardProvider>
+      <PlayerProvider>
+        <div className="fixed inset-0 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
+            <AppRoutes />
+          </div>
+          <MiniPlayerHost />
+          <BottomNav tabs={NAV_TABS} activePath={location.pathname} onNavigate={navigate} />
         </div>
-        <MiniPlayerHost />
-        <BottomNav tabs={NAV_TABS} activePath={location.pathname} onNavigate={navigate} />
-      </div>
-      <NowPlayingOverlay />
-    </PlayerProvider>
+        <NowPlayingOverlay />
+      </PlayerProvider>
+    </ExploreTopCardProvider>
   );
 }

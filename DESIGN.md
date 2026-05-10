@@ -77,13 +77,15 @@ Components live in `libs/web/design-system/src/components/<Name>/`. Each compone
 
 ### Catalog
 
-| Component        | Variants                        | Sizes          | Use for                                                                                                                                |
-| ---------------- | ------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `Typography`     | `h1` `h2` `h3` `body` `caption` | —              | Any text rendering                                                                                                                     |
-| `Button`         | `primary` `secondary` `ghost`   | `sm` `md` `lg` | All clickable actions (inline-flex, centered chrome)                                                                                   |
-| `ListItemButton` | —                               | —              | Clickable list row (full-width, left-aligned, optional leading/trailing)                                                               |
-| `Icon`           | —                               | `size` (px)    | Lucide-react wrapper + a small set of trademarked brand marks (`*-brand` names); keeps apps free of `<svg>` and `lucide-react` imports |
-| `BottomNav`      | —                               | —              | Fixed bottom nav bar; tab routing + active highlight                                                                                   |
+| Component        | Variants                              | Sizes          | Use for                                                                                                                                     |
+| ---------------- | ------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Typography`     | `h1` `h2` `h3` `body` `caption`       | —              | Any text rendering                                                                                                                          |
+| `Button`         | `primary` `secondary` `ghost`         | `sm` `md` `lg` | All clickable actions (inline-flex, centered chrome)                                                                                        |
+| `ListItemButton` | —                                     | —              | Clickable list row (full-width, left-aligned, optional leading/trailing)                                                                    |
+| `Icon`           | —                                     | `size` (px)    | Lucide-react wrapper + a small set of trademarked brand marks (`*-brand` names); keeps apps free of `<svg>` and `lucide-react` imports      |
+| `BottomNav`      | —                                     | —              | Fixed bottom nav bar; tab routing + active highlight                                                                                        |
+| `Card`           | —                                     | —              | Content surface (swipe-deck face, future detail views); optional `overlay` slot stacks an absolutely-positioned panel over the children     |
+| `IconButton`     | `default` `filled` `success` `danger` | `sm` `md` `lg` | Circular icon-only button. `success` / `danger` for the Explore action row (like / pass); `lg` is the 56 px swipe-deck primary touch target |
 
 The catalog grows via `/design-system`. Don't shortcut by hand-rolling components into `apps/web` and "moving them later" — that pattern accumulates duplicate visual logic.
 

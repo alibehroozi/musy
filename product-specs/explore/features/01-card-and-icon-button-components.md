@@ -1,7 +1,8 @@
 ---
 epic: explore
-status: pending
+status: done
 estimated-invariants: 0
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/22
 ---
 
 # Feature 01: Card and IconButton design-system components

@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-export type IconButtonVariant = "default" | "filled";
-export type IconButtonSize = "sm" | "md";
+export type IconButtonVariant = "default" | "filled" | "success" | "danger";
+export type IconButtonSize = "sm" | "md" | "lg";
 
 const baseClasses =
   "inline-flex items-center justify-center rounded-full transition-colors " +
@@ -12,12 +12,16 @@ const baseClasses =
 const variantClasses: Record<IconButtonVariant, string> = {
   default: "text-text-muted hover:text-text hover:bg-border",
   filled: "bg-primary text-bg hover:bg-primary-hover",
+  success: "text-success bg-surface border border-border hover:bg-border",
+  danger: "text-danger bg-surface border border-border hover:bg-border",
 };
 
-// 44×44 minimum touch target (BROWSER guideline). md adds visual breathing room.
+// Touch-target sizes (BROWSER guideline ≥ 44×44).
+//   sm = 44 (size-11), md = 48 (size-12), lg = 56 (size-14).
 const sizeClasses: Record<IconButtonSize, string> = {
   sm: "size-11",
   md: "size-12",
+  lg: "size-14",
 };
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {

@@ -41,3 +41,6 @@ export type {
 
 export { ProgressSlider } from "./components/ProgressSlider/ProgressSlider.js";
 export type { ProgressSliderProps } from "./components/ProgressSlider/ProgressSlider.js";
+
+export { Card } from "./components/Card/Card.js";
+export type { CardProps } from "./components/Card/Card.js";

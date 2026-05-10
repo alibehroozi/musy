@@ -16,6 +16,7 @@ import { ExploreController } from "../../../apps/api/src/modules/explore/explore
 import { ExploreService } from "../../../apps/api/src/modules/explore/explore.service.js";
 import { SwipesRepository } from "../../../apps/api/src/modules/explore/explore.repository.js";
 import { ProfileBuilderService } from "../../../apps/api/src/modules/explore/profile-builder.service.js";
+import { QueueBuilderService } from "../../../apps/api/src/modules/explore/queue-builder.service.js";
 import { InterestScoresRepository } from "../../../apps/api/src/modules/search/interest-scores.repository.js";
 import { FakeUsersRepository } from "./test-app.js";
 import { FakeInterestScoresRepository } from "./search-events-test-app.js";
@@ -82,10 +83,47 @@ export class FakeProfileBuilderService {
   }
 }
 
+/**
+ * In-memory stand-in for QueueBuilderService. Tests that exercise the
+ * queue endpoints prime `queuesByUser` directly; tests that only care
+ * about swipe writes ignore it. `maybeRefillCalls` lets tests assert
+ * the refill trigger fired without spinning a real queue builder.
+ */
+export interface FakeQueueDoc {
+  items: SongSnapshot[];
+  phase: "discovery" | "artist-refinement" | "personalized";
+}
+
+export class FakeQueueBuilderService {
+  queuesByUser = new Map<string, FakeQueueDoc>();
+  maybeRefillCalls: string[] = [];
+  rebuildCalls: string[] = [];
+
+  async getNext(
+    userId: string,
+    count: number,
+  ): Promise<{ items: SongSnapshot[]; phase: FakeQueueDoc["phase"]; partial: boolean }> {
+    const safeCount = Math.max(1, Math.min(50, Math.floor(count)));
+    const queue = this.queuesByUser.get(userId);
+    if (!queue) return { items: [], phase: "discovery", partial: true };
+    const items = queue.items.slice(0, safeCount);
+    return { items, phase: queue.phase, partial: items.length < safeCount };
+  }
+
+  async maybeRefill(userId: string): Promise<void> {
+    this.maybeRefillCalls.push(userId);
+  }
+
+  async rebuildQueue(userId: string): Promise<void> {
+    this.rebuildCalls.push(userId);
+  }
+}
+
 const fakeUsersToken = Symbol.for("test:fake-users-repo-explore");
 const fakeSwipesRepoToken = Symbol.for("test:fake-swipes-repo");
 const fakeInterestRepoToken = Symbol.for("test:fake-interest-repo-explore");
 const fakeProfileBuilderToken = Symbol.for("test:fake-profile-builder");
+const fakeQueueBuilderToken = Symbol.for("test:fake-queue-builder");
 
 @Module({
   imports: [
@@ -145,6 +183,15 @@ const fakeProfileBuilderToken = Symbol.for("test:fake-profile-builder");
       useFactory: (fake: FakeProfileBuilderService) => fake as unknown as ProfileBuilderService,
       inject: [fakeProfileBuilderToken],
     },
+    {
+      provide: fakeQueueBuilderToken,
+      useFactory: () => new FakeQueueBuilderService(),
+    },
+    {
+      provide: QueueBuilderService,
+      useFactory: (fake: FakeQueueBuilderService) => fake as unknown as QueueBuilderService,
+      inject: [fakeQueueBuilderToken],
+    },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -156,6 +203,7 @@ export interface ExploreEventsTestAppHandle {
   swipesRepo: FakeSwipesRepository;
   interestRepo: FakeInterestScoresRepository;
   profileBuilder: FakeProfileBuilderService;
+  queueBuilder: FakeQueueBuilderService;
   authService: AuthService;
   env: typeof EXPLORE_EVENTS_TEST_ENV;
 }
@@ -171,12 +219,14 @@ export async function buildExploreEventsTestApp(): Promise<ExploreEventsTestAppH
   const swipesRepo = app.get<FakeSwipesRepository>(fakeSwipesRepoToken);
   const interestRepo = app.get<FakeInterestScoresRepository>(fakeInterestRepoToken);
   const profileBuilder = app.get<FakeProfileBuilderService>(fakeProfileBuilderToken);
+  const queueBuilder = app.get<FakeQueueBuilderService>(fakeQueueBuilderToken);
   const authService = app.get(AuthService);
   return {
     app,
     swipesRepo,
     interestRepo,
     profileBuilder,
+    queueBuilder,
     authService,
     env: EXPLORE_EVENTS_TEST_ENV,
   };

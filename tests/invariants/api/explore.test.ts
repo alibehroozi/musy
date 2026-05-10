@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-14, API-15.
+// Invariants verified here are listed in INVARIANTS.md under API-14, API-15, API-16.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -185,4 +185,13 @@ describe("API-15: GET /api/explore/profile contract — auth gating + TasteProfi
     expect(() => TasteProfile.parse(res.body)).not.toThrow();
     expect(res.body.userId).toBe(userId);
   });
+});
+
+describe("API-16: GET /api/explore/next contract — auth, NextResponse shape, count clamping, LLM degradation", () => {
+  it.todo("returns 401 + ErrorResponse without a session cookie");
+  it.todo("a fresh user gets phase='discovery' with up to 20 seed snapshots and partial=false");
+  it.todo("count defaults to 20 when omitted");
+  it.todo("count is clamped to a maximum of 50");
+  it.todo("count is clamped to at least 1");
+  it.todo("never 5xx-es when only the rerank LLM path fails — degrades to heuristic top-N");
 });

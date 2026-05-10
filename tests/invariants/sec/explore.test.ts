@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under SEC-09, SEC-10.
+// Invariants verified here are listed in INVARIANTS.md under SEC-09, SEC-10, SEC-11.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -135,4 +135,9 @@ describe("SEC-10: GET /api/explore/profile is owner-scoped — user A never sees
     expect(res.status).toBe(200);
     expect(res.body).toBeNull();
   });
+});
+
+describe("SEC-11: GET /api/explore/next is owner-scoped — user A never sees user B's queue items", () => {
+  it.todo("queue items returned for user A are scoped to A's queue, never B's");
+  it.todo("the queue read used to serve /next filters by the authenticated session's userId");
 });

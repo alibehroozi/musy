@@ -34,9 +34,9 @@ function makeMockDriver() {
 
 const TRACK: SongSnapshot = { title: "Get Lucky", artist: "Daft Punk", kind: "track" };
 
-// ─── LOGIC-07 ────────────────────────────────────────────────────────────────
+// ─── LOGIC-08 ────────────────────────────────────────────────────────────────
 
-describe("LOGIC-07: audio engine is a deterministic state machine testable with a mock driver", () => {
+describe("LOGIC-08: audio engine is a deterministic state machine testable with a mock driver", () => {
   let driver: AudioDriver;
   let emit: (event: string) => void;
   let engine: AudioEngine;
@@ -120,9 +120,9 @@ describe("LOGIC-07: audio engine is a deterministic state machine testable with 
   });
 });
 
-// ─── LOGIC-08 ────────────────────────────────────────────────────────────────
+// ─── LOGIC-09 ────────────────────────────────────────────────────────────────
 
-describe("LOGIC-08: resolveAndPlay validates ResolveResponse Zod schema and throws ZodError on shape mismatch", () => {
+describe("LOGIC-09: resolveAndPlay validates ResolveResponse Zod schema and throws ZodError on shape mismatch", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {

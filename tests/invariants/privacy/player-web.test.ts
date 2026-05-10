@@ -30,7 +30,7 @@ function makeMockDriver() {
   return { driver };
 }
 
-describe("PRIVACY-04: browser audio URL carries no user-identifier query parameters", () => {
+describe("PRIVACY-05: browser audio URL carries no user-identifier query parameters", () => {
   it("the audio engine sets src to the raw streamUrl without modification", () => {
     const { driver } = makeMockDriver();
     const engine = new AudioEngine(driver);

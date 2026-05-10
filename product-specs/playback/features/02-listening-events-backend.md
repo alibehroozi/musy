@@ -1,6 +1,7 @@
 ---
 epic: playback
-status: pending
+status: done
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/19
 estimated-invariants: 6
 ---
 

@@ -4,19 +4,36 @@ import {
   PLAY_RESOLUTIONS_MODEL,
   PlayResolutionsSchemaDefinition,
 } from "./play-resolutions.schema.js";
+import {
+  LISTENING_EVENTS_MODEL,
+  ListeningEventsSchemaDefinition,
+} from "./listening-events.schema.js";
 import { PlayRepository } from "./play.repository.js";
+import { ListeningEventsRepository } from "./listening-events.repository.js";
 import { PlayService } from "./play.service.js";
+import { PlayEventsService } from "./play-events.service.js";
 import { PlayController } from "./play.controller.js";
+import { PlayEventsController } from "./play-events.controller.js";
 import { AudiusStreamClient } from "./providers/audius-stream.client.js";
 import { SoundCloudStreamClient } from "./providers/soundcloud-stream.client.js";
+import { SearchModule } from "../search/search.module.js";
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: PLAY_RESOLUTIONS_MODEL, schema: PlayResolutionsSchemaDefinition },
+      { name: LISTENING_EVENTS_MODEL, schema: ListeningEventsSchemaDefinition },
     ]),
+    SearchModule,
   ],
-  controllers: [PlayController],
-  providers: [PlayService, PlayRepository, AudiusStreamClient, SoundCloudStreamClient],
+  controllers: [PlayController, PlayEventsController],
+  providers: [
+    PlayService,
+    PlayEventsService,
+    PlayRepository,
+    ListeningEventsRepository,
+    AudiusStreamClient,
+    SoundCloudStreamClient,
+  ],
 })
 export class PlayModule {}

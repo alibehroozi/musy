@@ -4,7 +4,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { APP_FILTER, APP_GUARD, NestFactory } from "@nestjs/core";
 import cookieParser from "cookie-parser";
-import type { SongSnapshot, SwipeDirection } from "@moc/contracts";
+import type { SongSnapshot, SwipeDirection, TasteProfile } from "@moc/contracts";
 
 import { AllExceptionsFilter } from "../../../apps/api/src/common/all-exceptions.filter.js";
 import { AuthGuard } from "../../../apps/api/src/common/auth.guard.js";
@@ -15,6 +15,7 @@ import { UsersService } from "../../../apps/api/src/modules/users/users.service.
 import { ExploreController } from "../../../apps/api/src/modules/explore/explore.controller.js";
 import { ExploreService } from "../../../apps/api/src/modules/explore/explore.service.js";
 import { SwipesRepository } from "../../../apps/api/src/modules/explore/explore.repository.js";
+import { ProfileBuilderService } from "../../../apps/api/src/modules/explore/profile-builder.service.js";
 import { InterestScoresRepository } from "../../../apps/api/src/modules/search/interest-scores.repository.js";
 import { FakeUsersRepository } from "./test-app.js";
 import { FakeInterestScoresRepository } from "./search-events-test-app.js";
@@ -63,9 +64,28 @@ export class FakeSwipesRepository {
   }
 }
 
+/**
+ * In-memory stand-in for ProfileBuilderService. The swipe invariant
+ * tests don't care whether builds run; the profile-read tests prime
+ * `profilesByUser` directly to assert SEC-10 and the API-15 shape.
+ */
+export class FakeProfileBuilderService {
+  profilesByUser = new Map<string, TasteProfile>();
+  maybeBuildCalls: string[] = [];
+
+  async maybeBuild(userId: string): Promise<void> {
+    this.maybeBuildCalls.push(userId);
+  }
+
+  async getProfile(userId: string): Promise<TasteProfile | null> {
+    return this.profilesByUser.get(userId) ?? null;
+  }
+}
+
 const fakeUsersToken = Symbol.for("test:fake-users-repo-explore");
 const fakeSwipesRepoToken = Symbol.for("test:fake-swipes-repo");
 const fakeInterestRepoToken = Symbol.for("test:fake-interest-repo-explore");
+const fakeProfileBuilderToken = Symbol.for("test:fake-profile-builder");
 
 @Module({
   imports: [
@@ -116,6 +136,15 @@ const fakeInterestRepoToken = Symbol.for("test:fake-interest-repo-explore");
         fake as unknown as InterestScoresRepository,
       inject: [fakeInterestRepoToken],
     },
+    {
+      provide: fakeProfileBuilderToken,
+      useFactory: () => new FakeProfileBuilderService(),
+    },
+    {
+      provide: ProfileBuilderService,
+      useFactory: (fake: FakeProfileBuilderService) => fake as unknown as ProfileBuilderService,
+      inject: [fakeProfileBuilderToken],
+    },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -126,6 +155,7 @@ export interface ExploreEventsTestAppHandle {
   app: INestApplication;
   swipesRepo: FakeSwipesRepository;
   interestRepo: FakeInterestScoresRepository;
+  profileBuilder: FakeProfileBuilderService;
   authService: AuthService;
   env: typeof EXPLORE_EVENTS_TEST_ENV;
 }
@@ -140,8 +170,16 @@ export async function buildExploreEventsTestApp(): Promise<ExploreEventsTestAppH
 
   const swipesRepo = app.get<FakeSwipesRepository>(fakeSwipesRepoToken);
   const interestRepo = app.get<FakeInterestScoresRepository>(fakeInterestRepoToken);
+  const profileBuilder = app.get<FakeProfileBuilderService>(fakeProfileBuilderToken);
   const authService = app.get(AuthService);
-  return { app, swipesRepo, interestRepo, authService, env: EXPLORE_EVENTS_TEST_ENV };
+  return {
+    app,
+    swipesRepo,
+    interestRepo,
+    profileBuilder,
+    authService,
+    env: EXPLORE_EVENTS_TEST_ENV,
+  };
 }
 
 export function makeSnapshot(overrides: Partial<SongSnapshot> = {}): SongSnapshot {

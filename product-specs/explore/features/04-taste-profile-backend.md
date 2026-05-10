@@ -1,7 +1,8 @@
 ---
 epic: explore
-status: pending
+status: done
 estimated-invariants: 7
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/25
 ---
 
 # Feature 04: Taste profile and Anthropic LLM scaffolding

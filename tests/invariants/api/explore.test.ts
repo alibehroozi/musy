@@ -1,10 +1,10 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-14.
+// Invariants verified here are listed in INVARIANTS.md under API-14, API-15.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
-import { ErrorResponse } from "@moc/contracts";
+import { ErrorResponse, TasteProfile } from "@moc/contracts";
 import {
   buildExploreEventsTestApp,
   makeSnapshot,
@@ -136,5 +136,53 @@ describe("API-14: POST /api/explore/swipe contract — auth, body validation, le
     const scores = await h.interestRepo.findScoresForUser(userId);
     expect(scores).toHaveLength(1);
     expect(scores[0]!.score).toBe(8);
+  });
+});
+
+describe("API-15: GET /api/explore/profile contract — auth gating + TasteProfileResponse shape", () => {
+  let h: ExploreEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  it("returns 401 + ErrorResponse without a session cookie", async () => {
+    h = await buildExploreEventsTestApp();
+    const res = await request(h.app.getHttpServer()).get("/api/explore/profile");
+    expect(res.status).toBe(401);
+    expect(() => ErrorResponse.parse(res.body)).not.toThrow();
+  });
+
+  it("returns 200 with body null for a user below the build threshold", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440600";
+    const token = h.authService.signSession({ uid: userId, gid: "g_profile_empty" });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/profile")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toBeNull();
+  });
+
+  it("returns 200 with a body matching TasteProfile when a profile has been built for the session user", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440601";
+    const token = h.authService.signSession({ uid: userId, gid: "g_profile_built" });
+    h.profileBuilder.profilesByUser.set(userId, {
+      userId,
+      genres: [{ name: "drum-and-bass", score: 0.92 }],
+      artists: [{ name: "Andy C", score: 0.88 }],
+      tempoBucket: "fast",
+      remixPreference: "remix-friendly",
+      summaryText: "you tend to like high-tempo dnb tracks",
+      lastBuiltAt: "2026-05-10T00:00:00.000Z",
+      swipeCountAtLastBuild: 20,
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/profile")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(() => TasteProfile.parse(res.body)).not.toThrow();
+    expect(res.body.userId).toBe(userId);
   });
 });

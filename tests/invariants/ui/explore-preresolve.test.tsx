@@ -354,23 +354,286 @@ describe("UI-21: pre-resolved URL failure recovery (retry once via /play/resolve
 });
 
 describe("UI-22: near-end-of-track refresh of the next-in-queue cached URL", () => {
-  // UI-22 wiring lands in the next commit; assertions go in with it.
-  it.todo(
-    "once playableHandoffDecision first flips true for the current track, POST /api/play/resolve fires for the next-in-queue snapshot",
-  );
-  it.todo(
-    "the refresh fires at most once per (currentSnapshot, nextSnapshot) pair — additional timeupdates within the same near-end window do not re-fire it",
-  );
-  it.todo(
-    "a refresh that returns a fresh URL replaces the existing cache entry for the next-in-queue snapshot",
-  );
-  it.todo(
-    "a refresh that returns streamUrl: null leaves the existing cache entry untouched (silent fallthrough to UI-21 on the next handoff)",
-  );
-  it.todo(
-    "a refresh whose /api/play/resolve fetch rejects does not interrupt the currently-playing track or alter queue order",
-  );
-  it.todo(
-    "swapping the top card (or the next-in-queue snapshot) resets the once-per-pair latch — a subsequent near-end fires a fresh refresh",
-  );
+  const originalFetch = globalThis.fetch;
+  let audioMock: MockAudio;
+  let origRaf: typeof requestAnimationFrame;
+
+  beforeEach(() => {
+    cleanup();
+    localStorage.setItem("moc.explore.onboarded", "1");
+    audioMock = installAudioMock();
+    origRaf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      return setTimeout(() => cb(performance.now() + 1_000), 0) as unknown as number;
+    }) as typeof requestAnimationFrame;
+  });
+
+  afterEach(() => {
+    cleanup();
+    localStorage.clear();
+    globalThis.fetch = originalFetch;
+    globalThis.requestAnimationFrame = origRaf;
+    vi.useRealTimers();
+  });
+
+  // Drives a "near-end-of-track" tick by setting the mock audio's currentTime
+  // and duration and firing timeupdate. The engine reads these via
+  // driver.getCurrentTime / getDuration in its _handleTimeUpdate, mirroring
+  // them into engineState.progressMs / durationMs.
+  function driveNearEndOfTrack(opts: { remainingMs: number; durationMs: number }): void {
+    (audioMock.audio as unknown as { currentTime: number; duration: number }).currentTime =
+      (opts.durationMs - opts.remainingMs) / 1000;
+    (audioMock.audio as unknown as { currentTime: number; duration: number }).duration =
+      opts.durationMs / 1000;
+    audioMock.fire("timeupdate");
+  }
+
+  it("once playableHandoffDecision first flips true for the current track, POST /api/play/resolve fires for the next-in-queue snapshot", async () => {
+    const KEY_B = snapshotKey(ITEM_B);
+    const { resolveCallCounts } = installFetchMock({
+      resolveScripts: {
+        [snapshotKey(ITEM_A)]: [{ streamUrl: "https://stream/A" }],
+        [KEY_B]: [{ streamUrl: "https://stream/B-old" }, { streamUrl: "https://stream/B-fresh" }],
+      },
+    });
+
+    renderAuthedApp();
+    await screen.findByText("Track A");
+    await waitFor(() => expect(resolveCallCounts[KEY_B] ?? 0).toBe(1));
+
+    // A reaches playing.
+    await act(async () => {
+      audioMock.fire("playing");
+    });
+
+    // Way before end-of-track — handoff predicate false → no refresh.
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 120_000, durationMs: 200_000 });
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(resolveCallCounts[KEY_B]).toBe(1);
+
+    // 4 s remaining < 5 s lookahead → handoff predicate flips → refresh fires.
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 4_000, durationMs: 200_000 });
+    });
+    await waitFor(() => expect(resolveCallCounts[KEY_B]).toBe(2));
+  });
+
+  it("the refresh fires at most once per (currentSnapshot, nextSnapshot) pair — additional timeupdates within the same near-end window do not re-fire it", async () => {
+    const KEY_B = snapshotKey(ITEM_B);
+    const { resolveCallCounts } = installFetchMock({
+      resolveScripts: {
+        [snapshotKey(ITEM_A)]: [{ streamUrl: "https://stream/A" }],
+        [KEY_B]: [{ streamUrl: "https://stream/B-old" }, { streamUrl: "https://stream/B-fresh" }],
+      },
+    });
+
+    renderAuthedApp();
+    await screen.findByText("Track A");
+    await waitFor(() => expect(resolveCallCounts[KEY_B] ?? 0).toBe(1));
+
+    await act(async () => {
+      audioMock.fire("playing");
+    });
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 4_000, durationMs: 200_000 });
+    });
+    await waitFor(() => expect(resolveCallCounts[KEY_B]).toBe(2));
+
+    // More timeupdates within the near-end window must not re-fire.
+    for (const remaining of [3_500, 3_000, 2_500, 2_000, 1_500]) {
+      await act(async () => {
+        driveNearEndOfTrack({ remainingMs: remaining, durationMs: 200_000 });
+      });
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    expect(resolveCallCounts[KEY_B]).toBe(2);
+  });
+
+  it("a refresh that returns a fresh URL replaces the existing cache entry for the next-in-queue snapshot", async () => {
+    const KEY_B = snapshotKey(ITEM_B);
+    const { resolveCallCounts } = installFetchMock({
+      resolveScripts: {
+        [snapshotKey(ITEM_A)]: [{ streamUrl: "https://stream/A" }],
+        [KEY_B]: [{ streamUrl: "https://stream/B-old" }, { streamUrl: "https://stream/B-fresh" }],
+      },
+    });
+
+    renderAuthedApp();
+    await screen.findByText("Track A");
+    await waitFor(() => expect(resolveCallCounts[KEY_B] ?? 0).toBe(1));
+
+    await act(async () => {
+      audioMock.fire("playing");
+    });
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 4_000, durationMs: 200_000 });
+    });
+    await waitFor(() => expect(resolveCallCounts[KEY_B]).toBe(2));
+
+    // Swipe to B. Cache should now contain the fresh URL, so loadPreview is
+    // called with B-fresh (not B-old).
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Like" }));
+    });
+    await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/B-fresh"));
+    expect(audioMock.srcHistory).not.toContain("https://stream/B-old");
+  });
+
+  it("a refresh that returns streamUrl: null leaves the existing cache entry untouched (silent fallthrough to UI-21 on the next handoff)", async () => {
+    const KEY_B = snapshotKey(ITEM_B);
+    const { resolveCallCounts } = installFetchMock({
+      resolveScripts: {
+        [snapshotKey(ITEM_A)]: [{ streamUrl: "https://stream/A" }],
+        [KEY_B]: [
+          { streamUrl: "https://stream/B-cached" },
+          { streamUrl: null },
+          // If UI-21 retry fires on the next handoff, this is the URL it gets.
+          { streamUrl: "https://stream/B-via-retry" },
+        ],
+      },
+    });
+
+    renderAuthedApp();
+    await screen.findByText("Track A");
+    await waitFor(() => expect(resolveCallCounts[KEY_B] ?? 0).toBe(1));
+
+    await act(async () => {
+      audioMock.fire("playing");
+    });
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 4_000, durationMs: 200_000 });
+    });
+    // Refresh fires and returns null → the existing cached URL is preserved.
+    await waitFor(() => expect(resolveCallCounts[KEY_B]).toBe(2));
+
+    // Swipe to B → cache still has B-cached → loadPreview uses it.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Like" }));
+    });
+    await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/B-cached"));
+  });
+
+  it("a refresh whose /api/play/resolve fetch rejects does not interrupt the currently-playing track or alter queue order", async () => {
+    const KEY_B = snapshotKey(ITEM_B);
+    let resolveCallCount = 0;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/explore/next"))
+        return new Response(JSON.stringify(exploreNextResponse([ITEM_A, ITEM_B])), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.includes("/api/explore/profile"))
+        return new Response(JSON.stringify(null), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      if (url.includes("/api/explore/swipe")) return new Response(null, { status: 204 });
+      if (url.includes("/api/play/resolve")) {
+        const body = init?.body !== undefined ? JSON.parse(String(init.body)) : null;
+        const key = body?.snapshot ? snapshotKey(body.snapshot) : "";
+        if (key === KEY_B) {
+          resolveCallCount++;
+          if (resolveCallCount === 2) throw new Error("network down");
+          return new Response(
+            JSON.stringify({
+              source: "soundcloud",
+              sourceTrackId: "sc-1",
+              streamUrl: "https://stream/B-cached",
+              expiresAt: new Date(Date.now() + 55 * 60_000).toISOString(),
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            source: "soundcloud",
+            sourceTrackId: "sc-1",
+            streamUrl: "https://stream/A",
+            expiresAt: new Date(Date.now() + 55 * 60_000).toISOString(),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/search/history"))
+        return new Response(JSON.stringify({ entries: [], nextCursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      return new Response("", { status: 404 });
+    }) as unknown as typeof globalThis.fetch;
+
+    renderAuthedApp();
+    await screen.findByText("Track A");
+    await waitFor(() => expect(resolveCallCount).toBe(1));
+
+    await act(async () => {
+      audioMock.fire("playing");
+    });
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 4_000, durationMs: 200_000 });
+    });
+
+    // Refresh fetch rejects — engine state must not change. Wait for the
+    // rejection to be processed, then assert status is still "playing"
+    // and Track A is still rendered as top.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(audioMock.srcHistory[audioMock.srcHistory.length - 1]).toBe("https://stream/A");
+    // Top card unchanged — A still at index 0.
+    expect(screen.getByText("Track A")).toBeInTheDocument();
+  });
+
+  it("swapping the top card (or the next-in-queue snapshot) resets the once-per-pair latch — a subsequent near-end fires a fresh refresh", async () => {
+    const ITEM_C = {
+      title: "Track C",
+      artist: "Artist C",
+      durationSec: 220,
+      kind: "track" as const,
+    };
+    const KEY_B = snapshotKey(ITEM_B);
+    const KEY_C = snapshotKey(ITEM_C);
+    const { resolveCallCounts } = installFetchMock({
+      next: exploreNextResponse([ITEM_A, ITEM_B, ITEM_C]),
+      resolveScripts: {
+        [snapshotKey(ITEM_A)]: [{ streamUrl: "https://stream/A" }],
+        [KEY_B]: [{ streamUrl: "https://stream/B-1" }, { streamUrl: "https://stream/B-2" }],
+        [KEY_C]: [{ streamUrl: "https://stream/C-1" }, { streamUrl: "https://stream/C-2" }],
+      },
+    });
+
+    renderAuthedApp();
+    await screen.findByText("Track A");
+    // Pre-resolve fires for both B and C (PRE_RESOLVE_AHEAD=5).
+    await waitFor(() => {
+      expect(resolveCallCounts[KEY_B] ?? 0).toBe(1);
+      expect(resolveCallCounts[KEY_C] ?? 0).toBe(1);
+    });
+
+    // Phase 1 — A is top, B is next. Near-end fires refresh on B.
+    await act(async () => {
+      audioMock.fire("playing");
+    });
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 4_000, durationMs: 200_000 });
+    });
+    await waitFor(() => expect(resolveCallCounts[KEY_B]).toBe(2));
+
+    // Swipe → B is top, C is next. (A,B) latched; (B,C) is new.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Like" }));
+    });
+    // Wait for B's loadPreview to settle.
+    await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/B-2"));
+    await act(async () => {
+      audioMock.fire("playing");
+    });
+
+    // Near-end on B fires a refresh on C (new pair).
+    await act(async () => {
+      driveNearEndOfTrack({ remainingMs: 4_000, durationMs: 210_000 });
+    });
+    await waitFor(() => expect(resolveCallCounts[KEY_C]).toBe(2));
+  });
 });

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
-import { snapshotsMatch } from "@moc/web-core";
+import { snapshotsMatch, playableHandoffDecision } from "@moc/web-core";
 import type { SongSnapshot } from "@moc/contracts";
 import { usePlayer } from "../../player/usePlayer.js";
 import { useExploreTopCard } from "../ExploreTopCardContext.js";
 import { resolveStream } from "../../player/api.js";
 
 const PRE_RESOLVE_AHEAD = 5;
+const HANDOFF_LOOKAHEAD_MS = 5_000;
 
 /**
  * Wires the top card's snapshot into the existing PlayerProvider's
@@ -23,6 +24,7 @@ const PRE_RESOLVE_AHEAD = 5;
  */
 export function useTopCardPreview(items: SongSnapshot[]): void {
   const top = items[0] ?? null;
+  const next = items[1] ?? null;
   const { playPreview, loadPreview, engineState } = usePlayer();
   const { setTopCard } = useExploreTopCard();
 
@@ -130,6 +132,50 @@ export function useTopCardPreview(items: SongSnapshot[]): void {
     }
     retriedKeysRef.current.add(snapshotKey(current));
   }, [engineState.status, engineState.currentTrack]);
+
+  // UI-22: once the current track is within HANDOFF_LOOKAHEAD_MS of its
+  // duration (LOGIC-23 flips true), refresh the next-in-queue's cached
+  // URL via /play/resolve. Latched per (current, next) pair: any change
+  // to either snapshot resets the latch so a subsequent near-end fires a
+  // fresh refresh. Failures are silently swallowed — UI-21 catches the
+  // fallthrough if the still-stale URL is then played.
+  const refreshedPairsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (engineState.status !== "playing") return;
+    const current = engineState.currentTrack?.snapshot;
+    if (!current || !next) return;
+    // During the swipe-transition window (engine.currentTrack still points
+    // at the previous top, queue has already advanced) the refresh decision
+    // for the just-leaving pair is stale — guard against firing a redundant
+    // refresh on the wrong (current → next) edge.
+    if (!snapshotsMatch(current, top)) return;
+    const flip = playableHandoffDecision({
+      progressMs: engineState.progressMs,
+      durationMs: engineState.durationMs,
+      lookaheadMs: HANDOFF_LOOKAHEAD_MS,
+    });
+    if (!flip) return;
+    const pairKey = `${snapshotKey(current)}→${snapshotKey(next)}`;
+    if (refreshedPairsRef.current.has(pairKey)) return;
+    refreshedPairsRef.current.add(pairKey);
+
+    const nextKey = snapshotKey(next);
+    void resolveStream({ snapshot: next })
+      .then((res) => {
+        if (res.streamUrl === null) return;
+        resolveCache.current.set(nextKey, res.streamUrl);
+      })
+      .catch(() => {
+        // Silent — UI-21 catches any 403 on the actual handoff.
+      });
+  }, [
+    top,
+    next,
+    engineState.status,
+    engineState.currentTrack,
+    engineState.progressMs,
+    engineState.durationMs,
+  ]);
 }
 
 function snapshotKey(s: SongSnapshot): string {

@@ -4,7 +4,7 @@ import { Icon } from "./Icon.js";
 
 describe("Icon", () => {
   it("renders an svg for each supported icon name", () => {
-    const names = ["clock", "compass", "heart", "search", "google-brand"] as const;
+    const names = ["clock", "compass", "heart", "search", "thumbs-down", "google-brand"] as const;
     for (const name of names) {
       const { container } = render(<Icon name={name} />);
       expect(container.querySelector("svg")).not.toBeNull();

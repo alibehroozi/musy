@@ -3,11 +3,12 @@
 // If a test fails, fix the source code, not the test.
 //
 // Invariants verified here are listed in INVARIANTS.md under:
-//   UI-24 — auto-skip suspended while UI-21 retry is in flight
 //   UI-25 — UI-21 retry's loadPreview gated on top-card stability
 //   UI-26 — engine.currentTrack + mediaSession metadata preserved on empty deck
 //   UI-27 — cover-art <img> error → token-driven placeholder
 //   UI-28 — transient fetchNext error during poll does not clear buildingQueue
+//   UI-30 — deck never advances when engine enters "failed" — only user swipes
+//           remove cards from /explore
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, fireEvent, act } from "@testing-library/react";
@@ -323,7 +324,7 @@ describe("UI-25: UI-21 retry's loadPreview is gated on top-card stability", () =
   });
 });
 
-describe("UI-24: 5-s auto-skip is suspended while a UI-21 retry is in flight", () => {
+describe("UI-30: deck never advances on engine failure — only user swipes remove cards", () => {
   const originalFetch = globalThis.fetch;
   let audioMock: MockAudio;
   let origRaf: typeof requestAnimationFrame;
@@ -333,72 +334,114 @@ describe("UI-24: 5-s auto-skip is suspended while a UI-21 retry is in flight", (
   });
   afterEach(() => commonAfterEach(origRaf, originalFetch));
 
-  it("while the retry's POST /api/play/resolve is pending, 6+ seconds may elapse without the failed card being swiped away (Track B stays on the deck)", async () => {
+  it("when the initial card is loaded via playPreview (resolve→engine.load path) and the engine errors before reaching 'playing', the FE re-issues POST /api/play/resolve once and re-attempts load — the deck does NOT advance", async () => {
+    // ITEM_A is the very first card; it's loaded via playPreview (not the
+    // pre-resolved-URL fast path), so the original UI-21 retry was gated
+    // out by `loadedViaCacheRef`. UI-21 (broadened) must now retry here.
     const KEY_A = snapshotKey(ITEM_A);
-    const KEY_B = snapshotKey(ITEM_B);
-    const KEY_C = snapshotKey(ITEM_C);
     const installed = installFetchMock({
-      next: nextResponse([ITEM_A, ITEM_B, ITEM_C]),
+      next: nextResponse([ITEM_A, ITEM_B]),
       resolveScripts: {
-        [KEY_A]: [{ streamUrl: "https://stream/A" }],
-        [KEY_B]: [
-          { streamUrl: "https://stream/B-stale" },
-          { streamUrl: "https://stream/B-retry-fresh" },
-        ],
-        [KEY_C]: [{ streamUrl: "https://stream/C" }],
+        [KEY_A]: [{ streamUrl: "https://stream/A-stale" }, { streamUrl: "https://stream/A-fresh" }],
+        [snapshotKey(ITEM_B)]: [{ streamUrl: "https://stream/B" }],
       },
-      deferResolveForKey: KEY_B,
     });
 
     renderAuthedApp();
     await screen.findByText("Track A");
-    await waitFor(() => {
-      expect(installed.resolveCallCounts[KEY_B] ?? 0).toBe(1);
+
+    // A becomes top via playPreview — wait for the resolve and audio.src.
+    await waitFor(() => expect(installed.resolveCallCounts[KEY_A] ?? 0).toBe(1));
+    await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/A-stale"));
+
+    // The stream 403s in the browser before "playing" fires.
+    await act(async () => {
+      audioMock.fire("error");
     });
+
+    // Broadened UI-21 retry must fire — second /play/resolve call for A.
+    await waitFor(() => expect(installed.resolveCallCounts[KEY_A]).toBe(2));
+    // The fresh URL is loaded onto audio.src.
+    await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/A-fresh"));
+
+    // The deck has NOT advanced — Track A is still on top, Track B has not
+    // been loaded.
+    expect(audioMock.srcHistory).not.toContain("https://stream/B");
+    expect(screen.queryByText("Track A")).toBeInTheDocument();
+  });
+
+  it("after the UI-21 retry terminally fails (streamUrl: null), 10+ seconds may elapse and the card MUST remain on the deck — no auto-skip", async () => {
+    const KEY_A = snapshotKey(ITEM_A);
+    const KEY_B = snapshotKey(ITEM_B);
+    const installed = installFetchMock({
+      next: nextResponse([ITEM_A, ITEM_B, ITEM_C]),
+      resolveScripts: {
+        [KEY_A]: [{ streamUrl: "https://stream/A" }],
+        // First call (pre-resolve) returns stale, retry returns null —
+        // i.e. the song is genuinely unavailable. The old behavior fired
+        // a 5-second auto-skip after this; UI-30 says it must not.
+        [KEY_B]: [{ streamUrl: "https://stream/B-stale" }, { streamUrl: null }],
+        [snapshotKey(ITEM_C)]: [{ streamUrl: "https://stream/C" }],
+      },
+    });
+
+    renderAuthedApp();
+    await screen.findByText("Track A");
+    await waitFor(() => expect(installed.resolveCallCounts[KEY_B] ?? 0).toBe(1));
     await act(async () => {
       audioMock.fire("playing");
     });
 
-    // Like → B is top (cache load).
+    // Like → B is top (cache fast-path load with stale URL).
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Like" }));
     });
     await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/B-stale"));
 
-    // B fires error → retry fires (deferred).
+    // B 403s → retry fires → retry returns null. Engine stays in "failed".
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await act(async () => {
       audioMock.fire("error");
     });
     await waitFor(() => expect(installed.resolveCallCounts[KEY_B]).toBe(2));
 
-    // 6 seconds elapse — UI-24 says the auto-skip must be suspended.
+    // Count swipe calls baseline (the earlier "Like" was 1).
+    const swipeCallsBefore = installed.fetch.mock.calls.filter((c) =>
+      String(c[0]).includes("/api/explore/swipe"),
+    ).length;
+
+    // 10 seconds elapse — well past the deleted 5-s auto-skip threshold.
     await act(async () => {
-      vi.advanceTimersByTime(6_000);
+      vi.advanceTimersByTime(10_000);
     });
 
-    // B is still on the deck (auto-skip did NOT fire), so we have NOT
-    // advanced to C.
-    expect(audioMock.srcHistory).not.toContain("https://stream/C");
-    // The DOM still shows Track B (not Track C).
+    // Track B is still on the deck — auto-skip did NOT fire.
     expect(screen.queryByText("Track B")).toBeInTheDocument();
     expect(screen.queryByText("Track C")).not.toBeInTheDocument();
+    // C's URL was never loaded — the deck did not advance.
+    expect(audioMock.srcHistory).not.toContain("https://stream/C");
+    // No new /api/explore/swipe POSTs were issued by the FE.
+    const swipeCallsAfter = installed.fetch.mock.calls.filter((c) =>
+      String(c[0]).includes("/api/explore/swipe"),
+    ).length;
+    expect(swipeCallsAfter).toBe(swipeCallsBefore);
 
     vi.useRealTimers();
   });
 
-  it("once the retry terminally fails (streamUrl: null), the auto-skip timer is then scheduled and fires after 5 s", async () => {
+  it("after the retry's load ALSO errors (the second attempt itself 403s), 10+ seconds may elapse and the card MUST remain on the deck — no auto-skip", async () => {
     const KEY_A = snapshotKey(ITEM_A);
     const KEY_B = snapshotKey(ITEM_B);
-    const KEY_C = snapshotKey(ITEM_C);
     const installed = installFetchMock({
       next: nextResponse([ITEM_A, ITEM_B, ITEM_C]),
       resolveScripts: {
         [KEY_A]: [{ streamUrl: "https://stream/A" }],
-        [KEY_B]: [{ streamUrl: "https://stream/B-stale" }, { streamUrl: null }],
-        [KEY_C]: [{ streamUrl: "https://stream/C" }],
+        [KEY_B]: [
+          { streamUrl: "https://stream/B-stale" },
+          { streamUrl: "https://stream/B-also-stale" },
+        ],
+        [snapshotKey(ITEM_C)]: [{ streamUrl: "https://stream/C" }],
       },
-      deferResolveForKey: KEY_B,
     });
 
     renderAuthedApp();
@@ -413,27 +456,32 @@ describe("UI-24: 5-s auto-skip is suspended while a UI-21 retry is in flight", (
     await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/B-stale"));
 
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    // First error → retry fires, loads the second URL.
     await act(async () => {
       audioMock.fire("error");
     });
-    await waitFor(() => expect(installed.resolveCallCounts[KEY_B]).toBe(2));
+    await waitFor(() => expect(audioMock.srcHistory).toContain("https://stream/B-also-stale"));
 
-    // Release the retry with streamUrl: null (terminal failure).
-    installed.releaseDeferred();
-    // Give microtasks a chance to run.
+    // Second error → retry latch holds (no third resolve), engine stays
+    // in "failed". UI-30 says the card MUST stay.
     await act(async () => {
-      vi.advanceTimersByTime(0);
+      audioMock.fire("error");
     });
 
-    // Now the auto-skip timer should be armed. Advance 5 s — swipe fires.
+    const swipeCallsBefore = installed.fetch.mock.calls.filter((c) =>
+      String(c[0]).includes("/api/explore/swipe"),
+    ).length;
+
     await act(async () => {
-      vi.advanceTimersByTime(5_500);
+      vi.advanceTimersByTime(10_000);
     });
 
-    // After auto-skip, C should now be the top → C's URL loaded.
-    await waitFor(() => {
-      expect(audioMock.srcHistory).toContain("https://stream/C");
-    });
+    expect(screen.queryByText("Track B")).toBeInTheDocument();
+    expect(audioMock.srcHistory).not.toContain("https://stream/C");
+    const swipeCallsAfter = installed.fetch.mock.calls.filter((c) =>
+      String(c[0]).includes("/api/explore/swipe"),
+    ).length;
+    expect(swipeCallsAfter).toBe(swipeCallsBefore);
 
     vi.useRealTimers();
   });
@@ -524,9 +572,7 @@ describe("UI-27: cover-art <img> error falls back to placeholder", () => {
       fireEvent.error(img!);
     });
 
-    const topWrapperAfter = document.querySelector(
-      '[data-explore-position="top"]',
-    ) as HTMLElement;
+    const topWrapperAfter = document.querySelector('[data-explore-position="top"]') as HTMLElement;
     const artworkAfter = topWrapperAfter.querySelector(
       '[data-testid="explore-artwork"]',
     ) as HTMLElement;

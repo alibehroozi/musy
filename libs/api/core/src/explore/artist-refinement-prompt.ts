@@ -12,11 +12,11 @@ export const ARTIST_REFINEMENT_PICKS_TARGET = 20;
 // profile artists × top-5 SoundCloud hits each the pool is well under
 // 100 in practice; this is a defense-in-depth cap so a misbehaving
 // caller can't blow the context window.
-export const MAX_CANDIDATE_POOL = 100;
+export const ARTIST_REFINEMENT_MAX_CANDIDATE_POOL = 100;
 
 // Truncate the profile-summary text to a hard byte cap so a long
 // upstream summary never blows past the model context window.
-export const MAX_PROFILE_SUMMARY_BYTES = 4 * 1024;
+export const ARTIST_REFINEMENT_MAX_PROFILE_SUMMARY_BYTES = 4 * 1024;
 
 // One projected candidate from the upstream search provider.
 export interface ArtistRefinementPromptCandidate {
@@ -82,9 +82,10 @@ function projectProfile(profile: TasteProfile): ProjectedProfile {
 }
 
 function truncateSummary(summary: string): string {
-  if (Buffer.byteLength(summary, "utf8") <= MAX_PROFILE_SUMMARY_BYTES) return summary;
+  if (Buffer.byteLength(summary, "utf8") <= ARTIST_REFINEMENT_MAX_PROFILE_SUMMARY_BYTES)
+    return summary;
   let s = summary;
-  while (Buffer.byteLength(s, "utf8") > MAX_PROFILE_SUMMARY_BYTES) {
+  while (Buffer.byteLength(s, "utf8") > ARTIST_REFINEMENT_MAX_PROFILE_SUMMARY_BYTES) {
     s = s.slice(0, -1);
   }
   return s;
@@ -98,13 +99,15 @@ function truncateSummary(summary: string): string {
  * from a stable key.
  *
  * Truncations:
- *   - candidatePool slice to MAX_CANDIDATE_POOL (caller order preserved).
- *   - profile.summaryText truncate to MAX_PROFILE_SUMMARY_BYTES.
+ *   - candidatePool slice to ARTIST_REFINEMENT_MAX_CANDIDATE_POOL (caller order preserved).
+ *   - profile.summaryText truncate to ARTIST_REFINEMENT_MAX_PROFILE_SUMMARY_BYTES.
  */
 export function buildArtistRefinementPrompt(
   input: BuildArtistRefinementPromptInput,
 ): BuildArtistRefinementPromptOutput {
-  const candidatePool = input.candidatePool.slice(0, MAX_CANDIDATE_POOL).map(projectCandidate);
+  const candidatePool = input.candidatePool
+    .slice(0, ARTIST_REFINEMENT_MAX_CANDIDATE_POOL)
+    .map(projectCandidate);
   const profile = projectProfile(input.profile);
 
   const userPayload = { profile, candidatePool };

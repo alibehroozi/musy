@@ -56,6 +56,10 @@ export function ExplorePage(): JSX.Element {
     return () => clearTimeout(t);
   }, [engineState.status, items.length, swipe]);
 
+  if (authState.status === "loading") {
+    return <main className="flex flex-col h-full" />;
+  }
+
   if (authState.status !== "authenticated") {
     return (
       <main className="flex flex-col h-full items-center justify-center p-6 text-center gap-4">

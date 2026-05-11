@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-14, API-15, API-16, API-17.
+// Invariants verified here are listed in INVARIANTS.md under API-14, API-15, API-16, API-17, API-20.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -348,5 +348,58 @@ describe("API-17: GET /api/explore/next returns only items with a non-empty cove
     expect(res.status).toBe(200);
     expect(() => NextResponse.parse(res.body)).not.toThrow();
     expect(res.body.items).toEqual([]);
+  });
+});
+
+describe("API-20: GET /api/explore/next response carries buildingQueue: boolean", () => {
+  let h: ExploreEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  it("returns buildingQueue: false when no rebuild is in flight (steady state)", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440b01";
+    const token = h.authService.signSession({ uid: userId, gid: "g_building_false" });
+    // Primed queue + no in-flight rebuild → buildingQueue should be false.
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: [makeSnapshot({ title: "T", artist: "A" })],
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("buildingQueue");
+    expect(res.body.buildingQueue).toBe(false);
+    // Field must also be present in the schema-parsed shape (not just an
+    // extra/stripped property on the wire).
+    const parsed = NextResponse.parse(res.body);
+    expect(parsed.buildingQueue).toBe(false);
+  });
+
+  it("returns buildingQueue: true when a rebuild has been triggered for this user", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440b02";
+    const token = h.authService.signSession({ uid: userId, gid: "g_building_true" });
+    // Simulate "rebuild in flight" via the fake's flag — the real service
+    // will hold a Map<userId, Promise>; the fake mirrors the read surface.
+    // `inFlightUserIds` is added to the fake in commit 4 alongside the real
+    // QueueBuilderService change. Cast keeps this test compilable in the
+    // intermediate red state.
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: [],
+      phase: "discovery",
+    });
+    (h.queueBuilder as unknown as { inFlightUserIds: Set<string> }).inFlightUserIds = new Set([
+      userId,
+    ]);
+
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.buildingQueue).toBe(true);
   });
 });

@@ -41,7 +41,7 @@ export const TasteProfile = z.object({
   artists: z.array(RankedItem),
   tempoBucket: TempoBucket.nullable(),
   remixPreference: RemixPreference.nullable(),
-  summaryText: z.string().max(500),
+  summaryText: z.string(),
   lastBuiltAt: z.string().datetime(),
   swipeCountAtLastBuild: z.number().int().nonnegative(),
 });
@@ -59,7 +59,7 @@ export const TasteProfileLLMOutput = z.object({
   artists: z.array(RankedItem),
   tempoBucket: TempoBucket.nullable(),
   remixPreference: RemixPreference.nullable(),
-  summaryText: z.string().max(500),
+  summaryText: z.string(),
 });
 export type TasteProfileLLMOutput = z.infer<typeof TasteProfileLLMOutput>;
 

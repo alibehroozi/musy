@@ -45,6 +45,13 @@ export function ExplorePage(): JSX.Element {
   const onLike = useCallback(() => swipe("right"), [swipe]);
   const onPass = useCallback(() => swipe("left"), [swipe]);
 
+  // Wire OS media-session next/prev to like/pass while Explore is mounted.
+  const { registerMediaOverrides } = usePlayer();
+  useEffect(() => {
+    const cleanup = registerMediaOverrides({ onNext: onLike, onPrev: onPass });
+    return cleanup;
+  }, [registerMediaOverrides, onLike, onPass]);
+
   // Auto-skip when the preview is unresolvable (provider 404). Per spec:
   // 5 s → next card; no swipe event written.
   useEffect(() => {

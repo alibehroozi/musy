@@ -120,6 +120,7 @@ function SwipeCard({
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.7}
       style={{ x, rotate }}
+      initial={{ scale: 0.94, y: 10, opacity: 0.55 }}
       animate={
         exitDirection === "right"
           ? { x: 600, opacity: 0 }

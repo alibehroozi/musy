@@ -5,15 +5,16 @@ interface UseMediaSessionArgs {
   snapshot: SongSnapshot | null;
   isPlaying: boolean;
   onPlayPause: () => void;
-  onSkipBack: () => void;
+  /** Handler for the OS "previous track" button. Pass null to hide the button. */
+  onPrev: (() => void) | null;
+  /** Handler for the OS "next track" button. Pass null to hide the button. */
+  onNext: (() => void) | null;
 }
 
 /**
  * Wires `navigator.mediaSession` so the OS-level lock-screen / notification
- * card reflects the current track and routes its play/pause/skip-prev
- * controls back into the player. Skip-next is intentionally unset for v1
- * (no queue) — leaving the action handler unset hides the button on the
- * lock screen.
+ * card reflects the current track and routes its play/pause/skip controls
+ * back into the player. When onNext/onPrev are null the OS hides the button.
  *
  * No-op when the API is unavailable (older Safari, jsdom) so the player
  * still mounts cleanly. PWA-02 verifies both branches.
@@ -22,7 +23,8 @@ export function useMediaSession({
   snapshot,
   isPlaying,
   onPlayPause,
-  onSkipBack,
+  onPrev,
+  onNext,
 }: UseMediaSessionArgs): void {
   useEffect(() => {
     if (typeof navigator === "undefined") return;
@@ -47,12 +49,13 @@ export function useMediaSession({
 
     ms.setActionHandler("play", () => onPlayPause());
     ms.setActionHandler("pause", () => onPlayPause());
-    ms.setActionHandler("previoustrack", () => onSkipBack());
+    ms.setActionHandler("previoustrack", onPrev !== null ? () => onPrev() : null);
+    ms.setActionHandler("nexttrack", onNext !== null ? () => onNext() : null);
 
     try {
       ms.playbackState = isPlaying ? "playing" : "paused";
     } catch {
       // Older browsers don't support playbackState; ignore.
     }
-  }, [snapshot, isPlaying, onPlayPause, onSkipBack]);
+  }, [snapshot, isPlaying, onPlayPause, onPrev, onNext]);
 }

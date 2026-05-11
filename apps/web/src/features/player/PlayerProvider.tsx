@@ -42,6 +42,17 @@ export interface PlayerContextValue {
   seek: (positionMs: number) => void;
   /** Skip-back in v1: rewind to 0 (no queue). */
   skipBack: () => void;
+  /**
+   * Register handlers for the OS media-session "next" and "prev" buttons.
+   * While registered, these override the default player behaviour (prev = rewind).
+   * Returns a cleanup function that restores the defaults — call it in useEffect.
+   *
+   * Designed for the Explore page: next = like, prev = pass.
+   */
+  registerMediaOverrides: (handlers: {
+    onNext: (() => void) | null;
+    onPrev: (() => void) | null;
+  }) => () => void;
   expand: () => void;
   collapse: () => void;
   dismissFailed: () => void;
@@ -65,6 +76,7 @@ const NOOP_CONTEXT: PlayerContextValue = {
   togglePlay: () => {},
   seek: () => {},
   skipBack: () => {},
+  registerMediaOverrides: () => () => {},
   expand: () => {},
   collapse: () => {},
   dismissFailed: () => {},
@@ -97,6 +109,10 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   } | null>(null);
   const [failedTitle, setFailedTitle] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [mediaOverrides, setMediaOverrides] = useState<{
+    onNext: (() => void) | null;
+    onPrev: (() => void) | null;
+  }>({ onNext: null, onPrev: null });
 
   // Initialize the audio element and engine once.
   useEffect(() => {
@@ -331,6 +347,16 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     setIsExpanded(false);
   }, []);
 
+  const registerMediaOverrides = useCallback(
+    (handlers: { onNext: (() => void) | null; onPrev: (() => void) | null }) => {
+      setMediaOverrides(handlers);
+      return () => {
+        setMediaOverrides({ onNext: null, onPrev: null });
+      };
+    },
+    [],
+  );
+
   // Push a history entry on expand so the browser back-button collapses
   // the overlay instead of navigating the underlying route. Pop the entry
   // when collapsing programmatically (chevron-down) so history stays clean.
@@ -386,7 +412,8 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     snapshot: currentSnapshot,
     isPlaying,
     onPlayPause: togglePlay,
-    onSkipBack: skipBack,
+    onPrev: mediaOverrides.onPrev ?? skipBack,
+    onNext: mediaOverrides.onNext,
   });
 
   const value = useMemo<PlayerContextValue>(
@@ -401,6 +428,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       togglePlay,
       seek,
       skipBack,
+      registerMediaOverrides,
       expand,
       collapse,
       dismissFailed,
@@ -416,6 +444,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       togglePlay,
       seek,
       skipBack,
+      registerMediaOverrides,
       expand,
       collapse,
       dismissFailed,

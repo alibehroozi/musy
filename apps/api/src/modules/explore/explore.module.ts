@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { MongooseModule } from "@nestjs/mongoose";
 import Anthropic from "@anthropic-ai/sdk";
+import { anthropicAuthOptionsFor } from "@moc/api-core";
 import { SWIPES_MODEL, SwipesSchemaDefinition } from "./explore.schema.js";
 import { TASTE_PROFILES_MODEL, TasteProfilesSchemaDefinition } from "./taste-profile.schema.js";
 import { EXPLORE_QUEUE_MODEL, ExploreQueueSchemaDefinition } from "./explore-queue.schema.js";
@@ -39,7 +40,7 @@ import { PlayModule } from "../play/play.module.js";
       provide: ANTHROPIC_SDK_TOKEN,
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
-        new Anthropic({ apiKey: config.getOrThrow<string>("ANTHROPIC_API_KEY") }),
+        new Anthropic(anthropicAuthOptionsFor(config.get<string>("ANTHROPIC_API_KEY"))),
     },
   ],
 })

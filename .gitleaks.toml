@@ -32,4 +32,7 @@ paths = [
   '''\.gitleaks\.toml$''',
   '''AGENTS\.md$''',
   '''INVARIANTS\.md$''',
+  # AI-06 / AI-07 invariants assert routing/validation against Anthropic
+  # credential shapes; the fixtures are deliberately placeholder.
+  '''tests/invariants/ai/anthropic-client\.test\.ts$''',
 ]

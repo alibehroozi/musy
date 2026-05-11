@@ -31,6 +31,12 @@ export interface PlayerContextValue {
    * swipe verdict is the signal, not the listen.
    */
   playPreview: (snapshot: SongSnapshot) => void;
+  /**
+   * Load a snapshot directly from a pre-resolved stream URL, bypassing the
+   * /play/resolve HTTP call. Same no-recording contract as playPreview.
+   * Fades out the current audio before loading the new track.
+   */
+  loadPreview: (snapshot: SongSnapshot, streamUrl: string) => void;
   togglePlay: () => void;
   /** Seek to an absolute position in milliseconds. */
   seek: (positionMs: number) => void;
@@ -55,6 +61,7 @@ const NOOP_CONTEXT: PlayerContextValue = {
   isExpanded: false,
   playSnapshot: () => {},
   playPreview: () => {},
+  loadPreview: () => {},
   togglePlay: () => {},
   seek: () => {},
   skipBack: () => {},
@@ -71,9 +78,11 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const engineRef = useRef<AudioEngine | null>(null);
   const hlsRef = useRef<Hls | null>(null);
-  // Each playPreview call increments this; the resolve callback checks it
-  // so stale resolves (from a card the user already swiped past) never load.
+  // Each playPreview/loadPreview call increments this; resolve callbacks
+  // check it so stale results from swiped-past cards are discarded.
   const previewGenRef = useRef(0);
+  // requestAnimationFrame handle for the volume-fade animation.
+  const fadeRafRef = useRef<number | null>(null);
   const { state: authState } = useAuth();
 
   const [engineState, setEngineState] = useState<EngineState>({
@@ -133,6 +142,10 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
 
     return () => {
       offState();
+      if (fadeRafRef.current !== null) {
+        cancelAnimationFrame(fadeRafRef.current);
+        fadeRafRef.current = null;
+      }
       audio.pause();
       audio.src = "";
       hlsRef.current?.destroy();
@@ -186,38 +199,99 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     [isAuthed],
   );
 
-  const playPreview = useCallback((snapshot: SongSnapshot) => {
-    const engine = engineRef.current;
-    if (!engine) return;
-
-    // Stamp this resolve request so we can discard results from earlier calls
-    // if the user swipes to the next card before the current one finishes resolving.
-    const gen = ++previewGenRef.current;
-
-    setCurrentSource(null);
-    setFailedTitle(null);
-    setEngineState((prev) => ({
-      ...prev,
-      status: "loading",
-      currentTrack: { snapshot, streamUrl: "" },
-    }));
-
-    resolveStream({ snapshot })
-      .then((result) => {
-        if (previewGenRef.current !== gen) return;
-        if (result.streamUrl === null) {
-          setFailedTitle(`Couldn't play '${snapshot.title}'`);
-          setEngineState((prev) => ({ ...prev, status: "failed" }));
-          return;
+  // Animate audio.volume from its current level to 0 over durationMs.
+  // Skipped when no audio is meaningfully loaded (src empty or already ended).
+  // Cancels any in-flight fade so concurrent calls don't fight each other.
+  const fadeOutAudio = useCallback((durationMs: number): Promise<void> => {
+    return new Promise((resolve) => {
+      const audio = audioRef.current;
+      if (!audio || audio.src === "" || audio.ended || audio.volume === 0) {
+        if (audio) audio.volume = 1;
+        resolve();
+        return;
+      }
+      if (fadeRafRef.current !== null) {
+        cancelAnimationFrame(fadeRafRef.current);
+        fadeRafRef.current = null;
+      }
+      const startVolume = audio.volume;
+      const startTime = performance.now();
+      const step = (now: number): void => {
+        const a = audioRef.current;
+        if (!a) { resolve(); return; }
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / durationMs);
+        a.volume = startVolume * (1 - progress);
+        if (progress < 1) {
+          fadeRafRef.current = requestAnimationFrame(step);
+        } else {
+          a.volume = 0;
+          fadeRafRef.current = null;
+          resolve();
         }
-        engine.load(snapshot, result.streamUrl);
-      })
-      .catch(() => {
-        if (previewGenRef.current !== gen) return;
-        setFailedTitle("Couldn't reach the player service");
-        setEngineState((prev) => ({ ...prev, status: "failed" }));
-      });
+      };
+      fadeRafRef.current = requestAnimationFrame(step);
+    });
   }, []);
+
+  const playPreview = useCallback(
+    (snapshot: SongSnapshot) => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const gen = ++previewGenRef.current;
+
+      void fadeOutAudio(250).then(async () => {
+        if (previewGenRef.current !== gen) return;
+        setCurrentSource(null);
+        setFailedTitle(null);
+        setEngineState((prev) => ({
+          ...prev,
+          status: "loading",
+          currentTrack: { snapshot, streamUrl: "" },
+        }));
+        if (audioRef.current) audioRef.current.volume = 1;
+        try {
+          const result = await resolveStream({ snapshot });
+          if (previewGenRef.current !== gen) return;
+          if (result.streamUrl === null) {
+            setFailedTitle(`Couldn't play '${snapshot.title}'`);
+            setEngineState((prev) => ({ ...prev, status: "failed" }));
+            return;
+          }
+          engine.load(snapshot, result.streamUrl);
+        } catch {
+          if (previewGenRef.current !== gen) return;
+          setFailedTitle("Couldn't reach the player service");
+          setEngineState((prev) => ({ ...prev, status: "failed" }));
+        }
+      });
+    },
+    [fadeOutAudio],
+  );
+
+  // Load a pre-resolved stream URL directly, bypassing /play/resolve.
+  // Same no-recording contract as playPreview; includes the volume-dip crossfade.
+  const loadPreview = useCallback(
+    (snapshot: SongSnapshot, streamUrl: string) => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const gen = ++previewGenRef.current;
+
+      void fadeOutAudio(250).then(() => {
+        if (previewGenRef.current !== gen) return;
+        setCurrentSource(null);
+        setFailedTitle(null);
+        setEngineState((prev) => ({
+          ...prev,
+          status: "loading",
+          currentTrack: { snapshot, streamUrl },
+        }));
+        if (audioRef.current) audioRef.current.volume = 1;
+        engine.load(snapshot, streamUrl);
+      });
+    },
+    [fadeOutAudio],
+  );
 
   const togglePlay = useCallback(() => {
     engineRef.current?.togglePlay();
@@ -317,6 +391,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       isExpanded,
       playSnapshot,
       playPreview,
+      loadPreview,
       togglePlay,
       seek,
       skipBack,
@@ -331,6 +406,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       isExpanded,
       playSnapshot,
       playPreview,
+      loadPreview,
       togglePlay,
       seek,
       skipBack,

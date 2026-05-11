@@ -55,7 +55,7 @@ const SYSTEM_PROMPT = [
   '  "artists": [{ "name": string, "score": number 0..1 }, ...] sorted desc by score,',
   '  "tempoBucket": "slow" | "mid" | "fast" | null,',
   '  "remixPreference": "original" | "remix-friendly" | "remix-only" | null,',
-  '  "summaryText": string  // <= 500 chars, second-person ("you tend to ...")',
+  '  "summaryText": string  // second-person ("you tend to ..."); be as detailed as the swipe history warrants',
   "}",
 ].join("\n");
 

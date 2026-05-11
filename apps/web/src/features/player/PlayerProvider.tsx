@@ -37,6 +37,18 @@ export interface PlayerContextValue {
    * Fades out the current audio before loading the new track.
    */
   loadPreview: (snapshot: SongSnapshot, streamUrl: string) => void;
+  /**
+   * UI-31: Same as `loadPreview` but skips the 250 ms volume-dip crossfade
+   * and calls `engine.load(snapshot, streamUrl)` synchronously. Required
+   * from inside OS Media Session action handlers so iOS Safari sees the
+   * `audio.src = url; audio.play()` happen in the synchronous portion of
+   * the user-gesture window — any async hop (fade `.then()`, React state
+   * update, useEffect) loses the gesture context and `audio.play()` is
+   * rejected, leaving the source pinned to the previous track until the
+   * user unlocks. Touch-driven swipes inside the visible page keep using
+   * `loadPreview` with the crossfade.
+   */
+  loadPreviewSync: (snapshot: SongSnapshot, streamUrl: string) => void;
   togglePlay: () => void;
   /**
    * Pause the audio without clearing the loaded track. Used by Explore
@@ -81,6 +93,7 @@ const NOOP_CONTEXT: PlayerContextValue = {
   playSnapshot: () => {},
   playPreview: () => {},
   loadPreview: () => {},
+  loadPreviewSync: () => {},
   togglePlay: () => {},
   pause: () => {},
   seek: () => {},
@@ -306,6 +319,33 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     [fadeOutAudio],
   );
 
+  // UI-31: Synchronous loader for OS Media Session action handlers.
+  // Skips the RAF-driven crossfade entirely so engine.load(...) — and
+  // therefore audio.src = url + audio.play() — happens inside the
+  // user-gesture window iOS Safari grants the handler. Any async hop
+  // (fade .then, setState→effect chain) loses gesture context and
+  // audio.play() is rejected. Increments previewGenRef so any
+  // in-flight async loadPreview/playPreview is invalidated and won't
+  // clobber the synchronously-loaded track when its fade completes.
+  const loadPreviewSync = useCallback((snapshot: SongSnapshot, streamUrl: string) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    if (fadeRafRef.current !== null) {
+      cancelAnimationFrame(fadeRafRef.current);
+      fadeRafRef.current = null;
+    }
+    previewGenRef.current++;
+    setCurrentSource(null);
+    setFailedTitle(null);
+    setEngineState((prev) => ({
+      ...prev,
+      status: "loading",
+      currentTrack: { snapshot, streamUrl },
+    }));
+    if (audioRef.current) audioRef.current.volume = 1;
+    engine.load(snapshot, streamUrl);
+  }, []);
+
   // Load a pre-resolved stream URL directly, bypassing /play/resolve.
   // Same no-recording contract as playPreview; includes the volume-dip crossfade.
   const loadPreview = useCallback(
@@ -444,6 +484,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playSnapshot,
       playPreview,
       loadPreview,
+      loadPreviewSync,
       togglePlay,
       pause,
       seek,
@@ -461,6 +502,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playSnapshot,
       playPreview,
       loadPreview,
+      loadPreviewSync,
       togglePlay,
       pause,
       seek,

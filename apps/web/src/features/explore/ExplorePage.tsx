@@ -31,19 +31,48 @@ function writeOnboardedFlag(): void {
 export function ExplorePage(): JSX.Element {
   const { state: authState } = useAuth();
   const { items, phase, status, swipe, retry } = useExploreQueue();
-  const { engineState, togglePlay } = usePlayer();
+  const { engineState, togglePlay, loadPreviewSync } = usePlayer();
   const [onboarded, setOnboarded] = useState(() => readOnboardedFlag());
 
   const top = items[0] ?? null;
-  useTopCardPreview(items);
+  const { getCachedStreamUrl } = useTopCardPreview(items);
+
+  // UI-31: live items ref so the Media Session action handler (a stable
+  // closure registered via registerMediaOverrides) can read the
+  // next-in-queue snapshot synchronously without re-registering on every
+  // queue change.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const dismissOnboarding = useCallback(() => {
     writeOnboardedFlag();
     setOnboarded(true);
   }, []);
 
-  const onLike = useCallback(() => swipe("right"), [swipe]);
-  const onPass = useCallback(() => swipe("left"), [swipe]);
+  // UI-31: before advancing the queue (which is async via setItems →
+  // render → effect → loadPreview → 250ms fade), synchronously load the
+  // next track via loadPreviewSync so iOS Safari sees engine.load (and
+  // therefore audio.play()) happen inside the Media Session handler's
+  // user-gesture window. Touch-driven swipes hit this same path; they
+  // lose the 250ms crossfade in exchange for an instant track change,
+  // which is desirable for a deliberate swipe action anyway.
+  const advance = useCallback(
+    (direction: "right" | "left") => {
+      const list = itemsRef.current;
+      const nextSnap = list[1];
+      if (nextSnap !== undefined) {
+        const cached = getCachedStreamUrl(nextSnap);
+        if (cached !== null) {
+          loadPreviewSync(nextSnap, cached);
+        }
+      }
+      swipe(direction);
+    },
+    [getCachedStreamUrl, loadPreviewSync, swipe],
+  );
+
+  const onLike = useCallback(() => advance("right"), [advance]);
+  const onPass = useCallback(() => advance("left"), [advance]);
 
   // Wire OS media-session next/prev to like/pass while Explore is mounted.
   const { registerMediaOverrides } = usePlayer();

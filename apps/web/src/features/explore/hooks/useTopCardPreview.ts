@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { snapshotsMatch, playableHandoffDecision } from "@moc/web-core";
 import type { SongSnapshot } from "@moc/contracts";
 import { usePlayer } from "../../player/usePlayer.js";
@@ -39,8 +39,21 @@ const HANDOFF_LOOKAHEAD_MS = 5_000;
  *
  * UI-30: this hook never advances the queue on its own. A failed retry
  * leaves the card on the deck; only a user-driven swipe removes it.
+ *
+ * UI-31: returns `getCachedStreamUrl` so ExplorePage's OS Media Session
+ * `nexttrack` / `previoustrack` handlers can read the next snapshot's
+ * pre-resolved URL synchronously inside the user-gesture window and
+ * call `loadPreviewSync` before triggering the async queue advancement.
+ * The cache is the same Map populated by this hook's lookahead — no
+ * separate state.
  */
-export function useTopCardPreview(items: SongSnapshot[]): void {
+export interface UseTopCardPreviewResult {
+  /** Returns the cached pre-resolved stream URL for `snap`, or `null` if
+   *  the snapshot isn't yet resolved (or resolved to `null`). */
+  getCachedStreamUrl: (snap: SongSnapshot) => string | null;
+}
+
+export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResult {
   const top = items[0] ?? null;
   const next = items[1] ?? null;
   const { playPreview, loadPreview, pause, engineState } = usePlayer();
@@ -207,6 +220,15 @@ export function useTopCardPreview(items: SongSnapshot[]): void {
     engineState.progressMs,
     engineState.durationMs,
   ]);
+
+  // UI-31: expose the resolve cache to ExplorePage's sync Media Session
+  // handlers. resolveCache is a ref so callers always see the latest
+  // value without needing to be re-rendered on each entry.
+  const getCachedStreamUrl = useCallback((snap: SongSnapshot): string | null => {
+    return resolveCache.current.get(snapshotKey(snap)) ?? null;
+  }, []);
+
+  return { getCachedStreamUrl };
 }
 
 function snapshotKey(s: SongSnapshot): string {

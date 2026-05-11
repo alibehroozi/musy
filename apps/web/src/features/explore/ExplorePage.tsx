@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Typography } from "@moc/design-system";
 import { useAuth } from "../../hooks/useAuth.js";
 import { usePlayer } from "../player/usePlayer.js";
@@ -35,7 +35,7 @@ export function ExplorePage(): JSX.Element {
   const [onboarded, setOnboarded] = useState(() => readOnboardedFlag());
 
   const top = items[0] ?? null;
-  useTopCardPreview(top);
+  useTopCardPreview(items);
 
   const dismissOnboarding = useCallback(() => {
     writeOnboardedFlag();
@@ -55,6 +55,19 @@ export function ExplorePage(): JSX.Element {
     }, 5_000);
     return () => clearTimeout(t);
   }, [engineState.status, items.length, swipe]);
+
+  // Auto-advance (like) when the full preview plays to the end.
+  // Guard with a ref keyed to the snapshot so a re-render loop from the
+  // swipe itself can't re-fire for the same card.
+  const autoAdvancedKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (engineState.status !== "ended") return;
+    if (top === null) return;
+    const key = `${top.title.trim().toLowerCase()}|${top.artist.trim().toLowerCase()}`;
+    if (autoAdvancedKeyRef.current === key) return;
+    autoAdvancedKeyRef.current = key;
+    swipe("right");
+  }, [engineState.status, top, swipe]);
 
   if (authState.status === "loading") {
     return <main className="flex flex-col h-full" />;

@@ -70,9 +70,10 @@ export type TasteProfileLLMOutput = z.infer<typeof TasteProfileLLMOutput>;
 //   - "discovery"          — committed seed-genre snapshots, no provider
 //                            calls, used until the user has right-swiped
 //                            in ≥ 3 distinct genres.
-//   - "artist-refinement"  — provider search per liked genre, [1 common,
-//                            2 niche] split, used until the profile has
-//                            ≥ 8 strong-signal artists.
+//   - "artist-refinement"  — per-artist SoundCloud-only fan-out (top
+//                            songs per top-N profile artists) →
+//                            LLM-filter to 20 picks; used until the
+//                            profile has ≥ 8 strong-signal artists.
 //   - "personalized"       — heuristic candidate pool reranked by an LLM
 //                            using the profile summary.
 // `partial: true` means the queue is shorter than `count` (provider

@@ -2,9 +2,11 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { v4 as uuidv4 } from "uuid";
 import {
+  buildColdStartPrompt,
   buildRerankPrompt,
   classifyByListenCount,
   computeSnapshotHash,
+  parseColdStartResponse,
   phaseFor,
   seedSnapshots,
   type PromptCandidate,
@@ -81,7 +83,14 @@ export class QueueBuilderService {
       const seeds = seedSnapshots().slice(0, safeCount);
       return { items: seeds, phase: "discovery", partial: true };
     }
-    const items = queue.items.slice(0, safeCount);
+
+    // Always exclude songs the user has already swiped so they never
+    // reappear — even when the stored queue pre-dates the latest swipes.
+    const swipeDocs = await this.swipes.findSwipesForUser(userId);
+    const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
+    const filtered = queue.items.filter((item) => !seenHashes.has(computeSnapshotHash(item)));
+
+    const items = filtered.slice(0, safeCount);
     return {
       items,
       phase: queue.phase,
@@ -185,7 +194,7 @@ export class QueueBuilderService {
     seenHashes: Set<string>,
   ): Promise<SongSnapshot[]> {
     if (phase === "discovery") {
-      return seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
+      return await this.sourceDiscovery(seenHashes);
     }
 
     if (phase === "artist-refinement") {
@@ -193,6 +202,56 @@ export class QueueBuilderService {
     }
 
     return await this.sourcePersonalized(profile, seenHashes);
+  }
+
+  /**
+   * Discovery phase: ask Claude to generate a diverse initial set of songs,
+   * then look each up on Audius/SoundCloud to enrich with cover art and
+   * duration. Falls back to the static seed list if AI or providers fail.
+   */
+  private async sourceDiscovery(seenHashes: Set<string>): Promise<SongSnapshot[]> {
+    try {
+      const { system, userMessage } = buildColdStartPrompt();
+      const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
+      const response = await this.anthropic.complete({
+        system,
+        userMessage,
+        model,
+        maxTokens: 1024,
+      });
+      const suggestions = parseColdStartResponse(response.text);
+      if (suggestions.length === 0) throw new Error("cold-start: empty response");
+
+      // Look up each suggestion on providers in parallel to get cover art.
+      const settled = await Promise.allSettled(
+        suggestions.map(async ({ title, artist }) => {
+          const query = `${title} ${artist}`;
+          const [audiusResult, scResult] = await Promise.allSettled([
+            this.audius.search(query).catch(() => [] as TrackResult[]),
+            this.soundcloud.search(query).catch(() => [] as TrackResult[]),
+          ]);
+          const tracks = combineFulfilled(audiusResult, scResult);
+          const match = findBestMatch(title, artist, tracks);
+          return match
+            ? toSnapshot(match)
+            : ({ title, artist, kind: "track" } satisfies SongSnapshot);
+        }),
+      );
+
+      const enriched = settled
+        .filter((r): r is PromiseFulfilledResult<SongSnapshot> => r.status === "fulfilled")
+        .map((r) => r.value);
+
+      const result = dedupeBySnapshotHash(enriched, seenHashes);
+      if (result.length > 0) return result;
+    } catch (err) {
+      this.logger.warn(
+        { event: "explore_cold_start_failed", err: errToString(err) },
+        "explore_cold_start_failed",
+      );
+    }
+    // Fallback: static seed list (no cover art, but always available).
+    return seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
   }
 
   private async sourceArtistRefinement(
@@ -285,6 +344,22 @@ export class QueueBuilderService {
 
     return dedupedPool;
   }
+}
+
+/**
+ * Find the track whose title+artist best match the AI suggestion. If an
+ * exact normalized match exists, prefer it; otherwise take the first result
+ * (the search query already biases toward relevance).
+ */
+function findBestMatch(title: string, artist: string, tracks: TrackResult[]): TrackResult | null {
+  if (tracks.length === 0) return null;
+  const normTitle = title.trim().toLowerCase();
+  const normArtist = artist.trim().toLowerCase();
+  const exact = tracks.find(
+    (t) =>
+      t.title.trim().toLowerCase() === normTitle && t.artist.trim().toLowerCase() === normArtist,
+  );
+  return exact ?? tracks[0] ?? null;
 }
 
 function toSnapshot(track: TrackResult): SongSnapshot {

@@ -7,11 +7,13 @@ import {
   classifyByListenCount,
   computeSnapshotHash,
   parseColdStartResponse,
+  parseRerankResponse,
   phaseFor,
   pickCoverMatch,
   resolveCoversForQueue,
   seedSnapshots,
   type PromptCandidate,
+  type RerankItem,
 } from "@moc/api-core";
 import type {
   NextResponse,
@@ -37,13 +39,6 @@ const MAX_COUNT = 50;
 const MIN_COUNT = 1;
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const RERANK_MAX_TOKENS = 4096;
-
-interface RerankItem {
-  title: string;
-  artist: string;
-  source: string;
-  score: number;
-}
 
 @Injectable()
 export class QueueBuilderService {
@@ -387,7 +382,7 @@ export class QueueBuilderService {
       profileSummary: profile.summaryText,
     });
 
-    let ranked: RerankItem[] | null = null;
+    let ranked: RerankItem[] = [];
     try {
       const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
       const response = await this.anthropic.complete({
@@ -404,7 +399,7 @@ export class QueueBuilderService {
       );
     }
 
-    if (ranked && ranked.length > 0) {
+    if (ranked.length > 0) {
       const byKey = new Map(dedupedPool.map((s) => [`${s.title}::${s.artist}`, s]));
       const ordered: SongSnapshot[] = [];
       for (const r of ranked) {
@@ -475,36 +470,6 @@ function splitByPopularity(tracks: TrackResult[]): { common: TrackResult[]; nich
     else niche.push(t);
   }
   return { common, niche };
-}
-
-function parseRerankResponse(text: string): RerankItem[] | null {
-  try {
-    const parsed = JSON.parse(text);
-    if (!parsed || typeof parsed !== "object") return null;
-    const ranked = (parsed as { ranked?: unknown }).ranked;
-    if (!Array.isArray(ranked)) return null;
-    const out: RerankItem[] = [];
-    for (const r of ranked) {
-      if (!r || typeof r !== "object") continue;
-      const item = r as Partial<RerankItem>;
-      if (
-        typeof item.title === "string" &&
-        typeof item.artist === "string" &&
-        typeof item.source === "string" &&
-        typeof item.score === "number"
-      ) {
-        out.push({
-          title: item.title,
-          artist: item.artist,
-          source: item.source,
-          score: item.score,
-        });
-      }
-    }
-    return out;
-  } catch {
-    return null;
-  }
 }
 
 function errToString(err: unknown): string {

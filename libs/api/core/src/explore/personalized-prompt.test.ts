@@ -23,7 +23,7 @@ function profile(overrides: Partial<TasteProfile> = {}): TasteProfile {
       { name: "Caribou", score: 0.7 },
     ],
     tempoBucket: overrides.tempoBucket ?? "mid",
-    remixPreference: overrides.remixPreference ?? "originals",
+    remixPreference: overrides.remixPreference ?? "original",
     summaryText: overrides.summaryText ?? "Likes dreamy psychedelic indie and 80s-inspired synths.",
     lastBuiltAt: overrides.lastBuiltAt ?? "2026-05-10T00:00:00.000Z",
     swipeCountAtLastBuild: overrides.swipeCountAtLastBuild ?? 25,

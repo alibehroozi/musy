@@ -86,6 +86,25 @@ export class FakeInterestScoresRepository {
     return Array.from(this.docs.values()).filter((d) => d.userId === userId);
   }
 
+  /**
+   * Mirror of the real InterestScoresRepository.sampleByScoreBucket.
+   * Deterministic in tests (no random shuffle) so tests can assert on
+   * exact contents — production uses Mongo $sample for true randomness.
+   * Returns the first `count` docs in insertion order (newest-first by
+   * Map iteration semantics).
+   */
+  async sampleByScoreBucket(
+    userId: string,
+    minScore: number,
+    maxScore: number,
+    count: number,
+  ): Promise<FakeInterestDoc[]> {
+    if (count <= 0) return [];
+    return Array.from(this.docs.values())
+      .filter((d) => d.userId === userId && d.score >= minScore && d.score <= maxScore)
+      .slice(0, count);
+  }
+
   private async applyUpsert(input: {
     userId: string;
     songKey: string;

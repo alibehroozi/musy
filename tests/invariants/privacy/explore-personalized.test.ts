@@ -24,7 +24,7 @@ function profile(): TasteProfile {
       { name: "Caribou", score: 0.7 },
     ],
     tempoBucket: "mid",
-    remixPreference: "originals",
+    remixPreference: "original",
     summaryText: "Likes dreamy psychedelic indie and 80s-inspired synths.",
     lastBuiltAt: "2026-05-10T00:00:00.000Z",
     swipeCountAtLastBuild: 25,

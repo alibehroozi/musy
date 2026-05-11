@@ -18,7 +18,7 @@ function profile(): TasteProfile {
     genres: [{ name: "indie rock", score: 0.85 }],
     artists: [{ name: "Tame Impala", score: 0.9 }],
     tempoBucket: "mid",
-    remixPreference: "originals",
+    remixPreference: "original",
     summaryText: "Likes dreamy psychedelic indie.",
     lastBuiltAt: "2026-05-10T00:00:00.000Z",
     swipeCountAtLastBuild: 25,

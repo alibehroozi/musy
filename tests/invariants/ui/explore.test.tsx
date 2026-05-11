@@ -45,6 +45,7 @@ function exploreNextResponse(overrides: Partial<NextResponse> = {}): NextRespons
     items: ITEMS,
     phase: "discovery",
     partial: false,
+    buildingQueue: false,
     ...overrides,
   };
 }
@@ -295,7 +296,12 @@ describe("UI-20: explore queue persists across tab navigation", () => {
       if (url.includes("/api/explore/next")) {
         nextCallCount++;
         return new Response(
-          JSON.stringify({ items: LARGE_QUEUE, phase: "discovery", partial: false }),
+          JSON.stringify({
+            items: LARGE_QUEUE,
+            phase: "discovery",
+            partial: false,
+            buildingQueue: false,
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -355,7 +361,7 @@ describe("UI-23: explore polls /api/explore/next every 5 s while buildingQueue=t
     cleanup();
     localStorage.setItem("moc.explore.onboarded", "1");
     mockAudio();
-    vi.useFakeTimers({ shouldAdvanceTime: false });
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
@@ -367,9 +373,15 @@ describe("UI-23: explore polls /api/explore/next every 5 s while buildingQueue=t
 
   it("when buildingQueue=true and items=[], the loading state is shown and /next is re-fetched every 5 s", async () => {
     let nextCallCount = 0;
-    const FIRST_BATCH: NextResponse["items"] = [
-      { title: "Late Arrival", artist: "Slowpoke", durationSec: 200, kind: "track" },
-    ];
+    // 6 items so the FE's background-refill effect (fires when
+    // items.length < 5) doesn't kick in after the polled batch arrives —
+    // we want to assert ONLY the buildingQueue-driven poll fired.
+    const FIRST_BATCH: NextResponse["items"] = Array.from({ length: 6 }, (_, i) => ({
+      title: `Late Arrival ${i + 1}`,
+      artist: "Slowpoke",
+      durationSec: 200 + i,
+      kind: "track" as const,
+    }));
 
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -427,11 +439,16 @@ describe("UI-23: explore polls /api/explore/next every 5 s while buildingQueue=t
 
     renderAuthedApp("/explore");
 
-    // Initial fetch happens immediately. The loading state should be rendered.
-    await vi.waitFor(() => {
-      expect(screen.getByTestId("explore-refilling")).toBeInTheDocument();
+    // Wait for the initial fetch to complete AND React to have committed
+    // the resulting state — the polling effect runs after the buildingQueue
+    // state flips to true.
+    await vi.waitFor(() => expect(nextCallCount).toBe(1));
+    await act(async () => {
+      // Flush pending microtasks so the post-fetch render + useEffect run.
+      await Promise.resolve();
+      await Promise.resolve();
     });
-    expect(nextCallCount).toBe(1);
+    expect(screen.getByTestId("explore-refilling")).toBeInTheDocument();
 
     // Advance 5 s — first poll should fire.
     await act(async () => {
@@ -450,7 +467,7 @@ describe("UI-23: explore polls /api/explore/next every 5 s while buildingQueue=t
     // Loading state disappears and the card surfaces.
     await vi.waitFor(() => {
       expect(screen.queryByTestId("explore-refilling")).not.toBeInTheDocument();
-      expect(screen.getByText("Late Arrival")).toBeInTheDocument();
+      expect(screen.getByText("Late Arrival 1")).toBeInTheDocument();
     });
 
     // After items arrive (buildingQueue=false), another 5 s does NOT trigger

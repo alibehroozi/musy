@@ -65,7 +65,7 @@ const ITEM_A = { title: "Track A", artist: "Artist A", durationSec: 200, kind: "
 const ITEM_B = { title: "Track B", artist: "Artist B", durationSec: 210, kind: "track" as const };
 
 function exploreNextResponse(items: NextResponse["items"]): NextResponse {
-  return { items, phase: "discovery", partial: false };
+  return { items, phase: "discovery", partial: false, buildingQueue: false };
 }
 
 interface InstallFetchOpts {

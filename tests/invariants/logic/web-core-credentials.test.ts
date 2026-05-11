@@ -90,7 +90,7 @@ const cases: Case[] = [
   },
   {
     name: "fetchNext",
-    response: okJson({ items: [], phase: "discovery", partial: false }),
+    response: okJson({ items: [], phase: "discovery", partial: false, buildingQueue: false }),
     invoke: () => fetchNext(5),
   },
   {

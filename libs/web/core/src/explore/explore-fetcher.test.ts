@@ -15,6 +15,7 @@ const VALID_NEXT: NextResponse = {
   items: [SNAPSHOT],
   phase: "discovery",
   partial: false,
+  buildingQueue: false,
 };
 
 const VALID_PROFILE: TasteProfileResponse = null;

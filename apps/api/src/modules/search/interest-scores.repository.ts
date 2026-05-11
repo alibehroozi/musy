@@ -75,6 +75,33 @@ export class InterestScoresRepository {
     return this.model.find({ userId }).lean().exec() as unknown as InterestScoresDocument[];
   }
 
+  /**
+   * Sample up to `count` documents for this user whose `score` falls in
+   * `[minScore, maxScore]` (inclusive). Returns fewer if the bucket has
+   * fewer matching entries. Used by QueueBuilderService.sourcePersonalized
+   * to surface a random slice of the user's already-rated history at
+   * three score tiers, which the LLM consumes as context (LOGIC-25).
+   *
+   * SEC-06: every read is scoped by the authenticated session's userId.
+   * Uses Mongo's $sample aggregation operator for uniform random selection
+   * server-side (no in-memory load-and-pick of the full collection).
+   */
+  async sampleByScoreBucket(
+    userId: string,
+    minScore: number,
+    maxScore: number,
+    count: number,
+  ): Promise<InterestScoresDocument[]> {
+    if (count <= 0) return [];
+    const docs = await this.model
+      .aggregate([
+        { $match: { userId, score: { $gte: minScore, $lte: maxScore } } },
+        { $sample: { size: count } },
+      ])
+      .exec();
+    return docs as unknown as InterestScoresDocument[];
+  }
+
   private async applyUpsert(input: ApplyUpsertInput): Promise<void> {
     const existing = await this.model
       .findOne({ userId: input.userId, songKey: input.songKey })

@@ -1,4 +1,6 @@
-import type { SongSnapshot, SwipeDirection } from "@moc/contracts";
+import { TasteProfileLLMOutput, type SongSnapshot, type SwipeDirection } from "@moc/contracts";
+
+import { firstJsonObjectIn } from "./llm-json.js";
 
 // Bounds (AI-03). Inputs above the cap are dropped newest-first — the most
 // recent N entries are retained, the rest discarded. previousSummary is
@@ -105,4 +107,26 @@ export function buildTastePrompt(input: BuildTastePromptInput): BuildTastePrompt
     system: SYSTEM_PROMPT,
     userMessage: JSON.stringify(userPayload),
   };
+}
+
+/**
+ * Parses the taste-profile LLM response, tolerating the wrappers Haiku
+ * (and other models) routinely add — markdown code fences, leading
+ * prose, trailing prose — and validates the parsed object against the
+ * `TasteProfileLLMOutput` Zod schema.
+ *
+ * Unlike `parseColdStartResponse` / `parseRerankResponse` (which return
+ * `[]` sentinels on failure), this function THROWS on any failure: no
+ * JSON object found, syntactically invalid JSON, or schema mismatch.
+ * The caller (`profile-builder.service.ts`) cannot proceed without a
+ * valid profile, and the existing try/catch on the call site logs the
+ * original error detail in the `taste_profile_build_failed` event.
+ */
+export function parseTasteProfileResponse(text: string): TasteProfileLLMOutput {
+  const objText = firstJsonObjectIn(text);
+  if (objText === null) {
+    throw new SyntaxError("no JSON object found in taste-profile response");
+  }
+  const json: unknown = JSON.parse(objText);
+  return TasteProfileLLMOutput.parse(json);
 }

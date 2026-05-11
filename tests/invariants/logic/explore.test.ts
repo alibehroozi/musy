@@ -2,14 +2,16 @@
 //
 // Invariants verified here are listed in INVARIANTS.md under LOGIC-14, LOGIC-15, LOGIC-16, LOGIC-18.
 
-import { describe, it, expect } from "vitest";
-import type { TasteProfile } from "@moc/contracts";
+import { describe, it, expect, vi } from "vitest";
+import type { SongSnapshot, TasteProfile, TrackResult } from "@moc/contracts";
 import {
   bumpScore,
   classifyByListenCount,
   COMMON_THRESHOLD,
   NICHE_THRESHOLD,
   phaseFor,
+  resolveCoversForQueue,
+  type CoverLookup,
 } from "@moc/api-core";
 
 function profile(
@@ -152,27 +154,82 @@ describe("LOGIC-16: classifyByListenCount(listenCount) is deterministic", () => 
 });
 
 describe("LOGIC-18: pure cover-resolution helper is deterministic and drops cover-less candidates", () => {
-  it.todo(
-    "input snapshot with an existing non-empty coverUrl appears in the output in original order with its coverUrl preserved (resolver is NOT consulted for already-covered entries — assert via a resolver spy that the lookup is never called for those titles)",
-  );
+  const snap = (overrides: Partial<SongSnapshot>): SongSnapshot => ({
+    title: overrides.title ?? "T",
+    artist: overrides.artist ?? "A",
+    kind: overrides.kind ?? "track",
+    ...(overrides.coverUrl !== undefined ? { coverUrl: overrides.coverUrl } : {}),
+  });
 
-  it.todo(
-    "input snapshot without coverUrl + resolver returns a TrackResult with a non-empty artworkUrl → output contains the snapshot with coverUrl set to that artworkUrl",
-  );
+  const track = (
+    title: string,
+    artist: string,
+    artworkUrl: string | undefined = undefined,
+  ): TrackResult => ({
+    type: "track",
+    id: `${title}::${artist}`,
+    title,
+    artist,
+    provider: "audius",
+    providerId: "pid",
+    sources: ["audius"],
+    ...(artworkUrl !== undefined ? { artworkUrl } : {}),
+  });
 
-  it.todo(
-    "input snapshot without coverUrl + resolver returns null → output omits the snapshot entirely (length-1 input drops to length-0 output)",
-  );
+  it("preserves coverUrl on already-covered inputs (resolver not consulted for those entries)", () => {
+    const lookup: CoverLookup = vi.fn(() => null);
+    const input = [snap({ title: "X", artist: "Y", coverUrl: "https://cdn/x.jpg" })];
+    const out = resolveCoversForQueue(input, lookup);
+    expect(out).toEqual(input);
+    expect(lookup).not.toHaveBeenCalled();
+  });
 
-  it.todo(
-    "input snapshot without coverUrl + resolver returns a TrackResult whose artworkUrl is undefined / empty string → output omits the snapshot (must not pass through a falsy coverUrl)",
-  );
+  it("attaches artworkUrl as coverUrl when the resolver returns a track with a non-empty artworkUrl", () => {
+    const lookup: CoverLookup = (t, a) =>
+      t === "X" && a === "Y" ? track("X", "Y", "https://cdn/found.jpg") : null;
+    const out = resolveCoversForQueue([snap({ title: "X", artist: "Y" })], lookup);
+    expect(out).toEqual([snap({ title: "X", artist: "Y", coverUrl: "https://cdn/found.jpg" })]);
+  });
 
-  it.todo(
-    "determinism: same (candidates, resolver-output-map) inputs → byte-identical output across two consecutive calls; helper never reads Date.now(), random sources, or process env",
-  );
+  it("drops a cover-less input when the resolver returns null", () => {
+    const lookup: CoverLookup = () => null;
+    const out = resolveCoversForQueue([snap({ title: "X", artist: "Y" })], lookup);
+    expect(out).toEqual([]);
+  });
 
-  it.todo(
-    "order preservation: kept items appear in the output in the same relative order they had in the input (resolution does not reorder a survivor relative to another survivor)",
-  );
+  it("drops a cover-less input when the resolver returns a track without artworkUrl (undefined or empty string)", () => {
+    const noArt: CoverLookup = () => track("X", "Y");
+    const emptyArt: CoverLookup = () => track("X", "Y", "");
+    expect(resolveCoversForQueue([snap({ title: "X", artist: "Y" })], noArt)).toEqual([]);
+    expect(resolveCoversForQueue([snap({ title: "X", artist: "Y" })], emptyArt)).toEqual([]);
+  });
+
+  it("is deterministic: byte-identical outputs across two consecutive calls with the same inputs", () => {
+    const lookup: CoverLookup = (t) => (t === "B" ? track("B", "B", "https://cdn/b.jpg") : null);
+    const input = [
+      snap({ title: "A", coverUrl: "https://cdn/a.jpg" }),
+      snap({ title: "B" }),
+      snap({ title: "C" }),
+    ];
+    const out1 = resolveCoversForQueue(input, lookup);
+    const out2 = resolveCoversForQueue(input, lookup);
+    expect(JSON.stringify(out2)).toBe(JSON.stringify(out1));
+  });
+
+  it("preserves the relative order of survivors", () => {
+    const lookup: CoverLookup = (t) => {
+      if (t === "C") return track("C", "C", "https://cdn/c.jpg");
+      if (t === "E") return track("E", "E", "https://cdn/e.jpg");
+      return null;
+    };
+    const input = [
+      snap({ title: "A", coverUrl: "https://cdn/a.jpg" }),
+      snap({ title: "B" }), // drops
+      snap({ title: "C" }), // kept via resolver
+      snap({ title: "D", coverUrl: "https://cdn/d.jpg" }),
+      snap({ title: "E" }), // kept via resolver
+    ];
+    const out = resolveCoversForQueue(input, lookup);
+    expect(out.map((s) => s.title)).toEqual(["A", "C", "D", "E"]);
+  });
 });

@@ -86,5 +86,10 @@ export const NextResponse = z.object({
   items: z.array(SongSnapshot),
   phase: QueuePhase,
   partial: z.boolean(),
+  // API-20: true iff a queue rebuild is currently in flight for the user
+  // at the moment the response is computed. The FE uses this to decide
+  // whether to show a loading state and poll, vs. surface a genuine empty
+  // state. Idempotent server-side rebuild (API-21) keeps the poll cheap.
+  buildingQueue: z.boolean(),
 });
 export type NextResponse = z.infer<typeof NextResponse>;

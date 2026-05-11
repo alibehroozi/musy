@@ -38,6 +38,14 @@ export interface PlayerContextValue {
    */
   loadPreview: (snapshot: SongSnapshot, streamUrl: string) => void;
   togglePlay: () => void;
+  /**
+   * Pause the audio without clearing the loaded track. Used by Explore
+   * to silence the just-swiped track when the deck drains while the
+   * queue rebuilds (UI-26). The engine's `currentTrack` and the
+   * navigator.mediaSession metadata are preserved so the next loaded
+   * snapshot resumes through the same OS media session.
+   */
+  pause: () => void;
   /** Seek to an absolute position in milliseconds. */
   seek: (positionMs: number) => void;
   /** Skip-back in v1: rewind to 0 (no queue). */
@@ -74,6 +82,7 @@ const NOOP_CONTEXT: PlayerContextValue = {
   playPreview: () => {},
   loadPreview: () => {},
   togglePlay: () => {},
+  pause: () => {},
   seek: () => {},
   skipBack: () => {},
   registerMediaOverrides: () => () => {},
@@ -319,6 +328,10 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     engineRef.current?.togglePlay();
   }, []);
 
+  const pause = useCallback(() => {
+    engineRef.current?.pause();
+  }, []);
+
   const seek = useCallback((positionMs: number) => {
     engineRef.current?.seek(positionMs);
   }, []);
@@ -426,6 +439,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playPreview,
       loadPreview,
       togglePlay,
+      pause,
       seek,
       skipBack,
       registerMediaOverrides,
@@ -442,6 +456,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playPreview,
       loadPreview,
       togglePlay,
+      pause,
       seek,
       skipBack,
       registerMediaOverrides,

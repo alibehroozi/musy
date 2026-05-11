@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motion";
 import { Card, Typography } from "@moc/design-system";
 import { directionFromDrag } from "@moc/web-core";
@@ -191,17 +191,31 @@ function CardContent({
 }
 
 function CardArtwork({ snapshot }: { snapshot: SongSnapshot }): JSX.Element {
+  // UI-27: cover-art <img> error → token-driven placeholder. State is
+  // scoped per snapshot identity so a card mounted with a fresh coverUrl
+  // re-attempts the image; only the current snapshot is held responsible
+  // for its own error event.
+  const [imageBroken, setImageBroken] = useState(false);
+  const lastCoverRef = useRef<string | undefined>(snapshot.coverUrl);
+  if (lastCoverRef.current !== snapshot.coverUrl) {
+    lastCoverRef.current = snapshot.coverUrl;
+    if (imageBroken) setImageBroken(false);
+  }
+  const hasUsableCover = snapshot.coverUrl !== undefined && !imageBroken;
   return (
     <div
       data-testid="explore-artwork"
       className="flex-1 min-h-0 rounded-md overflow-hidden bg-border"
       role="img"
-      aria-label={
-        snapshot.coverUrl !== undefined ? `${snapshot.title} cover art` : "Artwork unavailable"
-      }
+      aria-label={hasUsableCover ? `${snapshot.title} cover art` : "Artwork unavailable"}
     >
-      {snapshot.coverUrl !== undefined && (
-        <img src={snapshot.coverUrl} alt="" className="size-full object-cover" />
+      {hasUsableCover && (
+        <img
+          src={snapshot.coverUrl}
+          alt=""
+          onError={() => setImageBroken(true)}
+          className="size-full object-cover"
+        />
       )}
     </div>
   );

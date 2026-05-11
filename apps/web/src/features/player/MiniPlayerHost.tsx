@@ -1,9 +1,7 @@
 import { useLocation } from "react-router-dom";
 import { MiniPlayer } from "@moc/design-system";
 import type { MiniPlayerState } from "@moc/design-system";
-import { snapshotsMatch } from "@moc/web-core";
 import { usePlayer } from "./usePlayer.js";
-import { useExploreTopCard } from "../explore/ExploreTopCardContext.js";
 
 function engineStatusToMiniPlayerState(status: string): MiniPlayerState | null {
   switch (status) {
@@ -22,7 +20,6 @@ function engineStatusToMiniPlayerState(status: string): MiniPlayerState | null {
 
 export function MiniPlayerHost(): JSX.Element | null {
   const { engineState, failedTitle, togglePlay, dismissFailed, expand } = usePlayer();
-  const { topCard } = useExploreTopCard();
   const location = useLocation();
   const { status, currentTrack } = engineState;
 
@@ -30,10 +27,10 @@ export function MiniPlayerHost(): JSX.Element | null {
     return null;
   }
 
-  // UI-16: when the route is /explore AND the swipe-deck top card matches
-  // the currently-loaded track, the card itself owns the player surface
-  // and the docked mini-player is hidden.
-  if (location.pathname === "/explore" && snapshotsMatch(currentTrack.snapshot, topCard)) {
+  // UI-16: the explore page owns the player surface (card + progress bar);
+  // the docked mini-player must never appear there, even during the brief
+  // window between a swipe and the next card's engine-state update.
+  if (location.pathname === "/explore") {
     return null;
   }
 

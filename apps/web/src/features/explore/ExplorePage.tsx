@@ -35,7 +35,7 @@ export function ExplorePage(): JSX.Element {
   const [onboarded, setOnboarded] = useState(() => readOnboardedFlag());
 
   const top = items[0] ?? null;
-  const { isRecovering } = useTopCardPreview(items);
+  useTopCardPreview(items);
 
   const dismissOnboarding = useCallback(() => {
     writeOnboardedFlag();
@@ -52,24 +52,11 @@ export function ExplorePage(): JSX.Element {
     return cleanup;
   }, [registerMediaOverrides, onLike, onPass]);
 
-  // Auto-skip when the preview is unresolvable (provider 404). Per spec:
-  // 5 s → next card; no swipe event written.
-  //
-  // UI-24: suspend the timer while a UI-21 retry is in flight. A 403 on
-  // a cache-loaded URL puts the engine into "failed" while the retry's
-  // /play/resolve is pending; without this guard, the deck would auto-
-  // advance past a card that may still recover. Once the retry settles
-  // (success → engine transitions to "loading" → no timer; failure →
-  // status stays "failed", isRecovering flips to false, timer arms).
-  useEffect(() => {
-    if (engineState.status !== "failed") return undefined;
-    if (isRecovering) return undefined;
-    const t = setTimeout(() => {
-      // Drop the top card without recording a verdict.
-      if (items.length > 0) swipe("left");
-    }, 5_000);
-    return () => clearTimeout(t);
-  }, [engineState.status, items.length, swipe, isRecovering]);
+  // UI-30: the deck never advances on engine "failed". A previous version
+  // of this component scheduled a 5-second `swipe("left")` whenever the
+  // engine entered "failed" — that auto-skip is intentionally absent.
+  // UI-21's retry in useTopCardPreview is the only response to failure;
+  // if it does not recover, the card persists until the user swipes.
 
   // Auto-advance (like) when the full preview plays to the end.
   // topRef lets the effect read the current top card without listing it as

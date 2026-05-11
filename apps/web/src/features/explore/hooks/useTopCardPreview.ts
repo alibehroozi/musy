@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { snapshotsMatch, playableHandoffDecision } from "@moc/web-core";
 import type { SongSnapshot } from "@moc/contracts";
 import { usePlayer } from "../../player/usePlayer.js";
@@ -7,16 +7,6 @@ import { resolveStream } from "../../player/api.js";
 
 const PRE_RESOLVE_AHEAD = 5;
 const HANDOFF_LOOKAHEAD_MS = 5_000;
-
-export interface UseTopCardPreviewResult {
-  /**
-   * `true` while a UI-21 retry's `POST /api/play/resolve` is in flight for
-   * the current top card. Consumers (e.g. ExplorePage's auto-skip
-   * useEffect) should treat `engineState.status === "failed" && isRecovering`
-   * as "still recovering, do not advance the deck" — UI-24.
-   */
-  isRecovering: boolean;
-}
 
 /**
  * Wires the top card's snapshot into the existing PlayerProvider's
@@ -27,10 +17,14 @@ export interface UseTopCardPreviewResult {
  * URLs are ready when they become the top card, enabling the volume-dip
  * crossfade to start immediately without a blocking /play/resolve round-trip.
  *
- * UI-21: when a cached pre-resolved URL has gone stale (e.g. SoundCloud's
- * 55-min signed-URL TTL elapsed while the card sat in the deck) and the
- * browser 403s, retry exactly once by re-resolving via /play/resolve —
- * the backend regenerates a fresh signed URL on every call.
+ * UI-21: whenever the audio engine enters `failed` for the current top
+ * card — regardless of how it was loaded (playPreview's resolve+load
+ * path OR loadPreview's cache fast-path) and regardless of which
+ * underlying failure produced it (audio `error`, network rejection on
+ * /play/resolve, or `streamUrl: null` body) — re-issue
+ * `POST /api/play/resolve` once. The backend regenerates a fresh signed
+ * URL on every call, so a stale 403'd signed URL is the most common
+ * recoverable case. The retry latch is per-(snapshot, mount).
  *
  * UI-25: the retry's `loadPreview` is gated on the snapshot still being
  * the top card at the moment the retry resolves. A user-driven swipe (or
@@ -42,8 +36,11 @@ export interface UseTopCardPreviewResult {
  * engine's `currentTrack` (and therefore the navigator.mediaSession
  * metadata) is preserved so the OS-level binding survives the
  * buildingQueue window.
+ *
+ * UI-30: this hook never advances the queue on its own. A failed retry
+ * leaves the card on the deck; only a user-driven swipe removes it.
  */
-export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResult {
+export function useTopCardPreview(items: SongSnapshot[]): void {
   const top = items[0] ?? null;
   const next = items[1] ?? null;
   const { playPreview, loadPreview, pause, engineState } = usePlayer();
@@ -92,21 +89,11 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
 
   const pendingPreviewRef = useRef<SongSnapshot | null>(null);
 
-  // UI-21 latches:
-  //   loadedViaCacheRef — snapshot that was loaded via the cached-URL fast
-  //     path; armed for retry if the engine later errors before reaching
-  //     "playing". Cleared once the snapshot reaches "playing" (no more
-  //     late retries) or once a retry has been issued.
-  //   retriedKeysRef — snapshot keys we've already retried this mount, so
-  //     a second error doesn't loop us.
-  const loadedViaCacheRef = useRef<SongSnapshot | null>(null);
+  // UI-21 latch: snapshot keys we've already retried this mount, so a
+  // second error doesn't hot-loop. Once a snapshot reaches "playing", we
+  // also add it so a late mid-stream error doesn't trigger a retry on a
+  // healthy stream.
   const retriedKeysRef = useRef<Set<string>>(new Set());
-
-  // UI-24: `isRecovering` is true between the UI-21 retry's
-  // `resolveStream()` call and its settle. ExplorePage gates its 5-s
-  // auto-skip-on-failure timer on `!isRecovering` so a still-recoverable
-  // card is not swiped out from under the user.
-  const [isRecovering, setIsRecovering] = useState(false);
 
   useEffect(() => {
     if (top === null) {
@@ -127,35 +114,29 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
 
     const cached = resolveCache.current.get(snapshotKey(top));
     if (cached !== undefined && cached !== null) {
-      loadedViaCacheRef.current = top;
       loadPreview(top, cached);
     } else {
-      loadedViaCacheRef.current = null;
       playPreview(top);
     }
   }, [top, playPreview, loadPreview, pause]);
 
-  // UI-21 + UI-24 + UI-25: on engine error against a cached-load snapshot,
-  // drop the stale cache entry and re-resolve once. While the retry is
-  // in flight, `isRecovering === true` so the deck does not auto-advance
-  // (UI-24). When the retry resolves, gate the `loadPreview` call on the
-  // snapshot still being the top card (UI-25) — a delayed retry must not
-  // play a swiped-past track over the now-current top. The terminal
-  // `failed` state is reached only when the retry's /play/resolve returns
-  // null or the second load also errors (the retry path doesn't re-arm
-  // itself).
+  // UI-21 + UI-25 + UI-30: on any engine "failed" for the current top
+  // card — regardless of whether it was loaded via the cache fast-path
+  // or via playPreview's resolve+load — drop the stale cache entry and
+  // re-resolve once. When the retry resolves, gate `loadPreview` on the
+  // snapshot still being the top card (UI-25). If the retry produces no
+  // playable stream (null body, network rejection, or a second engine
+  // error after the retry's load), the card REMAINS on the deck — there
+  // is no auto-skip (UI-30). The latch is per-(snapshot, mount).
   useEffect(() => {
     if (engineState.status !== "failed") return;
     const current = engineState.currentTrack?.snapshot;
     if (!current) return;
-    if (!snapshotsMatch(loadedViaCacheRef.current, current)) return;
     const key = snapshotKey(current);
     if (retriedKeysRef.current.has(key)) return;
     retriedKeysRef.current.add(key);
     resolveCache.current.delete(key);
-    loadedViaCacheRef.current = null;
 
-    setIsRecovering(true);
     void resolveStream({ snapshot: current })
       .then((res) => {
         // UI-25: the user (or any other code path) may have swiped past
@@ -168,22 +149,18 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
         loadPreview(current, res.streamUrl);
       })
       .catch(() => {
-        // Silent — engine stays in failed state, UI-12 / auto-skip take over.
-      })
-      .finally(() => {
-        setIsRecovering(false);
+        // Silent — engine stays in "failed", card stays on the deck per
+        // UI-30 until the user swipes.
       });
   }, [engineState.status, engineState.currentTrack, loadPreview]);
 
-  // Once a snapshot reaches "playing", disarm UI-21 — a late error event
-  // (mid-stream stall, network drop) should not trigger a re-resolve.
+  // Once a snapshot reaches "playing", lock its retry latch so a late
+  // mid-stream error (network drop, decode glitch) does not re-trigger
+  // resolution.
   useEffect(() => {
     if (engineState.status !== "playing") return;
     const current = engineState.currentTrack?.snapshot;
     if (!current) return;
-    if (snapshotsMatch(loadedViaCacheRef.current, current)) {
-      loadedViaCacheRef.current = null;
-    }
     retriedKeysRef.current.add(snapshotKey(current));
   }, [engineState.status, engineState.currentTrack]);
 
@@ -230,8 +207,6 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
     engineState.progressMs,
     engineState.durationMs,
   ]);
-
-  return { isRecovering };
 }
 
 function snapshotKey(s: SongSnapshot): string {

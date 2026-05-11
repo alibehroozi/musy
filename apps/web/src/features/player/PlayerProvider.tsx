@@ -218,9 +218,15 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       const startTime = performance.now();
       const step = (now: number): void => {
         const a = audioRef.current;
-        if (!a) { resolve(); return; }
+        if (!a) {
+          resolve();
+          return;
+        }
         const elapsed = now - startTime;
-        const progress = Math.min(1, elapsed / durationMs);
+        // Clamp to [0,1]: RAF timestamps can be slightly earlier than the
+        // performance.now() captured at startTime, making elapsed negative
+        // on the first frame and producing volume > 1 without the lower clamp.
+        const progress = Math.max(0, Math.min(1, elapsed / durationMs));
         a.volume = startVolume * (1 - progress);
         if (progress < 1) {
           fadeRafRef.current = requestAnimationFrame(step);

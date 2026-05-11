@@ -1,12 +1,11 @@
 // If a test fails, fix the source code, not the test.
 //
-// Pins LOGIC-20: parseColdStartResponse tolerates the wrappers LLMs
-// add around JSON output. Reproduced empirically against Haiku: every
-// observed cold-start response was wrapped in ```json … ``` fences
-// regardless of the "no code fences" instruction in the prompt.
+// Pins LOGIC-20 (parseColdStartResponse JSON wrapper tolerance) and
+// LOGIC-28 (buildColdStartPrompt accepts optional `recentSwipes` soft
+// signal; byte-identical to the legacy zero-arg form when omitted).
 
 import { describe, it, expect } from "vitest";
-import { parseColdStartResponse } from "./cold-start-prompt.js";
+import { buildColdStartPrompt, parseColdStartResponse } from "./cold-start-prompt.js";
 
 const BARE_JSON = `{"songs":[{"title":"Blinding Lights","artist":"The Weeknd"},{"title":"Marquee Moon","artist":"Television"}]}`;
 
@@ -125,5 +124,100 @@ describe("LOGIC-20: parseColdStartResponse tolerates LLM JSON wrappers", () => {
     const a = parseColdStartResponse(fenced);
     const b = parseColdStartResponse(fenced);
     expect(a).toEqual(b);
+  });
+});
+
+describe("LOGIC-28: buildColdStartPrompt accepts optional recentSwipes soft signal", () => {
+  it("zero-arg call produces a non-empty (system, userMessage) pair", () => {
+    const out = buildColdStartPrompt();
+    expect(out.system.length).toBeGreaterThan(0);
+    expect(out.userMessage.length).toBeGreaterThan(0);
+  });
+
+  it("zero-arg, empty-object, and empty-array forms produce byte-identical output (legacy cache-key compat)", () => {
+    const legacy = buildColdStartPrompt();
+    const withEmptyInput = buildColdStartPrompt({});
+    const withEmptyArray = buildColdStartPrompt({ recentSwipes: [] });
+    expect(withEmptyInput.system).toBe(legacy.system);
+    expect(withEmptyInput.userMessage).toBe(legacy.userMessage);
+    expect(withEmptyArray.system).toBe(legacy.system);
+    expect(withEmptyArray.userMessage).toBe(legacy.userMessage);
+  });
+
+  it("non-empty recentSwipes adds soft-signal text to the system prompt", () => {
+    const out = buildColdStartPrompt({
+      recentSwipes: [
+        { title: "Hate This", artist: "Disliked Band", direction: "left" },
+        { title: "Loved It", artist: "Liked Band", direction: "right" },
+      ],
+    });
+    const legacy = buildColdStartPrompt();
+    expect(out.system).not.toBe(legacy.system);
+    // The soft-signal text must mention BOTH directions so the model
+    // knows to lean both ways, and must NOT be phrased as a forbid.
+    expect(out.system.toLowerCase()).toContain("right");
+    expect(out.system.toLowerCase()).toContain("left");
+    expect(out.system.toLowerCase()).not.toContain("do not suggest");
+    expect(out.system.toLowerCase()).not.toContain("forbid");
+    expect(out.system.toLowerCase()).not.toContain("never use");
+  });
+
+  it("non-empty recentSwipes embeds the projected swipes in the user message", () => {
+    const out = buildColdStartPrompt({
+      recentSwipes: [
+        { title: "Hate This", artist: "Disliked Band", direction: "left" },
+        { title: "Loved It", artist: "Liked Band", direction: "right" },
+      ],
+    });
+    expect(out.userMessage).toContain("Hate This");
+    expect(out.userMessage).toContain("Loved It");
+    expect(out.userMessage).toContain("right");
+    expect(out.userMessage).toContain("left");
+  });
+
+  it("each projected swipe entry contains only {title, artist, direction}", () => {
+    const out = buildColdStartPrompt({
+      recentSwipes: [
+        { title: "Song A", artist: "Artist A", direction: "right" },
+        { title: "Song B", artist: "Artist B", direction: "left" },
+      ],
+    });
+    // Parse the JSON portion of the user message and check shape.
+    const match = /(\{[\s\S]*\})/.exec(out.userMessage);
+    expect(match).toBeTruthy();
+    const parsed = JSON.parse(match![1]!) as {
+      recentSwipes: Array<Record<string, unknown>>;
+    };
+    for (const entry of parsed.recentSwipes) {
+      expect(Object.keys(entry).sort()).toEqual(["artist", "direction", "title"]);
+    }
+  });
+
+  it("is deterministic — equal recentSwipes produce byte-identical output", () => {
+    const input = {
+      recentSwipes: [
+        { title: "Song A", artist: "Artist A", direction: "right" as const },
+        { title: "Song B", artist: "Artist B", direction: "left" as const },
+      ],
+    };
+    const a = buildColdStartPrompt(input);
+    const b = buildColdStartPrompt({
+      recentSwipes: [...input.recentSwipes],
+    });
+    expect(a.system).toBe(b.system);
+    expect(a.userMessage).toBe(b.userMessage);
+  });
+
+  it("truncates recentSwipes newest-first to the documented cap (50 entries)", () => {
+    const many = Array.from({ length: 80 }, (_, i) => ({
+      title: `T${i}`,
+      artist: `A${i}`,
+      direction: (i % 2 === 0 ? "right" : "left") as "right" | "left",
+    }));
+    const out = buildColdStartPrompt({ recentSwipes: many });
+    // T0..T49 should make it; T50..T79 should be truncated (newest-first means caller passes newest at index 0).
+    expect(out.userMessage).toContain("T0");
+    expect(out.userMessage).toContain("T49");
+    expect(out.userMessage).not.toContain("T70");
   });
 });

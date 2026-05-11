@@ -50,8 +50,6 @@ export function useTopCardPreview(items: SongSnapshot[]): void {
           resolvingKeys.current.delete(k);
         });
     }
-  // items identity changes on every swipe; run the effect each time.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
   // Ref that mirrors engineState.currentTrack?.snapshot without being a

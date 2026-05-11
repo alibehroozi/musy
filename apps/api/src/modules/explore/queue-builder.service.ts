@@ -254,10 +254,23 @@ export class QueueBuilderService {
       lookupMap.set(key, result.value);
     });
 
-    return resolveCoversForQueue(
+    const survivors = resolveCoversForQueue(
       candidates,
       (title, artist) => lookupMap.get(lookupKey(title, artist)) ?? null,
     );
+
+    this.logger.log(
+      {
+        event: "explore_cover_resolution",
+        inputCount: candidates.length,
+        uncoveredCount: uncovered.length,
+        survivorCount: survivors.length,
+        droppedCount: candidates.length - survivors.length,
+      },
+      "explore_cover_resolution",
+    );
+
+    return survivors;
   }
 
   private async sourceCandidates(
@@ -277,9 +290,17 @@ export class QueueBuilderService {
   }
 
   /**
-   * Discovery phase: ask Claude to generate a diverse initial set of songs,
-   * then look each up on Audius/SoundCloud to enrich with cover art and
-   * duration. Falls back to the static seed list if AI or providers fail.
+   * Discovery phase: ask Claude to generate a diverse initial set of
+   * canonical commercial titles. Emits `{title, artist}` tuples only —
+   * the downstream cover-resolution step (`resolveCoversForCandidates`)
+   * is the single authority for covers, fanning out to the unified
+   * search aggregator (Audius + Deezer + RadioBrowser + Genius) and
+   * dropping anything Deezer / Genius can't cover.
+   *
+   * SoundCloud is deliberately NOT consulted here: its user-upload
+   * catalog has unreliable artwork, and using its `artworkUrl` would
+   * smuggle covers from a source we've decided to exclude. Falls back
+   * to the static seed list if the cold-start LLM fails.
    */
   private async sourceDiscovery(seenHashes: Set<string>): Promise<SongSnapshot[]> {
     try {
@@ -294,27 +315,13 @@ export class QueueBuilderService {
       const suggestions = parseColdStartResponse(response.text);
       if (suggestions.length === 0) throw new Error("cold-start: empty response");
 
-      // Look up each suggestion on providers in parallel to get cover art.
-      const settled = await Promise.allSettled(
-        suggestions.map(async ({ title, artist }) => {
-          const query = `${title} ${artist}`;
-          const [audiusResult, scResult] = await Promise.allSettled([
-            this.audius.search(query).catch(() => [] as TrackResult[]),
-            this.soundcloud.search(query).catch(() => [] as TrackResult[]),
-          ]);
-          const tracks = combineFulfilled(audiusResult, scResult);
-          const match = findBestMatch(title, artist, tracks);
-          return match
-            ? toSnapshot(match)
-            : ({ title, artist, kind: "track" } satisfies SongSnapshot);
-        }),
-      );
+      const tuples: SongSnapshot[] = suggestions.map(({ title, artist }) => ({
+        title,
+        artist,
+        kind: "track",
+      }));
 
-      const enriched = settled
-        .filter((r): r is PromiseFulfilledResult<SongSnapshot> => r.status === "fulfilled")
-        .map((r) => r.value);
-
-      const result = dedupeBySnapshotHash(enriched, seenHashes);
+      const result = dedupeBySnapshotHash(tuples, seenHashes);
       if (result.length > 0) return result;
     } catch (err) {
       this.logger.warn(
@@ -418,28 +425,16 @@ export class QueueBuilderService {
   }
 }
 
-/**
- * Find the track whose title+artist best match the AI suggestion. If an
- * exact normalized match exists, prefer it; otherwise take the first result
- * (the search query already biases toward relevance).
- */
-function findBestMatch(title: string, artist: string, tracks: TrackResult[]): TrackResult | null {
-  if (tracks.length === 0) return null;
-  const normTitle = title.trim().toLowerCase();
-  const normArtist = artist.trim().toLowerCase();
-  const exact = tracks.find(
-    (t) =>
-      t.title.trim().toLowerCase() === normTitle && t.artist.trim().toLowerCase() === normArtist,
-  );
-  return exact ?? tracks[0] ?? null;
-}
-
 function toSnapshot(track: TrackResult): SongSnapshot {
+  // SoundCloud's artworkUrl is from user uploads — drop it so the
+  // cover-resolution step picks the cover from a trusted aggregator
+  // source (Deezer / Genius / Audius via SearchService).
+  const trustedArtwork = track.provider === "soundcloud" ? undefined : track.artworkUrl;
   return {
     title: track.title,
     artist: track.artist,
     kind: "track",
-    ...(track.artworkUrl !== undefined ? { coverUrl: track.artworkUrl } : {}),
+    ...(trustedArtwork !== undefined ? { coverUrl: trustedArtwork } : {}),
     ...(track.duration !== undefined ? { durationSec: track.duration } : {}),
   };
 }

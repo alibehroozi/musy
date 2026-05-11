@@ -1,8 +1,13 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { v4 as uuidv4 } from "uuid";
-import { TasteProfileLLMOutput, type TasteProfile } from "@moc/contracts";
-import { buildTastePrompt, type PromptListen, type PromptSwipe } from "@moc/api-core";
+import type { TasteProfile } from "@moc/contracts";
+import {
+  buildTastePrompt,
+  parseTasteProfileResponse,
+  type PromptListen,
+  type PromptSwipe,
+} from "@moc/api-core";
 
 import { SwipesRepository } from "./explore.repository.js";
 import { ListeningEventsRepository } from "../play/listening-events.repository.js";
@@ -117,8 +122,7 @@ export class ProfileBuilderService {
 
     let parsed;
     try {
-      const json = JSON.parse(response.text);
-      parsed = TasteProfileLLMOutput.parse(json);
+      parsed = parseTasteProfileResponse(response.text);
     } catch (err) {
       this.logger.error(
         {

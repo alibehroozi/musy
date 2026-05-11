@@ -2,7 +2,7 @@
 //
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under UI-16, UI-17, UI-18, UI-19.
+// Invariants verified here are listed in INVARIANTS.md under UI-16, UI-17, UI-18, UI-19, UI-20.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, fireEvent, act } from "@testing-library/react";
@@ -263,5 +263,87 @@ describe("UI-19: exactly one card carries data-explore-position='top'", () => {
     // The previous top card (Get Lucky) is no longer in the visible top-3 stack.
     const top = container.querySelector("[data-explore-position='top']");
     expect(top?.textContent).toContain("One More Time");
+  });
+});
+
+describe("UI-20: explore queue persists across tab navigation", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    cleanup();
+    localStorage.setItem("moc.explore.onboarded", "1");
+    mockAudio();
+  });
+
+  afterEach(() => {
+    cleanup();
+    localStorage.clear();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("navigating away from /explore and back does not re-fetch the queue", async () => {
+    // Use 8 items so the refill threshold (5) is never hit, giving a stable call count.
+    const LARGE_QUEUE: NextResponse["items"] = Array.from({ length: 8 }, (_, i) => ({
+      title: `Persistent Track ${i + 1}`,
+      artist: `Artist ${i + 1}`,
+      durationSec: 200 + i,
+      kind: "track" as const,
+    }));
+    let nextCallCount = 0;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/explore/next")) {
+        nextCallCount++;
+        return new Response(
+          JSON.stringify({ items: LARGE_QUEUE, phase: "discovery", partial: false }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/explore/profile")) {
+        return new Response(JSON.stringify(null), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/explore/swipe")) return new Response(null, { status: 204 });
+      if (url.includes("/api/play/resolve")) {
+        return new Response(
+          JSON.stringify({
+            source: "audius",
+            sourceTrackId: "a1",
+            streamUrl: "https://stream.audius.co/foo",
+            expiresAt: "2026-12-31T00:00:00.000Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/search/history")) {
+        return new Response(JSON.stringify({ entries: [], nextCursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof globalThis.fetch;
+
+    renderAuthedApp("/explore");
+
+    // Wait for the initial queue load.
+    await waitFor(() => expect(screen.getByText("Persistent Track 1")).toBeInTheDocument());
+    expect(nextCallCount).toBe(1);
+
+    // Navigate to /search via the bottom nav.
+    fireEvent.click(screen.getByRole("link", { name: /Search/i }));
+    await waitFor(() => expect(screen.queryByTestId("explore-page")).not.toBeInTheDocument());
+
+    // Navigate back to /explore.
+    fireEvent.click(screen.getByRole("link", { name: /Explore/i }));
+    await waitFor(() => expect(screen.getByTestId("explore-page")).toBeInTheDocument());
+
+    // Same items must still be present (queue was not reset).
+    expect(screen.getByText("Persistent Track 1")).toBeInTheDocument();
+
+    // No second /explore/next request was fired.
+    expect(nextCallCount).toBe(1);
   });
 });

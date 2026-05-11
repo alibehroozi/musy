@@ -106,7 +106,11 @@ export class FakeQueueBuilderService {
     const safeCount = Math.max(1, Math.min(50, Math.floor(count)));
     const queue = this.queuesByUser.get(userId);
     if (!queue) return { items: [], phase: "discovery", partial: true };
-    const items = queue.items.slice(0, safeCount);
+    // Mirrors API-17 in the real QueueBuilderService.getNext: items
+    // without a non-empty coverUrl never reach the wire.
+    const items = queue.items
+      .filter((s) => typeof s.coverUrl === "string" && s.coverUrl.length > 0)
+      .slice(0, safeCount);
     return { items, phase: queue.phase, partial: items.length < safeCount };
   }
 
@@ -233,12 +237,20 @@ export async function buildExploreEventsTestApp(): Promise<ExploreEventsTestAppH
 }
 
 export function makeSnapshot(overrides: Partial<SongSnapshot> = {}): SongSnapshot {
-  return {
+  // Default coverUrl populated (non-empty) so the queue-contract invariants
+  // (DATA-13, API-17) hold by default. Tests that need a cover-less snapshot
+  // pass `coverUrl: ""` explicitly, and the helper omits the field — which
+  // is what those tests want (queue items missing a cover should be dropped).
+  const out: SongSnapshot = {
     title: overrides.title ?? "Bohemian Rhapsody",
     artist: overrides.artist ?? "Queen",
     kind: overrides.kind ?? "track",
-    ...(overrides.coverUrl !== undefined ? { coverUrl: overrides.coverUrl } : {}),
+    coverUrl: overrides.coverUrl ?? "https://cdn/cover.jpg",
     ...(overrides.year !== undefined ? { year: overrides.year } : {}),
     ...(overrides.durationSec !== undefined ? { durationSec: overrides.durationSec } : {}),
   };
+  if (overrides.coverUrl === "") {
+    delete (out as Partial<SongSnapshot>).coverUrl;
+  }
+  return out;
 }

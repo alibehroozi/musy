@@ -37,7 +37,8 @@ import { SoundCloudClient } from "./providers/soundcloud.client.js";
     SoundCloudClient,
   ],
   // ExploreModule's queue builder injects AudiusClient + SoundCloudClient
-  // for per-genre / per-artist candidate sourcing.
-  exports: [InterestScoresRepository, AudiusClient, SoundCloudClient],
+  // for per-genre / per-artist candidate sourcing, and SearchService for
+  // resolving covers on candidates the per-provider step couldn't enrich.
+  exports: [InterestScoresRepository, AudiusClient, SoundCloudClient, SearchService],
 })
 export class SearchModule {}

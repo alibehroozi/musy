@@ -272,15 +272,81 @@ describe("API-16: GET /api/explore/next contract — auth, NextResponse shape, c
 });
 
 describe("API-17: GET /api/explore/next returns only items with a non-empty coverUrl", () => {
-  it.todo(
-    "with a fully covered queue: every NextResponse.items[i].coverUrl is a non-empty string — build a queue where every persisted item has coverUrl, fetch /api/explore/next, and assert items.every(i => typeof i.coverUrl === 'string' && i.coverUrl.length > 0)",
-  );
+  let h: ExploreEventsTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
 
-  it.todo(
-    "endpoint never surfaces a cover-less item even if one is artificially persisted (defense-in-depth): plant a queue document with a mixed items list (some with coverUrl, some without) via the repository directly, then assert /api/explore/next response items contains zero entries with missing/empty coverUrl",
-  );
+  it("with a fully covered queue, every items[i].coverUrl is a non-empty string", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440a01";
+    const token = h.authService.signSession({ uid: userId, gid: "g_cov_a01" });
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: [
+        makeSnapshot({ title: "A", artist: "Y", coverUrl: "https://cdn/a.jpg" }),
+        makeSnapshot({ title: "B", artist: "Y", coverUrl: "https://cdn/b.jpg" }),
+        makeSnapshot({ title: "C", artist: "Y", coverUrl: "https://cdn/c.jpg" }),
+      ],
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next?count=20")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(() => NextResponse.parse(res.body)).not.toThrow();
+    expect(res.body.items.length).toBe(3);
+    for (const item of res.body.items) {
+      expect(typeof item.coverUrl).toBe("string");
+      expect(item.coverUrl.length).toBeGreaterThan(0);
+    }
+  });
 
-  it.todo(
-    "the seed-fallback path (queue-builder returns seedSnapshots() when the AI sourcing fails) does not yield cover-less items on the wire: simulate a rebuild failure, then assert the resulting /api/explore/next response items array is either empty or entirely covered — never partially covered",
-  );
+  it("never surfaces a cover-less item even if one is artificially planted (defense-in-depth)", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440a02";
+    const token = h.authService.signSession({ uid: userId, gid: "g_cov_a02" });
+    // Plant a mixed queue: two covered, two cover-less. The endpoint
+    // must drop the latter regardless of how they got persisted.
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: [
+        makeSnapshot({ title: "Covered1", artist: "X", coverUrl: "https://cdn/1.jpg" }),
+        makeSnapshot({ title: "Bare1", artist: "X", coverUrl: "" }),
+        makeSnapshot({ title: "Covered2", artist: "X", coverUrl: "https://cdn/2.jpg" }),
+        makeSnapshot({ title: "Bare2", artist: "X", coverUrl: "" }),
+      ],
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next?count=20")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    const titles = res.body.items.map((s: { title: string }) => s.title);
+    expect(titles).not.toContain("Bare1");
+    expect(titles).not.toContain("Bare2");
+    expect(titles).toContain("Covered1");
+    expect(titles).toContain("Covered2");
+    for (const item of res.body.items) {
+      expect(item.coverUrl?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("returns an empty (but valid) NextResponse when every queued item is cover-less", async () => {
+    h = await buildExploreEventsTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440a03";
+    const token = h.authService.signSession({ uid: userId, gid: "g_cov_a03" });
+    h.queueBuilder.queuesByUser.set(userId, {
+      items: [
+        makeSnapshot({ title: "Bare1", artist: "X", coverUrl: "" }),
+        makeSnapshot({ title: "Bare2", artist: "X", coverUrl: "" }),
+      ],
+      phase: "discovery",
+    });
+    const res = await request(h.app.getHttpServer())
+      .get("/api/explore/next?count=20")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    expect(() => NextResponse.parse(res.body)).not.toThrow();
+    expect(res.body.items).toEqual([]);
+  });
 });

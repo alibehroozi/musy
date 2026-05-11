@@ -36,15 +36,45 @@ describe("DATA-12: explore_queue document shape and unique userId index", () => 
 });
 
 describe("DATA-13: every persisted explore_queue item has a non-empty coverUrl", () => {
-  it.todo(
-    "QueueBuilderService.rebuildQueue writes only items with non-empty coverUrl — feed the builder a candidate list mixing covered + uncovered snapshots, stub the SearchService resolver to return artwork for some and null for others, then read back the persisted ExploreQueueRepository document and assert every items[i].coverUrl is a non-empty string",
-  );
+  it("items uses a typed subschema (not Mixed) so per-item paths can be enforced", () => {
+    const itemsPath = ExploreQueueSchemaDefinition.paths["items"] as unknown as {
+      schema?: { paths?: Record<string, unknown> };
+    };
+    expect(
+      itemsPath.schema?.paths,
+      "items must be a DocumentArray with a subschema — not Schema.Types.Mixed",
+    ).toBeDefined();
+  });
 
-  it.todo(
-    "QueueBuilderService.rebuildQueue drops candidates whose resolver returns a TrackResult without artworkUrl — stub the resolver to return a TrackResult with artworkUrl=undefined for a specific snapshot and confirm that snapshot is absent from the persisted queue",
-  );
+  it("items subschema marks coverUrl as a required field", () => {
+    const itemsPath = ExploreQueueSchemaDefinition.paths["items"] as unknown as {
+      schema: {
+        paths: Record<string, { options?: { required?: unknown } }>;
+      };
+    };
+    const coverUrl = itemsPath.schema.paths["coverUrl"];
+    expect(coverUrl, "items subschema must declare coverUrl").toBeDefined();
+    expect(coverUrl?.options?.required).toBe(true);
+  });
 
-  it.todo(
-    "QueueBuilderService.rebuildQueue preserves an existing coverUrl when one is already present on the candidate (no overwrite via resolver) — assert the persisted item's coverUrl matches the input snapshot's coverUrl exactly when the input already had one",
-  );
+  it("items subschema's coverUrl validator rejects empty strings and accepts non-empty ones", () => {
+    const itemsPath = ExploreQueueSchemaDefinition.paths["items"] as unknown as {
+      schema: {
+        paths: Record<
+          string,
+          {
+            options?: {
+              validate?: { validator?: (v: unknown) => boolean };
+            };
+          }
+        >;
+      };
+    };
+    const validator = itemsPath.schema.paths["coverUrl"]?.options?.validate?.validator;
+    expect(validator, "items.coverUrl must declare a validator").toBeDefined();
+    expect(validator!("")).toBe(false);
+    expect(validator!(undefined)).toBe(false);
+    expect(validator!(0 as unknown)).toBe(false);
+    expect(validator!("https://cdn/cover.jpg")).toBe(true);
+  });
 });

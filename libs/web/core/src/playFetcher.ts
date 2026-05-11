@@ -30,6 +30,7 @@ export interface PlayCompletedBody {
 export async function recordPlayStarted(body: PlayStartedBody, apiBase = "/api"): Promise<void> {
   const res = await fetch(`${apiBase}/play/started`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -44,6 +45,7 @@ export async function recordPlayCompleted(
 ): Promise<void> {
   const res = await fetch(`${apiBase}/play/completed`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

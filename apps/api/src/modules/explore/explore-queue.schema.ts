@@ -12,11 +12,34 @@ export interface ExploreQueueDocument extends Document {
   swipesSeenAtBuild: number;
 }
 
+// DATA-13: every persisted item must carry a non-empty coverUrl. The
+// SongSnapshot Zod stays optional (other surfaces — interest events,
+// saved events, listening — legitimately accept covers later); the
+// constraint is enforced at the queue persistence boundary, here.
+const QueueItemSchemaDefinition = new Schema<SongSnapshot>(
+  {
+    title: { type: String, required: true },
+    artist: { type: String, required: true },
+    coverUrl: {
+      type: String,
+      required: true,
+      validate: {
+        validator: (v: unknown) => typeof v === "string" && v.length > 0,
+        message: "explore_queue items must have a non-empty coverUrl",
+      },
+    },
+    year: { type: Number },
+    durationSec: { type: Number, min: 0 },
+    kind: { type: String, required: true, enum: ["track", "station"] },
+  },
+  { _id: false, versionKey: false },
+);
+
 export const ExploreQueueSchemaDefinition = new Schema<ExploreQueueDocument>(
   {
     id: { type: String, required: true },
     userId: { type: String, required: true },
-    items: { type: Schema.Types.Mixed, required: true, default: [] },
+    items: { type: [QueueItemSchemaDefinition], required: true, default: [] },
     phase: {
       type: String,
       required: true,

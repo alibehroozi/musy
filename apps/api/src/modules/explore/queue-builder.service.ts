@@ -8,6 +8,8 @@ import {
   computeSnapshotHash,
   parseColdStartResponse,
   phaseFor,
+  pickCoverMatch,
+  resolveCoversForQueue,
   seedSnapshots,
   type PromptCandidate,
 } from "@moc/api-core";
@@ -26,6 +28,7 @@ import { ProfileBuilderService } from "./profile-builder.service.js";
 import { AnthropicClient } from "./anthropic.client.js";
 import { AudiusClient } from "../search/providers/audius.client.js";
 import { SoundCloudClient } from "../search/providers/soundcloud.client.js";
+import { SearchService } from "../search/search.service.js";
 import { PlayService } from "../play/play.service.js";
 
 const PRE_RESOLVE_TOP_N = 5;
@@ -57,6 +60,7 @@ export class QueueBuilderService {
     @Inject(AnthropicClient) private readonly anthropic: AnthropicClient,
     @Inject(AudiusClient) private readonly audius: AudiusClient,
     @Inject(SoundCloudClient) private readonly soundcloud: SoundCloudClient,
+    @Inject(SearchService) private readonly search: SearchService,
     @Inject(PlayService) private readonly play: PlayService,
     @Inject(ConfigService) private readonly config: ConfigService,
   ) {}
@@ -80,15 +84,22 @@ export class QueueBuilderService {
     if (!queue) {
       // Best-effort fallback — a build that produced nothing still
       // surfaces the seed-genre snapshots so the UI is never empty.
-      const seeds = seedSnapshots().slice(0, safeCount);
+      // API-17 filter: seeds without coverUrl never reach the wire.
+      const seeds = seedSnapshots().filter(hasNonEmptyCover).slice(0, safeCount);
       return { items: seeds, phase: "discovery", partial: true };
     }
 
     // Always exclude songs the user has already swiped so they never
     // reappear — even when the stored queue pre-dates the latest swipes.
+    // API-17 defense-in-depth: also drop any item without coverUrl. The
+    // queue builder's resolution step (rebuildQueue) is the primary
+    // enforcement; this filter catches pre-existing rows from before
+    // DATA-13 landed and any future drift.
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
     const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
-    const filtered = queue.items.filter((item) => !seenHashes.has(computeSnapshotHash(item)));
+    const filtered = queue.items.filter(
+      (item) => !seenHashes.has(computeSnapshotHash(item)) && hasNonEmptyCover(item),
+    );
     shuffleInPlace(filtered);
 
     const items = filtered.slice(0, safeCount);
@@ -128,6 +139,12 @@ export class QueueBuilderService {
       );
       items = seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
     }
+
+    // DATA-13: any candidate that didn't pick up a coverUrl during
+    // sourcing gets one resolved here via the unified search aggregator.
+    // Candidates the aggregator can't cover are dropped: a song with no
+    // resolvable artwork "doesn't exist" by the explore queue's contract.
+    items = await this.resolveCoversForCandidates(items);
 
     if (items.length === 0) {
       this.logger.warn(
@@ -189,6 +206,73 @@ export class QueueBuilderService {
     });
   }
 
+  /**
+   * Resolve covers for any candidate that didn't pick one up during
+   * the per-phase sourcing step. Each uncovered candidate is queried
+   * against the unified `SearchService` aggregator (broader provider
+   * fan-out than the per-phase Audius/SoundCloud lookups — adds
+   * Deezer + Genius + RadioBrowser); the first track with a non-empty
+   * `artworkUrl` becomes that candidate's `coverUrl`. Candidates with
+   * no resolvable artwork are dropped.
+   *
+   * The pure helper `resolveCoversForQueue` from `@moc/api-core` does
+   * the actual filtering — this method just resolves the lookups in
+   * parallel and hands them to the helper as a sync function.
+   */
+  private async resolveCoversForCandidates(candidates: SongSnapshot[]): Promise<SongSnapshot[]> {
+    if (candidates.length === 0) return candidates;
+    const uncovered = candidates.filter((c) => !hasNonEmptyCover(c));
+    if (uncovered.length === 0) return [...candidates];
+
+    const settled = await Promise.allSettled(
+      uncovered.map((c) =>
+        this.search
+          .search(`${c.title} ${c.artist}`)
+          .then((response) => pickCoverMatch(c.title, c.artist, response.results)),
+      ),
+    );
+
+    const lookupMap = new Map<string, TrackResult | null>();
+    uncovered.forEach((c, idx) => {
+      const result = settled[idx];
+      const key = lookupKey(c.title, c.artist);
+      if (result === undefined || result.status === "rejected") {
+        if (result?.status === "rejected") {
+          this.logger.warn(
+            {
+              event: "explore_cover_lookup_failed",
+              title: c.title,
+              artist: c.artist,
+              err: errToString(result.reason),
+            },
+            "explore_cover_lookup_failed",
+          );
+        }
+        lookupMap.set(key, null);
+        return;
+      }
+      lookupMap.set(key, result.value);
+    });
+
+    const survivors = resolveCoversForQueue(
+      candidates,
+      (title, artist) => lookupMap.get(lookupKey(title, artist)) ?? null,
+    );
+
+    this.logger.log(
+      {
+        event: "explore_cover_resolution",
+        inputCount: candidates.length,
+        uncoveredCount: uncovered.length,
+        survivorCount: survivors.length,
+        droppedCount: candidates.length - survivors.length,
+      },
+      "explore_cover_resolution",
+    );
+
+    return survivors;
+  }
+
   private async sourceCandidates(
     phase: QueuePhase,
     profile: TasteProfile | null,
@@ -206,9 +290,17 @@ export class QueueBuilderService {
   }
 
   /**
-   * Discovery phase: ask Claude to generate a diverse initial set of songs,
-   * then look each up on Audius/SoundCloud to enrich with cover art and
-   * duration. Falls back to the static seed list if AI or providers fail.
+   * Discovery phase: ask Claude to generate a diverse initial set of
+   * canonical commercial titles. Emits `{title, artist}` tuples only —
+   * the downstream cover-resolution step (`resolveCoversForCandidates`)
+   * is the single authority for covers, fanning out to the unified
+   * search aggregator (Audius + Deezer + RadioBrowser + Genius) and
+   * dropping anything Deezer / Genius can't cover.
+   *
+   * SoundCloud is deliberately NOT consulted here: its user-upload
+   * catalog has unreliable artwork, and using its `artworkUrl` would
+   * smuggle covers from a source we've decided to exclude. Falls back
+   * to the static seed list if the cold-start LLM fails.
    */
   private async sourceDiscovery(seenHashes: Set<string>): Promise<SongSnapshot[]> {
     try {
@@ -223,27 +315,13 @@ export class QueueBuilderService {
       const suggestions = parseColdStartResponse(response.text);
       if (suggestions.length === 0) throw new Error("cold-start: empty response");
 
-      // Look up each suggestion on providers in parallel to get cover art.
-      const settled = await Promise.allSettled(
-        suggestions.map(async ({ title, artist }) => {
-          const query = `${title} ${artist}`;
-          const [audiusResult, scResult] = await Promise.allSettled([
-            this.audius.search(query).catch(() => [] as TrackResult[]),
-            this.soundcloud.search(query).catch(() => [] as TrackResult[]),
-          ]);
-          const tracks = combineFulfilled(audiusResult, scResult);
-          const match = findBestMatch(title, artist, tracks);
-          return match
-            ? toSnapshot(match)
-            : ({ title, artist, kind: "track" } satisfies SongSnapshot);
-        }),
-      );
+      const tuples: SongSnapshot[] = suggestions.map(({ title, artist }) => ({
+        title,
+        artist,
+        kind: "track",
+      }));
 
-      const enriched = settled
-        .filter((r): r is PromiseFulfilledResult<SongSnapshot> => r.status === "fulfilled")
-        .map((r) => r.value);
-
-      const result = dedupeBySnapshotHash(enriched, seenHashes);
+      const result = dedupeBySnapshotHash(tuples, seenHashes);
       if (result.length > 0) return result;
     } catch (err) {
       this.logger.warn(
@@ -347,28 +425,16 @@ export class QueueBuilderService {
   }
 }
 
-/**
- * Find the track whose title+artist best match the AI suggestion. If an
- * exact normalized match exists, prefer it; otherwise take the first result
- * (the search query already biases toward relevance).
- */
-function findBestMatch(title: string, artist: string, tracks: TrackResult[]): TrackResult | null {
-  if (tracks.length === 0) return null;
-  const normTitle = title.trim().toLowerCase();
-  const normArtist = artist.trim().toLowerCase();
-  const exact = tracks.find(
-    (t) =>
-      t.title.trim().toLowerCase() === normTitle && t.artist.trim().toLowerCase() === normArtist,
-  );
-  return exact ?? tracks[0] ?? null;
-}
-
 function toSnapshot(track: TrackResult): SongSnapshot {
+  // SoundCloud's artworkUrl is from user uploads — drop it so the
+  // cover-resolution step picks the cover from a trusted aggregator
+  // source (Deezer / Genius / Audius via SearchService).
+  const trustedArtwork = track.provider === "soundcloud" ? undefined : track.artworkUrl;
   return {
     title: track.title,
     artist: track.artist,
     kind: "track",
-    ...(track.artworkUrl !== undefined ? { coverUrl: track.artworkUrl } : {}),
+    ...(trustedArtwork !== undefined ? { coverUrl: trustedArtwork } : {}),
     ...(track.duration !== undefined ? { durationSec: track.duration } : {}),
   };
 }
@@ -444,6 +510,14 @@ function parseRerankResponse(text: string): RerankItem[] | null {
 function errToString(err: unknown): string {
   if (err instanceof Error) return `${err.name}: ${err.message}`;
   return String(err);
+}
+
+function hasNonEmptyCover(snap: SongSnapshot): boolean {
+  return typeof snap.coverUrl === "string" && snap.coverUrl.length > 0;
+}
+
+function lookupKey(title: string, artist: string): string {
+  return `${title}::${artist}`;
 }
 
 function shuffleInPlace<T>(arr: T[]): void {

@@ -149,11 +149,18 @@ describe("SEC-11: GET /api/explore/next is owner-scoped — user A never sees us
     const userA = "550e8400-e29b-41d4-a716-446655440900";
     const userB = "550e8400-e29b-41d4-a716-446655440901";
     h.queueBuilder.queuesByUser.set(userA, {
-      items: [{ title: "alice-track", artist: "AA", kind: "track" }],
+      items: [
+        {
+          title: "alice-track",
+          artist: "AA",
+          kind: "track",
+          coverUrl: "https://cdn/a.jpg",
+        },
+      ],
       phase: "discovery",
     });
     h.queueBuilder.queuesByUser.set(userB, {
-      items: [{ title: "bob-track", artist: "BB", kind: "track" }],
+      items: [{ title: "bob-track", artist: "BB", kind: "track", coverUrl: "https://cdn/b.jpg" }],
       phase: "discovery",
     });
     const tokenA = h.authService.signSession({ uid: userA, gid: "g_next_owner_a" });
@@ -171,7 +178,14 @@ describe("SEC-11: GET /api/explore/next is owner-scoped — user A never sees us
     const userA = "550e8400-e29b-41d4-a716-446655440910";
     const userB = "550e8400-e29b-41d4-a716-446655440911";
     h.queueBuilder.queuesByUser.set(userB, {
-      items: [{ title: "victim-track", artist: "VV", kind: "track" }],
+      items: [
+        {
+          title: "victim-track",
+          artist: "VV",
+          kind: "track",
+          coverUrl: "https://cdn/v.jpg",
+        },
+      ],
       phase: "discovery",
     });
     const tokenA = h.authService.signSession({ uid: userA, gid: "g_next_a_no_queue" });

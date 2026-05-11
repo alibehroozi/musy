@@ -6,21 +6,21 @@ import { describe, it, expect } from "vitest";
 import { TasteProfilesSchemaDefinition } from "../../../apps/api/src/modules/explore/taste-profile.schema.js";
 
 describe("DATA-11: taste_profiles document shape and unique userId index", () => {
-  it("schema marks userId, lastBuiltAt, swipeCountAtLastBuild, summaryText as required", () => {
+  it("schema marks userId, lastBuiltAt, swipeCountAtLastBuild as required", () => {
     const paths = TasteProfilesSchemaDefinition.paths;
-    for (const p of ["userId", "lastBuiltAt", "swipeCountAtLastBuild", "summaryText"]) {
+    for (const p of ["userId", "lastBuiltAt", "swipeCountAtLastBuild"]) {
       const opts = (paths[p] as unknown as { options?: { required?: unknown } }).options;
       expect(opts?.required, `${p} should be required`).toBe(true);
     }
   });
 
-  it("schema does not impose a maxlength on summaryText (LLM owns the length budget)", () => {
+  it("schema enforces summaryText.maxlength = 500", () => {
     const opts = (
       TasteProfilesSchemaDefinition.paths["summaryText"] as unknown as {
-        options?: { maxlength?: unknown };
+        options?: { maxlength?: number };
       }
     ).options;
-    expect(opts?.maxlength).toBeUndefined();
+    expect(opts?.maxlength).toBe(500);
   });
 
   it("schema declares a unique single-field index on userId", () => {

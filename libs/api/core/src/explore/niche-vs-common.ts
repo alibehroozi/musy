@@ -5,8 +5,9 @@ export type Popularity = "niche" | "mid" | "common";
 
 /**
  * Pure helper that classifies a provider search hit by its play /
- * listen count. The thresholds are constants — the helper never calls
- * a model and never mutates input. Subject to LOGIC-16.
+ * listen count. Used by the artist-refinement phase to split candidates
+ * into [1 common, 2 niche] per genre. The thresholds are constants —
+ * the helper never calls a model and never mutates input.
  *
  * Listen counts vary wildly across providers; the niche threshold is
  * deliberately set so a track with no popularity metadata at all is

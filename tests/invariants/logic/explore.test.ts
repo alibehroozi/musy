@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under LOGIC-14, LOGIC-15, LOGIC-16.
+// Invariants verified here are listed in INVARIANTS.md under LOGIC-14, LOGIC-15, LOGIC-16, LOGIC-18.
 
 import { describe, it, expect } from "vitest";
 import type { TasteProfile } from "@moc/contracts";
@@ -149,4 +149,30 @@ describe("LOGIC-16: classifyByListenCount(listenCount) is deterministic", () => 
     expect(classifyByListenCount(COMMON_THRESHOLD)).toBe("common");
     expect(classifyByListenCount(COMMON_THRESHOLD * 5)).toBe("common");
   });
+});
+
+describe("LOGIC-18: pure cover-resolution helper is deterministic and drops cover-less candidates", () => {
+  it.todo(
+    "input snapshot with an existing non-empty coverUrl appears in the output in original order with its coverUrl preserved (resolver is NOT consulted for already-covered entries — assert via a resolver spy that the lookup is never called for those titles)",
+  );
+
+  it.todo(
+    "input snapshot without coverUrl + resolver returns a TrackResult with a non-empty artworkUrl → output contains the snapshot with coverUrl set to that artworkUrl",
+  );
+
+  it.todo(
+    "input snapshot without coverUrl + resolver returns null → output omits the snapshot entirely (length-1 input drops to length-0 output)",
+  );
+
+  it.todo(
+    "input snapshot without coverUrl + resolver returns a TrackResult whose artworkUrl is undefined / empty string → output omits the snapshot (must not pass through a falsy coverUrl)",
+  );
+
+  it.todo(
+    "determinism: same (candidates, resolver-output-map) inputs → byte-identical output across two consecutive calls; helper never reads Date.now(), random sources, or process env",
+  );
+
+  it.todo(
+    "order preservation: kept items appear in the output in the same relative order they had in the input (resolution does not reorder a survivor relative to another survivor)",
+  );
 });

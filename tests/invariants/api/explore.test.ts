@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-14, API-15, API-16.
+// Invariants verified here are listed in INVARIANTS.md under API-14, API-15, API-16, API-17.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -269,4 +269,18 @@ describe("API-16: GET /api/explore/next contract — auth, NextResponse shape, c
     expect(res.status).toBe(200);
     expect(res.body.items.length).toBeGreaterThanOrEqual(1);
   });
+});
+
+describe("API-17: GET /api/explore/next returns only items with a non-empty coverUrl", () => {
+  it.todo(
+    "with a fully covered queue: every NextResponse.items[i].coverUrl is a non-empty string — build a queue where every persisted item has coverUrl, fetch /api/explore/next, and assert items.every(i => typeof i.coverUrl === 'string' && i.coverUrl.length > 0)",
+  );
+
+  it.todo(
+    "endpoint never surfaces a cover-less item even if one is artificially persisted (defense-in-depth): plant a queue document with a mixed items list (some with coverUrl, some without) via the repository directly, then assert /api/explore/next response items contains zero entries with missing/empty coverUrl",
+  );
+
+  it.todo(
+    "the seed-fallback path (queue-builder returns seedSnapshots() when the AI sourcing fails) does not yield cover-less items on the wire: simulate a rebuild failure, then assert the resulting /api/explore/next response items array is either empty or entirely covered — never partially covered",
+  );
 });

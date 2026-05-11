@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under DATA-12.
+// Invariants verified here are listed in INVARIANTS.md under DATA-12, DATA-13.
 
 import { describe, it, expect } from "vitest";
 import { ExploreQueueSchemaDefinition } from "../../../apps/api/src/modules/explore/explore-queue.schema.js";
@@ -33,4 +33,18 @@ describe("DATA-12: explore_queue document shape and unique userId index", () => 
     const opts = userIdIndex![1] as { unique?: boolean };
     expect(opts.unique).toBe(true);
   });
+});
+
+describe("DATA-13: every persisted explore_queue item has a non-empty coverUrl", () => {
+  it.todo(
+    "QueueBuilderService.rebuildQueue writes only items with non-empty coverUrl — feed the builder a candidate list mixing covered + uncovered snapshots, stub the SearchService resolver to return artwork for some and null for others, then read back the persisted ExploreQueueRepository document and assert every items[i].coverUrl is a non-empty string",
+  );
+
+  it.todo(
+    "QueueBuilderService.rebuildQueue drops candidates whose resolver returns a TrackResult without artworkUrl — stub the resolver to return a TrackResult with artworkUrl=undefined for a specific snapshot and confirm that snapshot is absent from the persisted queue",
+  );
+
+  it.todo(
+    "QueueBuilderService.rebuildQueue preserves an existing coverUrl when one is already present on the candidate (no overwrite via resolver) — assert the persisted item's coverUrl matches the input snapshot's coverUrl exactly when the input already had one",
+  );
 });

@@ -6,6 +6,7 @@ import {
   buildArtistRefinementPrompt,
   buildColdStartPrompt,
   buildPersonalizedPrompt,
+  COLD_START_MAX_RECENT_SWIPES,
   computeSnapshotHash,
   parseArtistRefinementResponse,
   parseColdStartResponse,
@@ -14,7 +15,9 @@ import {
   pickCoverMatch,
   resolveCoversForQueue,
   seedSnapshots,
+  STRONG_ARTIST_SCORE_THRESHOLD,
   type ArtistRefinementPromptCandidate,
+  type ColdStartPromptSwipe,
   type PersonalizedPromptCandidate,
   type PersonalizedScoreBuckets,
   type ScoreBucketEntry,
@@ -214,9 +217,27 @@ export class QueueBuilderService {
     const phase = phaseFor(profile, swipeDocs.length);
 
     const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
+    // Project swipes for the cold-start soft signal (LOGIC-28). Newest-
+    // first so the per-prompt truncation drops oldest. Only the discovery
+    // path actually reads this; other phases ignore it.
+    const recentSwipesForColdStart: ColdStartPromptSwipe[] = swipeDocs
+      .slice()
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, COLD_START_MAX_RECENT_SWIPES)
+      .map((s) => ({
+        title: s.snapshot.title,
+        artist: s.snapshot.artist,
+        direction: s.direction,
+      }));
     let items: SongSnapshot[];
     try {
-      items = await this.sourceCandidates(userId, phase, profile, seenHashes);
+      items = await this.sourceCandidates(
+        userId,
+        phase,
+        profile,
+        seenHashes,
+        recentSwipesForColdStart,
+      );
     } catch (err) {
       this.logger.warn(
         {
@@ -385,9 +406,10 @@ export class QueueBuilderService {
     phase: QueuePhase,
     profile: TasteProfile | null,
     seenHashes: Set<string>,
+    recentSwipesForColdStart: ColdStartPromptSwipe[],
   ): Promise<SongSnapshot[]> {
     if (phase === "discovery") {
-      return await this.sourceDiscovery(seenHashes);
+      return await this.sourceDiscovery(seenHashes, recentSwipesForColdStart);
     }
 
     if (phase === "artist-refinement") {
@@ -409,10 +431,19 @@ export class QueueBuilderService {
    * catalog has unreliable artwork, and using its `artworkUrl` would
    * smuggle covers from a source we've decided to exclude. Falls back
    * to the static seed list if the cold-start LLM fails.
+   *
+   * `recentSwipes` is the soft-signal payload from LOGIC-28. Empty
+   * on the user's first call (the cache-friendly path); non-empty on
+   * rebuilds within the discovery phase so the LLM leans toward the
+   * feel of right-swiped items and away from left-swiped ones without
+   * hard-excluding any artist.
    */
-  private async sourceDiscovery(seenHashes: Set<string>): Promise<SongSnapshot[]> {
+  private async sourceDiscovery(
+    seenHashes: Set<string>,
+    recentSwipes: ColdStartPromptSwipe[],
+  ): Promise<SongSnapshot[]> {
     try {
-      const { system, userMessage } = buildColdStartPrompt();
+      const { system, userMessage } = buildColdStartPrompt({ recentSwipes });
       const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
       const response = await this.anthropic.complete({
         system,
@@ -465,7 +496,16 @@ export class QueueBuilderService {
   ): Promise<SongSnapshot[]> {
     if (!profile || profile.artists.length === 0) return [];
 
-    const rankedArtists = [...profile.artists]
+    // Fan out only on the user's strong-signal artists (>= 0.5). Avoids
+    // polluting the SoundCloud pool with songs from rejected artists.
+    // If there are zero strong-signal artists yet (e.g. a brand-new
+    // profile with only weak / mixed signals), fall back to top-N by
+    // score so the user still gets a pool — the LLM filter step has
+    // the per-artist scores in the profile projection and can
+    // deprioritize the weak ones at the pick step.
+    const strongArtists = profile.artists.filter((a) => a.score >= STRONG_ARTIST_SCORE_THRESHOLD);
+    const seedArtists = strongArtists.length > 0 ? strongArtists : profile.artists;
+    const rankedArtists = [...seedArtists]
       .sort((a, b) => b.score - a.score)
       .slice(0, ARTIST_REFINEMENT_TOP_ARTISTS);
     const artistNames = rankedArtists.map((a) => a.name);

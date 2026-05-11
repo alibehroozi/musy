@@ -225,12 +225,18 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   );
 
   // Animate audio.volume from its current level to 0 over durationMs.
-  // Skipped when no audio is meaningfully loaded (src empty or already ended).
+  // Skipped when no audio is meaningfully loaded (src empty or already ended)
+  // OR when the page is hidden — RAF is suspended on iOS while the screen is
+  // locked and in any backgrounded tab, so a fade gated on RAF would stall
+  // every dependent engine.load call until the page becomes visible again
+  // (UI-29). The fade is a visible-page enhancement; skipping it when nobody
+  // can hear it is a no-op cost.
   // Cancels any in-flight fade so concurrent calls don't fight each other.
   const fadeOutAudio = useCallback((durationMs: number): Promise<void> => {
     return new Promise((resolve) => {
       const audio = audioRef.current;
-      if (!audio || audio.src === "" || audio.ended || audio.volume === 0) {
+      const pageHidden = typeof document !== "undefined" && document.hidden;
+      if (!audio || audio.src === "" || audio.ended || audio.volume === 0 || pageHidden) {
         if (audio) audio.volume = 1;
         resolve();
         return;

@@ -17,11 +17,8 @@ export const PERSONALIZED_NOVEL_TARGET = 10;
 export const MAX_CANDIDATE_POOL = 100;
 
 // Truncate the profile-summary text to a hard byte cap so a misbehaving
-// upstream summary never blows past the model context window. Not
-// exported — the legacy rerank-prompt.ts re-uses the same name; the
-// clash gets resolved when rerank-prompt.ts is deleted in the next
-// commit.
-const MAX_PROFILE_SUMMARY_BYTES = 4 * 1024;
+// upstream summary never blows past the model context window.
+export const MAX_PROFILE_SUMMARY_BYTES = 4 * 1024;
 
 // One projected candidate from the upstream search providers. Same shape
 // as the old `PromptCandidate` from `rerank-prompt.ts`.

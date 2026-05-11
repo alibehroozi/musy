@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { MongooseModule } from "@nestjs/mongoose";
 import Anthropic from "@anthropic-ai/sdk";
-import { anthropicAuthOptionsFor } from "@moc/api-core";
+import { ANTHROPIC_DEFAULT_FALLBACK_MODEL, anthropicAuthOptionsFor } from "@moc/api-core";
 import { SWIPES_MODEL, SwipesSchemaDefinition } from "./explore.schema.js";
 import { TASTE_PROFILES_MODEL, TasteProfilesSchemaDefinition } from "./taste-profile.schema.js";
 import { EXPLORE_QUEUE_MODEL, ExploreQueueSchemaDefinition } from "./explore-queue.schema.js";
@@ -13,7 +13,11 @@ import { ExploreService } from "./explore.service.js";
 import { ExploreController } from "./explore.controller.js";
 import { ProfileBuilderService } from "./profile-builder.service.js";
 import { QueueBuilderService } from "./queue-builder.service.js";
-import { AnthropicClient, ANTHROPIC_SDK_TOKEN } from "./anthropic.client.js";
+import {
+  AnthropicClient,
+  ANTHROPIC_FALLBACK_MODEL_TOKEN,
+  ANTHROPIC_SDK_TOKEN,
+} from "./anthropic.client.js";
 import { SearchModule } from "../search/search.module.js";
 import { PlayModule } from "../play/play.module.js";
 
@@ -41,6 +45,10 @@ import { PlayModule } from "../play/play.module.js";
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
         new Anthropic(anthropicAuthOptionsFor(config.get<string>("ANTHROPIC_API_KEY"))),
+    },
+    {
+      provide: ANTHROPIC_FALLBACK_MODEL_TOKEN,
+      useValue: ANTHROPIC_DEFAULT_FALLBACK_MODEL,
     },
   ],
 })

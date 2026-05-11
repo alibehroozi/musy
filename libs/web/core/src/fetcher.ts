@@ -26,7 +26,10 @@ export async function fetchJson<T>(
   schema: ZodSchema<T>,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(url, init);
+  // credentials: "include" is the default so the session cookie is sent on
+  // cross-origin deployments (web on Pages, api on Cloud Run). Callers can
+  // still override by passing credentials explicitly. See LOGIC-19.
+  const res = await fetch(url, { credentials: "include", ...init });
   if (!res.ok) {
     throw new HttpError(res.status, res.statusText, url);
   }

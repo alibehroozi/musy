@@ -33,6 +33,7 @@ export async function submitSwipe(
   const body = SwipeRequest.parse({ snapshot, direction });
   const res = await fetch(`${apiBase}/explore/swipe`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

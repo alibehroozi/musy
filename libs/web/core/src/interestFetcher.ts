@@ -16,6 +16,7 @@ async function postInterestEvent(
 ): Promise<void> {
   const res = await fetch(`${apiBase}/search/${path}`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

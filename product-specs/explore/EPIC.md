@@ -1,5 +1,5 @@
 ---
-status: planning
+status: done
 created: 2026-05-10
 ---
 

@@ -168,17 +168,17 @@ describe("UI-11: mini-player present/absent based on playback state", () => {
     });
   });
 
-  it("mini-player is still visible after navigating to /explore", async () => {
+  it("mini-player is hidden on /explore even when a track is playing (UI-16)", async () => {
     renderAuthedApp();
     await tapFirstRow();
 
     await waitFor(() => expect(screen.getByTestId("mini-player")).toBeInTheDocument());
 
-    // Navigate to /explore via the bottom nav.
+    // Navigate to /explore via the bottom nav — mini-player must disappear.
     fireEvent.click(screen.getByRole("link", { name: /explore/i }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("mini-player")).toBeInTheDocument();
+      expect(screen.queryByTestId("mini-player")).not.toBeInTheDocument();
     });
   });
 });

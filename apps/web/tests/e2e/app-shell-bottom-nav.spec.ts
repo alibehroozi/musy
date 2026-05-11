@@ -34,14 +34,14 @@ test.describe("app shell — bottom nav", () => {
     await expectAccessible(page);
   });
 
-  // Step 2 — taps Explore → "Explore — coming soon" + Explore active.
+  // Step 2 — taps Explore → Explore page renders + Explore active.
   test("tapping Explore activates the Explore tab", async ({ page }) => {
     await page.goto("/search");
     await page
       .getByRole("navigation", { name: "Main navigation" })
       .getByRole("link", { name: "Explore" })
       .click();
-    await expect(page.getByText("Explore — coming soon")).toBeVisible();
+    await expect(page.getByTestId("explore-page")).toBeVisible();
     await expect(
       page
         .getByRole("navigation", { name: "Main navigation" })
@@ -97,7 +97,7 @@ test.describe("app shell — bottom nav", () => {
   test("refresh preserves the active tab", async ({ page }) => {
     await page.goto("/explore");
     await page.reload();
-    await expect(page.getByText("Explore — coming soon")).toBeVisible();
+    await expect(page.getByTestId("explore-page")).toBeVisible();
     await expect(
       page
         .getByRole("navigation", { name: "Main navigation" })

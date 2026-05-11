@@ -1,7 +1,8 @@
 ---
 epic: explore
-status: pending
+status: done
 estimated-invariants: 8
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/27
 ---
 
 # Feature 06: Explore page UI

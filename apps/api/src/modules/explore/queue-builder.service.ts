@@ -89,6 +89,7 @@ export class QueueBuilderService {
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
     const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
     const filtered = queue.items.filter((item) => !seenHashes.has(computeSnapshotHash(item)));
+    shuffleInPlace(filtered);
 
     const items = filtered.slice(0, safeCount);
     return {
@@ -443,4 +444,11 @@ function parseRerankResponse(text: string): RerankItem[] | null {
 function errToString(err: unknown): string {
   if (err instanceof Error) return `${err.name}: ${err.message}`;
   return String(err);
+}
+
+function shuffleInPlace<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
 }

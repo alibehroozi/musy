@@ -33,16 +33,29 @@ const SAMPLE_OAUTH_TOKEN = "sk-ant-oat01-TEST";
 const SAMPLE_API_KEY = "sk-ant-api03-TEST";
 
 describe("AI-06: Anthropic SDK construction routes the configured credential by prefix", () => {
-  it("OAuth tokens (sk-ant-oat01-…) go via the SDK's authToken option, not apiKey", () => {
+  it("OAuth tokens (sk-ant-oat01-…) go via the SDK's authToken option AND set apiKey: null", () => {
     const opts = anthropicAuthOptionsFor(SAMPLE_OAUTH_TOKEN);
-    expect(opts).toEqual({ authToken: SAMPLE_OAUTH_TOKEN });
-    expect("apiKey" in opts).toBe(false);
+    expect(opts).toEqual({ authToken: SAMPLE_OAUTH_TOKEN, apiKey: null });
   });
 
-  it("standard API keys (sk-ant-api…) go via the SDK's apiKey option, not authToken", () => {
+  it("standard API keys (sk-ant-api…) go via the SDK's apiKey option AND set authToken: null", () => {
     const opts = anthropicAuthOptionsFor(SAMPLE_API_KEY);
-    expect(opts).toEqual({ apiKey: SAMPLE_API_KEY });
-    expect("authToken" in opts).toBe(false);
+    expect(opts).toEqual({ apiKey: SAMPLE_API_KEY, authToken: null });
+  });
+
+  it("the unused auth field is explicit `null` — NOT undefined — so the SDK won't readEnv() it back in", () => {
+    // The SDK's constructor reads `process.env.ANTHROPIC_API_KEY` /
+    // `ANTHROPIC_AUTH_TOKEN` for any field whose value is `undefined`.
+    // Setting `null` is what stops that fallback. `"x" in opts` returns
+    // true for both `null` and `undefined` values, so check the value
+    // itself, not key presence.
+    const oauthOpts = anthropicAuthOptionsFor(SAMPLE_OAUTH_TOKEN) as Record<string, unknown>;
+    expect(oauthOpts["apiKey"]).toBeNull();
+    expect(oauthOpts["apiKey"]).not.toBeUndefined();
+
+    const apiOpts = anthropicAuthOptionsFor(SAMPLE_API_KEY) as Record<string, unknown>;
+    expect(apiOpts["authToken"]).toBeNull();
+    expect(apiOpts["authToken"]).not.toBeUndefined();
   });
 
   it("the routing decision depends only on its argument (no I/O, no env reads)", () => {
@@ -58,9 +71,11 @@ describe("AI-06: Anthropic SDK construction routes the configured credential by 
   it("surrounding whitespace is trimmed before the prefix check (e.g. trailing newline from copy-paste)", () => {
     expect(anthropicAuthOptionsFor(`  ${SAMPLE_OAUTH_TOKEN}\n`)).toEqual({
       authToken: SAMPLE_OAUTH_TOKEN,
+      apiKey: null,
     });
     expect(anthropicAuthOptionsFor(` ${SAMPLE_API_KEY} `)).toEqual({
       apiKey: SAMPLE_API_KEY,
+      authToken: null,
     });
   });
 });

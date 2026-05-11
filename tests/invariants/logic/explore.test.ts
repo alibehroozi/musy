@@ -61,13 +61,21 @@ describe("LOGIC-14: bumpScore extended for swipe events is deterministic and mon
   });
 });
 
-describe("LOGIC-15: phaseFor(profile, totalSwipeCount) is deterministic and total", () => {
-  it("null profile → 'discovery'", () => {
+describe("LOGIC-15: phaseFor — profile existence is the discovery exit gate", () => {
+  it("null profile → 'discovery' (any swipe count)", () => {
     expect(phaseFor(null, 0)).toBe("discovery");
     expect(phaseFor(null, 999)).toBe("discovery");
   });
 
-  it("profile with fewer than 3 distinct liked genres → 'discovery'", () => {
+  it("non-null profile with no liked genres → 'artist-refinement' (profile-existence gate)", () => {
+    // Under the weakened LOGIC-15: any non-null profile with < 8 strong
+    // artists is artist-refinement, even with zero or weak genres. The
+    // previous "≥ 3 distinct liked genres at score ≥ 0.2" requirement was
+    // a deadlock — small cold-start samples rarely hit it.
+    expect(phaseFor(profile({ genres: [], artists: [] }), 20)).toBe("artist-refinement");
+  });
+
+  it("profile with two liked genres → 'artist-refinement' (was 'discovery' under old rule)", () => {
     expect(
       phaseFor(
         profile({
@@ -78,7 +86,7 @@ describe("LOGIC-15: phaseFor(profile, totalSwipeCount) is deterministic and tota
         }),
         25,
       ),
-    ).toBe("discovery");
+    ).toBe("artist-refinement");
   });
 
   it("profile with ≥ 3 liked genres but < 8 strong-signal artists → 'artist-refinement'", () => {
@@ -100,30 +108,15 @@ describe("LOGIC-15: phaseFor(profile, totalSwipeCount) is deterministic and tota
     ).toBe("artist-refinement");
   });
 
-  it("profile with ≥ 3 liked genres and ≥ 8 strong-signal artists → 'personalized'", () => {
+  it("profile with ≥ 8 strong-signal artists → 'personalized' (genres no longer gate)", () => {
     const strong = Array.from({ length: 8 }, (_, i) => ({ name: `A${i}`, score: 0.9 }));
-    expect(
-      phaseFor(
-        profile({
-          genres: [
-            { name: "house", score: 0.9 },
-            { name: "techno", score: 0.9 },
-            { name: "ambient", score: 0.5 },
-          ],
-          artists: strong,
-        }),
-        100,
-      ),
-    ).toBe("personalized");
+    expect(phaseFor(profile({ artists: strong }), 100)).toBe("personalized");
   });
 
   it("equal inputs always produce the same output (no Date.now / I/O)", () => {
     const p = profile({
-      genres: [
-        { name: "house", score: 0.9 },
-        { name: "techno", score: 0.9 },
-        { name: "ambient", score: 0.5 },
-      ],
+      genres: [{ name: "house", score: 0.9 }],
+      artists: [{ name: "A1", score: 0.9 }],
     });
     for (let i = 0; i < 50; i++) {
       expect(phaseFor(p, 30)).toBe("artist-refinement");

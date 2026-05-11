@@ -14,7 +14,10 @@ import { ListeningEventsRepository } from "../play/listening-events.repository.j
 import { TasteProfilesRepository } from "./taste-profile.repository.js";
 import { AnthropicClient } from "./anthropic.client.js";
 
-const SWIPE_TRIGGER_THRESHOLD = 20;
+// Exported so QueueBuilderService can mirror the threshold in its
+// API-19 discovery-exit guard ("await build only when one would actually
+// be triggered — i.e. swipes ≥ this threshold").
+export const SWIPE_TRIGGER_THRESHOLD = 20;
 const REBUILD_TIME_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 2048;
@@ -22,6 +25,12 @@ const MAX_TOKENS = 2048;
 @Injectable()
 export class ProfileBuilderService {
   private readonly logger = new Logger(ProfileBuilderService.name);
+
+  // Tracks in-flight builds so concurrent callers share a single LLM call.
+  // Per API-19: when QueueBuilderService.rebuildQueue races the
+  // fire-and-forget maybeBuild fired from recordSwipe, it can await the
+  // in-flight promise here instead of starting a duplicate build.
+  private readonly inFlightBuilds = new Map<string, Promise<void>>();
 
   constructor(
     @Inject(SwipesRepository) private readonly swipes: SwipesRepository,
@@ -34,11 +43,34 @@ export class ProfileBuilderService {
   ) {}
 
   /**
-   * Decide whether a fresh build is due for a user, and if so kick one off.
-   * Build is fire-and-forget: the caller does not await it. On API restart
-   * the in-flight Promise is lost and the next swipe re-evaluates.
+   * Fire-and-forget wrapper around buildIfDue. Called from the swipe
+   * handler so user-perceived swipe latency stays low. The build itself
+   * runs async; readers that need to *wait* for the result (e.g. the
+   * queue refill during discovery exit) use buildIfDue directly.
    */
   async maybeBuild(userId: string): Promise<void> {
+    void this.buildIfDue(userId).catch((err) => {
+      this.logger.error(
+        { event: "taste_profile_enqueue_failed", userId, err: errToString(err) },
+        "taste_profile_enqueue_failed",
+      );
+    });
+  }
+
+  /**
+   * Awaitable build trigger. If a build is in flight for `userId`, returns
+   * its promise so the caller awaits the existing work instead of starting
+   * a duplicate one. If no build is due (swipe count below threshold, or a
+   * recent profile already covers the swipes), resolves immediately.
+   * Otherwise starts a build and resolves when it completes (success or
+   * failure — errors are logged and swallowed so callers don't have to
+   * branch on build failure; they can re-read the profile to see whether
+   * one is now available).
+   */
+  async buildIfDue(userId: string): Promise<void> {
+    const inFlight = this.inFlightBuilds.get(userId);
+    if (inFlight) return inFlight;
+
     const totalSwipes = (await this.swipes.findSwipesForUser(userId)).length;
     if (totalSwipes < SWIPE_TRIGGER_THRESHOLD) return;
 
@@ -49,12 +81,19 @@ export class ProfileBuilderService {
       if (swipesSince < SWIPE_TRIGGER_THRESHOLD && ageMs < REBUILD_TIME_MS) return;
     }
 
-    void this.runBuild(userId, totalSwipes).catch((err) => {
-      this.logger.error(
-        { event: "taste_profile_build_failed", userId, err: errToString(err) },
-        "taste_profile_build_failed",
-      );
-    });
+    const promise = this.runBuild(userId, totalSwipes)
+      .catch((err: unknown) => {
+        this.logger.error(
+          { event: "taste_profile_build_failed", userId, err: errToString(err) },
+          "taste_profile_build_failed",
+        );
+      })
+      .finally(() => {
+        this.inFlightBuilds.delete(userId);
+      });
+
+    this.inFlightBuilds.set(userId, promise);
+    return promise;
   }
 
   /**

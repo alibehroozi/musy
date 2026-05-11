@@ -1,13 +1,5 @@
 import type { TasteProfile } from "@moc/contracts";
 
-// A "liked genre" is a profile genre with a non-trivial score. Below this
-// the genre signal is too weak to count toward the discovery → artist-
-// refinement transition.
-export const LIKED_GENRE_SCORE_THRESHOLD = 0.2;
-
-// Distinct liked genres needed to leave the discovery phase.
-export const DISTINCT_LIKED_GENRES_TO_LEAVE_DISCOVERY = 3;
-
 // An artist counts as "strong signal" once the profile scores them above
 // this threshold. Below the cutoff their presence in the profile is
 // likely noise from a single right-swipe rather than a real preference.
@@ -20,11 +12,19 @@ export type QueuePhaseLiteral = "discovery" | "artist-refinement" | "personalize
 
 /**
  * Pure decision: which sourcing phase should drive the next queue build
- * for a user, given their current profile and total swipe count? The
- * phases are ordered by maturity:
- *   - "discovery": no profile, or fewer than 3 liked genres known.
- *   - "artist-refinement": ≥ 3 liked genres but < 8 strong-signal artists.
- *   - "personalized": both thresholds cleared.
+ * for a user, given their current profile and total swipe count?
+ *
+ * Per LOGIC-15 (May 2026 weakening): profile *existence* is the discovery
+ * exit gate — not a genre-count threshold. Before this change, leaving
+ * discovery required ≥ 3 distinct liked genres at score ≥ 0.2, which
+ * deadlocked users whose 20-swipe cold-start sample didn't surface that
+ * many genres confidently. A thin artist-refinement batch beats a re-run
+ * of cold-start the user already saw.
+ *
+ * Phases ordered by maturity:
+ *   - "discovery": no profile yet.
+ *   - "artist-refinement": profile exists, < 8 strong-signal artists.
+ *   - "personalized": ≥ 8 strong-signal artists.
  *
  * The function is identity-free, deterministic, and never reads time or
  * randomness — every test just hands it a profile and an integer.
@@ -32,9 +32,6 @@ export type QueuePhaseLiteral = "discovery" | "artist-refinement" | "personalize
 export function phaseFor(profile: TasteProfile | null, totalSwipeCount: number): QueuePhaseLiteral {
   void totalSwipeCount;
   if (profile === null) return "discovery";
-  const likedGenres = profile.genres.filter((g) => g.score >= LIKED_GENRE_SCORE_THRESHOLD);
-  const distinctLikedGenres = new Set(likedGenres.map((g) => g.name)).size;
-  if (distinctLikedGenres < DISTINCT_LIKED_GENRES_TO_LEAVE_DISCOVERY) return "discovery";
   const strongArtists = profile.artists.filter(
     (a) => a.score >= STRONG_ARTIST_SCORE_THRESHOLD,
   ).length;

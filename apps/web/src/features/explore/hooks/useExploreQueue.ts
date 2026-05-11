@@ -28,6 +28,11 @@ export function useExploreQueue(): ExploreQueueState {
   const [phase, setPhase] = useState<QueuePhase | null>(null);
   const [status, setStatus] = useState<Status["kind"]>("loading");
   const refillingRef = useRef(false);
+  // Stays in sync with items so swipe() can read the current top
+  // without putting items in its dependency array (which would break
+  // the stable callback identity that CardStack relies on).
+  const itemsRef = useRef<SongSnapshot[]>(items);
+  itemsRef.current = items;
 
   const refresh = useCallback(async () => {
     refillingRef.current = true;
@@ -61,15 +66,14 @@ export function useExploreQueue(): ExploreQueueState {
   }, [items.length, status, refresh]);
 
   const swipe = useCallback((direction: SwipeDirection) => {
-    setItems((prev) => {
-      const top = prev[0];
-      if (top === undefined) return prev;
-      // Fire-and-forget — UI advances regardless. A failed write is logged
-      // server-side; we don't block on it.
-      void submitSwipe(top, direction).catch(() => {});
-      const next = prev.slice(1);
-      return next;
-    });
+    // Read the current top from the ref — must happen before setItems so
+    // we capture the right card even if React batches the state update.
+    const top = itemsRef.current[0];
+    if (top === undefined) return;
+    setItems((prev) => (prev.length === 0 ? prev : prev.slice(1)));
+    // Fire-and-forget outside the updater: React StrictMode double-invokes
+    // functional updaters but not plain statements, so this runs exactly once.
+    void submitSwipe(top, direction).catch(() => {});
   }, []);
 
   const retry = useCallback(() => {

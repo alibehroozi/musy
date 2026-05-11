@@ -26,7 +26,7 @@ import type {
 import { SwipesRepository } from "./explore.repository.js";
 import { TasteProfilesRepository } from "./taste-profile.repository.js";
 import { ExploreQueueRepository } from "./explore-queue.repository.js";
-import { ProfileBuilderService } from "./profile-builder.service.js";
+import { ProfileBuilderService, SWIPE_TRIGGER_THRESHOLD } from "./profile-builder.service.js";
 import { AnthropicClient } from "./anthropic.client.js";
 import { AudiusClient } from "../search/providers/audius.client.js";
 import { SoundCloudClient } from "../search/providers/soundcloud.client.js";
@@ -107,7 +107,8 @@ export class QueueBuilderService {
 
   /**
    * Force-rebuild the queue. Per spec, this is also fired by the swipe
-   * handler when the queue dips below REFILL_THRESHOLD items.
+   * handler when the queue dips below REFILL_THRESHOLD items (measured
+   * as unseen-remaining; see API-18).
    */
   async rebuildQueue(userId: string): Promise<void> {
     this.logger.log(
@@ -116,7 +117,22 @@ export class QueueBuilderService {
     );
 
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
-    const profile = await this.profileBuilder.getProfile(userId);
+    let profile = await this.profileBuilder.getProfile(userId);
+
+    // API-19: discovery-exit ritual. When the user has crossed the
+    // profile-build threshold but no profile has been persisted yet,
+    // the fire-and-forget build kicked off by recordSwipe may still be
+    // in flight. If we don't await it here, sourceCandidates will run
+    // the discovery path again (asking the cold-start LLM for tracks
+    // that overlap with what the user just swiped) and the queue will
+    // re-empty. buildIfDue self-no-ops if the build isn't actually due
+    // — this guard just prevents the redundant read when we know it
+    // isn't.
+    if (profile === null && swipeDocs.length >= SWIPE_TRIGGER_THRESHOLD) {
+      await this.profileBuilder.buildIfDue(userId);
+      profile = await this.profileBuilder.getProfile(userId);
+    }
+
     const phase = phaseFor(profile, swipeDocs.length);
 
     const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
@@ -184,13 +200,31 @@ export class QueueBuilderService {
   /**
    * Refill trigger: called by the swipe handler. If the queue is short,
    * fire-and-forget a rebuild. Caller does not await.
+   *
+   * Per API-18 the "short queue" signal is the count of **unseen** items
+   * remaining, not the raw `items.length` of the stored document. Swipes
+   * append to a separate collection and never prune the queue, so raw
+   * length stays at ~20 even after every item has been swiped — masking
+   * the exhaustion signal. Computing unseen here lets the trigger fire
+   * exactly when the user would otherwise see `{items:[], partial:true}`
+   * on the next /next.
    */
   async maybeRefill(userId: string): Promise<void> {
     const queue = await this.queues.findForUser(userId);
-    const length = queue?.items.length ?? 0;
-    if (length >= REFILL_THRESHOLD) return;
+    if (!queue) return;
+
+    const swipeDocs = await this.swipes.findSwipesForUser(userId);
+    const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
+    const unseen = queue.items.filter((item) => !seenHashes.has(computeSnapshotHash(item))).length;
+    if (unseen >= REFILL_THRESHOLD) return;
+
     this.logger.log(
-      { event: "explore_queue_refill_triggered", userId, length },
+      {
+        event: "explore_queue_refill_triggered",
+        userId,
+        unseen,
+        raw: queue.items.length,
+      },
       "explore_queue_refill_triggered",
     );
     void this.rebuildQueue(userId).catch((err: unknown) => {

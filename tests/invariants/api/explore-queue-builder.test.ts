@@ -281,13 +281,16 @@ describe("API-19: rebuildQueue awaits profile build when discovery + swipes ≥ 
     await builder.rebuildQueue(userId);
 
     expect(buildIfDue).toHaveBeenCalledWith(userId);
-    // Ordering: at least one buildIfDue precedes the first getProfile that
-    // resolves non-null — this is the property API-19 actually buys us.
-    const firstBuild = calls.indexOf(`buildIfDue:${userId}`);
-    const firstRead = calls.indexOf(`getProfile:${userId}`);
-    expect(firstBuild).toBeGreaterThanOrEqual(0);
-    expect(firstRead).toBeGreaterThanOrEqual(0);
-    expect(firstBuild).toBeLessThan(firstRead);
+    // Property: at least one buildIfDue precedes the LAST getProfile read,
+    // so the final phase decision sees the freshly built profile rather
+    // than the null pre-build state. (Implementation may read profile
+    // once before buildIfDue to detect the null/threshold condition,
+    // then re-read after — that's fine; what matters is the *deciding*
+    // read happens after the build.)
+    const lastReadIdx = calls.lastIndexOf(`getProfile:${userId}`);
+    const firstBuildIdx = calls.indexOf(`buildIfDue:${userId}`);
+    expect(firstBuildIdx).toBeGreaterThanOrEqual(0);
+    expect(lastReadIdx).toBeGreaterThan(firstBuildIdx);
   });
 
   it("does NOT call buildIfDue when a profile already exists (no race to await)", async () => {

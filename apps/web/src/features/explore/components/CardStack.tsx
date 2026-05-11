@@ -3,6 +3,7 @@ import { motion, useMotionValue, useTransform, type PanInfo } from "framer-motio
 import { Card, Typography } from "@moc/design-system";
 import { directionFromDrag } from "@moc/web-core";
 import type { SongSnapshot, SwipeDirection } from "@moc/contracts";
+import { usePlayer } from "../../player/usePlayer.js";
 
 const SWIPE_THRESHOLD = 100;
 
@@ -14,9 +15,14 @@ interface CardStackProps {
 }
 
 export function CardStack({ items, onSwipe, overlay }: CardStackProps): JSX.Element | null {
+  const { engineState } = usePlayer();
   // Render up to 3 cards (top + 2 behind) — fewer when the queue is short.
   const visible = items.slice(0, 3);
   if (visible.length === 0) return null;
+
+  const progressFraction =
+    engineState.durationMs > 0 ? Math.min(1, engineState.progressMs / engineState.durationMs) : 0;
+  const isLoadingPreview = engineState.status === "loading";
 
   return (
     <div data-testid="explore-card-stack" className="relative flex-1 m-4">
@@ -35,6 +41,7 @@ export function CardStack({ items, onSwipe, overlay }: CardStackProps): JSX.Elem
               depth={i}
               onSwipe={onSwipe}
               overlay={isTop ? overlay : undefined}
+              {...(isTop ? { progressFraction, isLoadingPreview } : {})}
             />
           );
         })}
@@ -48,9 +55,19 @@ interface SwipeCardProps {
   depth: number;
   onSwipe: (direction: SwipeDirection) => void;
   overlay?: React.ReactNode;
+  progressFraction?: number;
+  isLoadingPreview?: boolean;
 }
 
-function SwipeCard({ snapshot, isTop, depth, onSwipe, overlay }: SwipeCardProps): JSX.Element {
+function SwipeCard({
+  snapshot,
+  isTop,
+  depth,
+  onSwipe,
+  overlay,
+  progressFraction,
+  isLoadingPreview,
+}: SwipeCardProps): JSX.Element {
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-300, 0, 300], [-12, 0, 12]);
   const likeOpacity = useTransform(x, [0, SWIPE_THRESHOLD], [0, 1]);
@@ -114,7 +131,10 @@ function SwipeCard({ snapshot, isTop, depth, onSwipe, overlay }: SwipeCardProps)
       onDragEnd={handleDragEnd}
       className="absolute inset-0 cursor-grab active:cursor-grabbing"
     >
-      <CardContent snapshot={snapshot} />
+      <CardContent
+        snapshot={snapshot}
+        {...(progressFraction !== undefined ? { progressFraction, isLoadingPreview } : {})}
+      />
       {overlay !== undefined && overlay}
       <motion.div
         data-testid="explore-like-stamp"
@@ -134,7 +154,15 @@ function SwipeCard({ snapshot, isTop, depth, onSwipe, overlay }: SwipeCardProps)
   );
 }
 
-function CardContent({ snapshot }: { snapshot: SongSnapshot }): JSX.Element {
+function CardContent({
+  snapshot,
+  progressFraction,
+  isLoadingPreview,
+}: {
+  snapshot: SongSnapshot;
+  progressFraction?: number;
+  isLoadingPreview?: boolean;
+}): JSX.Element {
   return (
     <Card className="h-full flex flex-col gap-3 p-4">
       <CardArtwork snapshot={snapshot} />
@@ -146,6 +174,17 @@ function CardContent({ snapshot }: { snapshot: SongSnapshot }): JSX.Element {
           {snapshot.artist}
         </Typography>
       </div>
+      {progressFraction !== undefined && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute bottom-0 left-0 right-0 h-1 bg-border"
+        >
+          <div
+            className={`h-full bg-primary transition-all duration-100${isLoadingPreview === true ? " animate-pulse" : ""}`}
+            style={{ width: `${Math.round(progressFraction * 100)}%` }}
+          />
+        </div>
+      )}
     </Card>
   );
 }

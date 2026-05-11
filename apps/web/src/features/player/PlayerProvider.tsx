@@ -71,6 +71,9 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const engineRef = useRef<AudioEngine | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  // Each playPreview call increments this; the resolve callback checks it
+  // so stale resolves (from a card the user already swiped past) never load.
+  const previewGenRef = useRef(0);
   const { state: authState } = useAuth();
 
   const [engineState, setEngineState] = useState<EngineState>({
@@ -187,6 +190,10 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     const engine = engineRef.current;
     if (!engine) return;
 
+    // Stamp this resolve request so we can discard results from earlier calls
+    // if the user swipes to the next card before the current one finishes resolving.
+    const gen = ++previewGenRef.current;
+
     setCurrentSource(null);
     setFailedTitle(null);
     setEngineState((prev) => ({
@@ -197,6 +204,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
 
     resolveStream({ snapshot })
       .then((result) => {
+        if (previewGenRef.current !== gen) return;
         if (result.streamUrl === null) {
           setFailedTitle(`Couldn't play '${snapshot.title}'`);
           setEngineState((prev) => ({ ...prev, status: "failed" }));
@@ -205,6 +213,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
         engine.load(snapshot, result.streamUrl);
       })
       .catch(() => {
+        if (previewGenRef.current !== gen) return;
         setFailedTitle("Couldn't reach the player service");
         setEngineState((prev) => ({ ...prev, status: "failed" }));
       });

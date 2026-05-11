@@ -2,18 +2,25 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { v4 as uuidv4 } from "uuid";
 import {
+  ARTIST_REFINEMENT_PICKS_TARGET,
+  buildArtistRefinementPrompt,
   buildColdStartPrompt,
-  buildRerankPrompt,
-  classifyByListenCount,
+  buildPersonalizedPrompt,
+  COLD_START_MAX_RECENT_SWIPES,
   computeSnapshotHash,
+  parseArtistRefinementResponse,
   parseColdStartResponse,
-  parseRerankResponse,
+  parsePersonalizedResponse,
   phaseFor,
   pickCoverMatch,
   resolveCoversForQueue,
   seedSnapshots,
-  type PromptCandidate,
-  type RerankItem,
+  STRONG_ARTIST_SCORE_THRESHOLD,
+  type ArtistRefinementPromptCandidate,
+  type ColdStartPromptSwipe,
+  type PersonalizedPromptCandidate,
+  type PersonalizedScoreBuckets,
+  type ScoreBucketEntry,
 } from "@moc/api-core";
 import type {
   NextResponse,
@@ -31,6 +38,7 @@ import { AnthropicClient } from "./anthropic.client.js";
 import { AudiusClient } from "../search/providers/audius.client.js";
 import { SoundCloudClient } from "../search/providers/soundcloud.client.js";
 import { SearchService } from "../search/search.service.js";
+import { InterestScoresRepository } from "../search/interest-scores.repository.js";
 import { PlayService } from "../play/play.service.js";
 
 const PRE_RESOLVE_TOP_N = 5;
@@ -38,7 +46,30 @@ const REFILL_THRESHOLD = 5;
 const MAX_COUNT = 50;
 const MIN_COUNT = 1;
 const DEFAULT_MODEL = "claude-sonnet-4-6";
-const RERANK_MAX_TOKENS = 4096;
+const PERSONALIZED_MAX_TOKENS = 4096;
+const ARTIST_REFINEMENT_MAX_TOKENS = 4096;
+
+// Artist refinement phase — top N profile artists feed the SoundCloud
+// search fan-out. Caps upstream egress at 8 concurrent searches per
+// rebuild and aligns with phaseFor's "strong artists < 8" exit gate:
+// even if the user has more than 8 weak-signal artists, refinement
+// only ever asks about the 8 best.
+const ARTIST_REFINEMENT_TOP_ARTISTS = 8;
+const ARTIST_REFINEMENT_SONGS_PER_ARTIST = 5;
+
+// Personalized phase: how many distinct artists from profile.artists
+// reach the prompt — chosen uniformly at random per rebuild so consecutive
+// rebuilds get different angles on the user's taste. LOGIC-25.
+const PERSONALIZED_ARTIST_SHUFFLE_SIZE = 5;
+// Top genres always reach the prompt (no shuffle — they're already
+// score-ranked in the profile).
+const PERSONALIZED_TOP_GENRES = 3;
+// Per the design: 10 random songs from each score bucket reach the prompt
+// as "songs the user has already rated at this level" context.
+const SCORE_BUCKET_SAMPLE_SIZE = 10;
+const SCORE_BUCKET_LOW = { min: 0, max: 3 };
+const SCORE_BUCKET_MID = { min: 4, max: 7 };
+const SCORE_BUCKET_HIGH = { min: 8, max: 10 };
 
 @Injectable()
 export class QueueBuilderService {
@@ -61,6 +92,8 @@ export class QueueBuilderService {
     @Inject(AudiusClient) private readonly audius: AudiusClient,
     @Inject(SoundCloudClient) private readonly soundcloud: SoundCloudClient,
     @Inject(SearchService) private readonly search: SearchService,
+    @Inject(InterestScoresRepository)
+    private readonly interestScores: InterestScoresRepository,
     @Inject(PlayService) private readonly play: PlayService,
     @Inject(ConfigService) private readonly config: ConfigService,
   ) {}
@@ -184,9 +217,27 @@ export class QueueBuilderService {
     const phase = phaseFor(profile, swipeDocs.length);
 
     const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
+    // Project swipes for the cold-start soft signal (LOGIC-28). Newest-
+    // first so the per-prompt truncation drops oldest. Only the discovery
+    // path actually reads this; other phases ignore it.
+    const recentSwipesForColdStart: ColdStartPromptSwipe[] = swipeDocs
+      .slice()
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      .slice(0, COLD_START_MAX_RECENT_SWIPES)
+      .map((s) => ({
+        title: s.snapshot.title,
+        artist: s.snapshot.artist,
+        direction: s.direction,
+      }));
     let items: SongSnapshot[];
     try {
-      items = await this.sourceCandidates(phase, profile, seenHashes);
+      items = await this.sourceCandidates(
+        userId,
+        phase,
+        profile,
+        seenHashes,
+        recentSwipesForColdStart,
+      );
     } catch (err) {
       this.logger.warn(
         {
@@ -351,19 +402,21 @@ export class QueueBuilderService {
   }
 
   private async sourceCandidates(
+    userId: string,
     phase: QueuePhase,
     profile: TasteProfile | null,
     seenHashes: Set<string>,
+    recentSwipesForColdStart: ColdStartPromptSwipe[],
   ): Promise<SongSnapshot[]> {
     if (phase === "discovery") {
-      return await this.sourceDiscovery(seenHashes);
+      return await this.sourceDiscovery(seenHashes, recentSwipesForColdStart);
     }
 
     if (phase === "artist-refinement") {
       return await this.sourceArtistRefinement(profile, seenHashes);
     }
 
-    return await this.sourcePersonalized(profile, seenHashes);
+    return await this.sourcePersonalized(userId, profile, seenHashes);
   }
 
   /**
@@ -378,10 +431,19 @@ export class QueueBuilderService {
    * catalog has unreliable artwork, and using its `artworkUrl` would
    * smuggle covers from a source we've decided to exclude. Falls back
    * to the static seed list if the cold-start LLM fails.
+   *
+   * `recentSwipes` is the soft-signal payload from LOGIC-28. Empty
+   * on the user's first call (the cache-friendly path); non-empty on
+   * rebuilds within the discovery phase so the LLM leans toward the
+   * feel of right-swiped items and away from left-swiped ones without
+   * hard-excluding any artist.
    */
-  private async sourceDiscovery(seenHashes: Set<string>): Promise<SongSnapshot[]> {
+  private async sourceDiscovery(
+    seenHashes: Set<string>,
+    recentSwipes: ColdStartPromptSwipe[],
+  ): Promise<SongSnapshot[]> {
     try {
-      const { system, userMessage } = buildColdStartPrompt();
+      const { system, userMessage } = buildColdStartPrompt({ recentSwipes });
       const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
       const response = await this.anthropic.complete({
         system,
@@ -410,96 +472,292 @@ export class QueueBuilderService {
     return seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
   }
 
+  /**
+   * Artist-refinement phase — LOGIC-26 / AI-09 / PRIVACY-10.
+   *
+   * Inputs to the LLM:
+   *   - The full profile (projected per PRIVACY-10).
+   *   - A candidate pool built per-artist: for each of the top
+   *     ARTIST_REFINEMENT_TOP_ARTISTS in profile.artists (ranked by
+   *     score), query SoundCloud and keep the first
+   *     ARTIST_REFINEMENT_SONGS_PER_ARTIST hits. Audius is intentionally
+   *     not consulted here — the artist-name search shape works better
+   *     on SoundCloud's index, and keeping the pool source single-
+   *     provider makes downstream cover resolution more predictable.
+   *
+   * LLM output: up to ARTIST_REFINEMENT_PICKS_TARGET picks from the
+   * pool (verbatim). Caller dedupes against seenHashes; LLM failures
+   * fall through to the deduped pool top-N so the queue is never empty
+   * when there's pool content available.
+   */
   private async sourceArtistRefinement(
     profile: TasteProfile | null,
     seenHashes: Set<string>,
   ): Promise<SongSnapshot[]> {
-    if (!profile) return [];
-    const topGenres = profile.genres.slice(0, 3).map((g) => g.name);
-    const out: SongSnapshot[] = [];
-    for (const genre of topGenres) {
-      const [audius, sc] = await Promise.allSettled([
-        this.audius.search(genre).catch(() => [] as TrackResult[]),
-        this.soundcloud.search(genre).catch(() => [] as TrackResult[]),
-      ]);
-      const tracks = combineFulfilled(audius, sc);
-      const { common, niche } = splitByPopularity(tracks);
-      if (common[0]) out.push(toSnapshot(common[0]));
-      if (niche[0]) out.push(toSnapshot(niche[0]));
-      if (niche[1]) out.push(toSnapshot(niche[1]));
-    }
-    return dedupeBySnapshotHash(out, seenHashes);
-  }
+    if (!profile || profile.artists.length === 0) return [];
 
-  private async sourcePersonalized(
-    profile: TasteProfile | null,
-    seenHashes: Set<string>,
-  ): Promise<SongSnapshot[]> {
-    if (!profile) return [];
-    const topArtists = profile.artists.slice(0, 5).map((a) => a.name);
-    const topGenres = profile.genres.slice(0, 3).map((g) => g.name);
-    const queries = [...topArtists, ...topGenres];
+    // Fan out only on the user's strong-signal artists (>= 0.5). Avoids
+    // polluting the SoundCloud pool with songs from rejected artists.
+    // If there are zero strong-signal artists yet (e.g. a brand-new
+    // profile with only weak / mixed signals), fall back to top-N by
+    // score so the user still gets a pool — the LLM filter step has
+    // the per-artist scores in the profile projection and can
+    // deprioritize the weak ones at the pick step.
+    const strongArtists = profile.artists.filter((a) => a.score >= STRONG_ARTIST_SCORE_THRESHOLD);
+    const seedArtists = strongArtists.length > 0 ? strongArtists : profile.artists;
+    const rankedArtists = [...seedArtists]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, ARTIST_REFINEMENT_TOP_ARTISTS);
+    const artistNames = rankedArtists.map((a) => a.name);
 
     const settled = await Promise.allSettled(
-      queries.flatMap((q) => [
-        this.audius.search(q).catch(() => [] as TrackResult[]),
-        this.soundcloud.search(q).catch(() => [] as TrackResult[]),
-      ]),
+      artistNames.map((name) =>
+        this.soundcloud
+          .search(name)
+          .then((hits) => hits.slice(0, ARTIST_REFINEMENT_SONGS_PER_ARTIST))
+          .catch(() => [] as TrackResult[]),
+      ),
     );
-    const pool = settled
-      .filter((r): r is PromiseFulfilledResult<TrackResult[]> => r.status === "fulfilled")
-      .flatMap((r) => r.value);
-    const dedupedPool = dedupeBySnapshotHash(pool.map(toSnapshot), seenHashes);
+
+    const fulfilledTracks: TrackResult[] = [];
+    for (const r of settled) {
+      if (r.status === "fulfilled") {
+        for (const t of r.value) fulfilledTracks.push(t);
+      }
+    }
+
+    const dedupedPool = dedupeBySnapshotHash(
+      fulfilledTracks.map((track) => toSnapshot(track)),
+      seenHashes,
+    );
+
     if (dedupedPool.length === 0) return [];
 
-    // Rerank via LLM. Failure → fall through to heuristic top-N (the
-    // pool order itself, after dedupe).
-    const candidatePool: PromptCandidate[] = dedupedPool.slice(0, 50).map((s, idx) => ({
+    const candidatePool: ArtistRefinementPromptCandidate[] = dedupedPool.map((s) => ({
       title: s.title,
       artist: s.artist,
-      source: pool[idx]?.provider ?? "audius",
+      source: "soundcloud",
     }));
-    const { system, userMessage } = buildRerankPrompt({
+
+    const { system, userMessage } = buildArtistRefinementPrompt({
+      profile,
       candidatePool,
-      profileSummary: profile.summaryText,
     });
 
-    let ranked: RerankItem[] = [];
+    let parsed = { picks: [] as Array<{ title: string; artist: string }> };
     try {
       const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
       const response = await this.anthropic.complete({
         system,
         userMessage,
         model,
-        maxTokens: RERANK_MAX_TOKENS,
+        maxTokens: ARTIST_REFINEMENT_MAX_TOKENS,
       });
-      ranked = parseRerankResponse(response.text);
+      parsed = parseArtistRefinementResponse(response.text);
     } catch (err) {
       this.logger.warn(
-        { event: "explore_queue_rerank_failed", err: errToString(err) },
-        "explore_queue_rerank_failed",
+        { event: "explore_queue_artist_refinement_failed", err: errToString(err) },
+        "explore_queue_artist_refinement_failed",
       );
     }
 
-    if (ranked.length > 0) {
-      const byKey = new Map(dedupedPool.map((s) => [`${s.title}::${s.artist}`, s]));
-      const ordered: SongSnapshot[] = [];
-      for (const r of ranked) {
-        const key = `${r.title}::${r.artist}`;
-        const snap = byKey.get(key);
-        if (snap) ordered.push(snap);
-      }
-      // Backfill anything the model dropped so we never lose candidates.
-      for (const snap of dedupedPool) {
-        if (!ordered.find((o) => o.title === snap.title && o.artist === snap.artist)) {
-          ordered.push(snap);
-        }
-      }
-      return ordered;
+    // Match picks against pool by (title, artist) — anything the LLM
+    // hallucinated outside the pool is dropped silently.
+    const poolByKey = new Map(dedupedPool.map((s) => [`${s.title}::${s.artist}`, s]));
+    const picks: SongSnapshot[] = [];
+    for (const p of parsed.picks) {
+      const snap = poolByKey.get(`${p.title}::${p.artist}`);
+      if (snap) picks.push(snap);
     }
 
+    const final = picks.slice(0, ARTIST_REFINEMENT_PICKS_TARGET);
+    if (final.length > 0) return final;
+
+    // Heuristic fallback: LLM produced nothing usable — surface the
+    // deduped pool top-N so the queue isn't empty.
+    return dedupedPool.slice(0, ARTIST_REFINEMENT_PICKS_TARGET);
+  }
+
+  /**
+   * Personalized phase — LOGIC-25 / API-21 / PRIVACY-09.
+   *
+   * Inputs to the LLM:
+   *   - The *full* profile, with profile.artists shuffled to 5 of N (so
+   *     consecutive rebuilds get different angles on the user's taste).
+   *   - Three sampled score buckets from interest_scores: 10 random
+   *     entries each at scores 0–3 (low), 4–7 (mid), 8–10 (high). The
+   *     LLM treats these as "songs the user has already reacted to" so
+   *     novel suggestions know what to avoid.
+   *   - The Audius + SoundCloud candidate pool built from the 5
+   *     shuffled artists + 3 top genres (same provider mix as before
+   *     this change — "as we do now" in the design doc).
+   *
+   * LLM output: 10 picks from the pool (verbatim) + 10 novel suggestions
+   * NOT in any score bucket. The caller dedupes both lists against
+   * seenHashes (swipes ledger) and against the score buckets in case
+   * the LLM ignored the prompt rule.
+   *
+   * Falls through to the deduped raw pool on LLM / parser failure so
+   * the queue is never empty when there's pool content available.
+   */
+  private async sourcePersonalized(
+    userId: string,
+    profile: TasteProfile | null,
+    seenHashes: Set<string>,
+  ): Promise<SongSnapshot[]> {
+    if (!profile) return [];
+
+    // Shuffle artists then take 5 — variety across rebuilds.
+    const shuffledArtists = shuffleCopy(profile.artists).slice(0, PERSONALIZED_ARTIST_SHUFFLE_SIZE);
+    const artistNames = shuffledArtists.map((a) => a.name);
+    const topGenres = profile.genres.slice(0, PERSONALIZED_TOP_GENRES).map((g) => g.name);
+
+    // Score-bucket sampling runs in parallel with the provider searches.
+    const queries = [...artistNames, ...topGenres];
+    const [bucketsResult, providerResults] = await Promise.all([
+      this.sampleAllBuckets(userId),
+      Promise.allSettled(
+        queries.flatMap((q) => [
+          this.audius.search(q).catch(() => [] as TrackResult[]),
+          this.soundcloud.search(q).catch(() => [] as TrackResult[]),
+        ]),
+      ),
+    ]);
+
+    const fulfilledTracks: Array<{ track: TrackResult; provider: TrackResult["provider"] }> = [];
+    for (const r of providerResults) {
+      if (r.status === "fulfilled") {
+        for (const t of r.value) fulfilledTracks.push({ track: t, provider: t.provider });
+      }
+    }
+    const dedupedPool = dedupeBySnapshotHash(
+      fulfilledTracks.map(({ track }) => toSnapshot(track)),
+      seenHashes,
+    );
+
+    // Per-snapshot lookup so the prompt can carry the original provider
+    // tag (audius/soundcloud) for the LLM's reference.
+    const providerByKey = new Map<string, TrackResult["provider"]>();
+    fulfilledTracks.forEach(({ track, provider }) => {
+      providerByKey.set(`${track.title}::${track.artist}`, provider);
+    });
+
+    const candidatePool: PersonalizedPromptCandidate[] = dedupedPool.map((s) => ({
+      title: s.title,
+      artist: s.artist,
+      source: providerByKey.get(`${s.title}::${s.artist}`) ?? "audius",
+    }));
+
+    const scoreBuckets: PersonalizedScoreBuckets = bucketsResult;
+    const shuffledProfile: TasteProfile = { ...profile, artists: shuffledArtists };
+
+    const { system, userMessage } = buildPersonalizedPrompt({
+      profile: shuffledProfile,
+      scoreBuckets,
+      candidatePool,
+    });
+
+    let parsed = {
+      picks_from_pool: [] as Array<{ title: string; artist: string }>,
+      novel_suggestions: [] as Array<{ title: string; artist: string }>,
+    };
+    try {
+      const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
+      const response = await this.anthropic.complete({
+        system,
+        userMessage,
+        model,
+        maxTokens: PERSONALIZED_MAX_TOKENS,
+      });
+      parsed = parsePersonalizedResponse(response.text);
+    } catch (err) {
+      this.logger.warn(
+        { event: "explore_queue_personalized_failed", err: errToString(err) },
+        "explore_queue_personalized_failed",
+      );
+    }
+
+    // Match picks against pool by (title, artist) — anything the LLM
+    // hallucinated outside the pool is dropped silently.
+    const poolByKey = new Map(dedupedPool.map((s) => [`${s.title}::${s.artist}`, s]));
+    const picks: SongSnapshot[] = [];
+    for (const p of parsed.picks_from_pool) {
+      const snap = poolByKey.get(`${p.title}::${p.artist}`);
+      if (snap) picks.push(snap);
+    }
+
+    // Novel suggestions: convert (title, artist) → bare SongSnapshot.
+    // Cover resolution downstream (resolveCoversForCandidates) fills
+    // in coverUrl or drops entries that can't be covered.
+    const bucketKeys = new Set<string>(
+      [...scoreBuckets.low, ...scoreBuckets.mid, ...scoreBuckets.high].map(
+        (e) => `${e.title}::${e.artist}`,
+      ),
+    );
+    const novel: SongSnapshot[] = [];
+    for (const n of parsed.novel_suggestions) {
+      const key = `${n.title}::${n.artist}`;
+      // Drop if the LLM ignored the prompt rule and surfaced a track
+      // already in any score bucket.
+      if (bucketKeys.has(key)) continue;
+      novel.push({ title: n.title, artist: n.artist, kind: "track" });
+    }
+
+    // Combine picks + novel, dedupe against seenHashes (and against
+    // each other — a novel suggestion may collide with a pick title).
+    const combined = dedupeBySnapshotHash([...picks, ...novel], seenHashes);
+    if (combined.length > 0) return combined;
+
+    // Heuristic fallback: if the LLM produced nothing usable, surface
+    // the deduped pool so the queue isn't empty.
     return dedupedPool;
   }
+
+  /**
+   * Sample 10 entries from each of the three score buckets. Returns
+   * empty arrays for buckets with no matching docs (sparse-history
+   * users — common during initial rebuilds).
+   */
+  private async sampleAllBuckets(userId: string): Promise<PersonalizedScoreBuckets> {
+    const [low, mid, high] = await Promise.all([
+      this.interestScores.sampleByScoreBucket(
+        userId,
+        SCORE_BUCKET_LOW.min,
+        SCORE_BUCKET_LOW.max,
+        SCORE_BUCKET_SAMPLE_SIZE,
+      ),
+      this.interestScores.sampleByScoreBucket(
+        userId,
+        SCORE_BUCKET_MID.min,
+        SCORE_BUCKET_MID.max,
+        SCORE_BUCKET_SAMPLE_SIZE,
+      ),
+      this.interestScores.sampleByScoreBucket(
+        userId,
+        SCORE_BUCKET_HIGH.min,
+        SCORE_BUCKET_HIGH.max,
+        SCORE_BUCKET_SAMPLE_SIZE,
+      ),
+    ]);
+    return {
+      low: low.map(docToBucketEntry),
+      mid: mid.map(docToBucketEntry),
+      high: high.map(docToBucketEntry),
+    };
+  }
+}
+
+function docToBucketEntry(doc: { snapshot: SongSnapshot }): ScoreBucketEntry {
+  return { title: doc.snapshot.title, artist: doc.snapshot.artist };
+}
+
+function shuffleCopy<T>(items: ReadonlyArray<T>): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
 }
 
 function toSnapshot(track: TrackResult): SongSnapshot {
@@ -526,32 +784,6 @@ function dedupeBySnapshotHash(snapshots: SongSnapshot[], alreadySeen: Set<string
     out.push(s);
   }
   return out;
-}
-
-function combineFulfilled(...settled: PromiseSettledResult<TrackResult[]>[]): TrackResult[] {
-  const out: TrackResult[] = [];
-  for (const r of settled) {
-    if (r.status === "fulfilled") out.push(...r.value);
-  }
-  return out;
-}
-
-interface MaybePopular {
-  playback_count?: number;
-  play_count?: number;
-}
-
-function splitByPopularity(tracks: TrackResult[]): { common: TrackResult[]; niche: TrackResult[] } {
-  const common: TrackResult[] = [];
-  const niche: TrackResult[] = [];
-  for (const t of tracks) {
-    const raw = t as unknown as MaybePopular;
-    const count = raw.playback_count ?? raw.play_count ?? null;
-    const cls = classifyByListenCount(count);
-    if (cls === "common") common.push(t);
-    else niche.push(t);
-  }
-  return { common, niche };
 }
 
 function errToString(err: unknown): string {

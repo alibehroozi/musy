@@ -40,7 +40,7 @@ export const TasteProfilesSchemaDefinition = new Schema<TasteProfileDocument>(
       enum: ["original", "remix-friendly", "remix-only", null],
       default: null,
     },
-    summaryText: { type: String, required: true, default: "", maxlength: 500 },
+    summaryText: { type: String, required: true, default: "" },
     lastBuiltAt: { type: Date, required: true },
     swipeCountAtLastBuild: { type: Number, required: true, min: 0 },
   },

@@ -110,6 +110,7 @@ function makeBuilder(opts: BuildOpts): {
       .mockResolvedValue({ results: [], partial: false, failedProviders: [], cached: false }),
   };
   const noopPlay = { resolve: vi.fn().mockResolvedValue({}) };
+  const noopInterestScores = { sampleByScoreBucket: vi.fn().mockResolvedValue([]) };
   const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
 
   const builder = new QueueBuilderService(
@@ -121,6 +122,7 @@ function makeBuilder(opts: BuildOpts): {
     noopAudius as never,
     noopSoundCloud as never,
     noopSearch as never,
+    noopInterestScores as never,
     noopPlay as never,
     fakeConfig as never,
   );
@@ -400,6 +402,7 @@ describe("API-21: rebuildQueue is idempotent per user (concurrent calls share on
       buildIfDue: async () => {},
     };
 
+    const noopInterestScores = { sampleByScoreBucket: vi.fn().mockResolvedValue([]) };
     const builder = new QueueBuilderService(
       swipes as never,
       profilesRepo as never,
@@ -409,6 +412,7 @@ describe("API-21: rebuildQueue is idempotent per user (concurrent calls share on
       noopAudius as never,
       noopSoundCloud as never,
       noopSearch as never,
+      noopInterestScores as never,
       noopPlay as never,
       fakeConfig as never,
     );
@@ -453,6 +457,7 @@ describe("API-21: rebuildQueue is idempotent per user (concurrent calls share on
       buildIfDue: async () => {},
     };
 
+    const noopInterestScores = { sampleByScoreBucket: vi.fn().mockResolvedValue([]) };
     const builder = new QueueBuilderService(
       swipes as never,
       profilesRepo as never,
@@ -462,6 +467,7 @@ describe("API-21: rebuildQueue is idempotent per user (concurrent calls share on
       noopAudius as never,
       noopSoundCloud as never,
       noopSearch as never,
+      noopInterestScores as never,
       noopPlay as never,
       fakeConfig as never,
     );
@@ -510,6 +516,7 @@ describe("API-20: getNext surfaces buildingQueue: true while a rebuild is in fli
       buildIfDue: async () => {},
     };
 
+    const noopInterestScores = { sampleByScoreBucket: vi.fn().mockResolvedValue([]) };
     const builder = new QueueBuilderService(
       swipes as never,
       profilesRepo as never,
@@ -519,6 +526,7 @@ describe("API-20: getNext surfaces buildingQueue: true while a rebuild is in fli
       noopAudius as never,
       noopSoundCloud as never,
       noopSearch as never,
+      noopInterestScores as never,
       noopPlay as never,
       fakeConfig as never,
     );
@@ -575,6 +583,7 @@ describe("API-20: getNext surfaces buildingQueue: true while a rebuild is in fli
       swipesSeenAtBuild: 0,
     });
 
+    const noopInterestScores = { sampleByScoreBucket: vi.fn().mockResolvedValue([]) };
     const builder = new QueueBuilderService(
       swipes as never,
       profilesRepo as never,
@@ -584,6 +593,7 @@ describe("API-20: getNext surfaces buildingQueue: true while a rebuild is in fli
       noopAudius as never,
       noopSoundCloud as never,
       noopSearch as never,
+      noopInterestScores as never,
       noopPlay as never,
       fakeConfig as never,
     );

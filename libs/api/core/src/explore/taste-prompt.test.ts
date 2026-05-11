@@ -241,15 +241,16 @@ describe("LOGIC-22: parseTasteProfileResponse tolerates LLM JSON wrappers", () =
     expect(() => parseTasteProfileResponse(missingSummary)).toThrow();
   });
 
-  it("throws on schema mismatch (summaryText exceeds 500-char cap)", () => {
-    const tooLong = JSON.stringify({
+  it("accepts a long summaryText — the storage layer no longer caps length (DATA-11)", () => {
+    const longSummary = JSON.stringify({
       genres: [],
       artists: [],
       tempoBucket: null,
       remixPreference: null,
-      summaryText: "a".repeat(501),
+      summaryText: "a".repeat(2000),
     });
-    expect(() => parseTasteProfileResponse(tooLong)).toThrow();
+    const out = parseTasteProfileResponse(longSummary);
+    expect(out.summaryText.length).toBe(2000);
   });
 
   it("throws on schema mismatch (tempoBucket outside the allowed enum)", () => {

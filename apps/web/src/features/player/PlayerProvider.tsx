@@ -156,8 +156,39 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       setEngineState({ ...engine.state });
     });
 
+    // UI-23: when the engine emits autoplayBlocked (LOGIC-24 — browser
+    // refused the first audio.play() because no user gesture has happened
+    // yet), install a one-shot capture-phase pointerdown listener on
+    // document. The next tap anywhere on the page calls togglePlay and
+    // the listener detaches. Also detaches whenever the engine status
+    // leaves "paused" (a new load() from a swipe, a successful resume,
+    // a failure) so we don't fire on a stale state.
+    let pointerdownHandler: (() => void) | null = null;
+    const detachPointerdownListener = (): void => {
+      if (pointerdownHandler !== null) {
+        document.removeEventListener("pointerdown", pointerdownHandler, true);
+        pointerdownHandler = null;
+      }
+    };
+    const offAutoplayBlocked = engine.on("autoplayBlocked", () => {
+      if (pointerdownHandler !== null) return;
+      pointerdownHandler = (): void => {
+        detachPointerdownListener();
+        engine.togglePlay();
+      };
+      document.addEventListener("pointerdown", pointerdownHandler, true);
+    });
+    const offStateForDetach = engine.on("stateChange", () => {
+      if (engine.state.status !== "paused") {
+        detachPointerdownListener();
+      }
+    });
+
     return () => {
       offState();
+      offAutoplayBlocked();
+      offStateForDetach();
+      detachPointerdownListener();
       if (fadeRafRef.current !== null) {
         cancelAnimationFrame(fadeRafRef.current);
         fadeRafRef.current = null;

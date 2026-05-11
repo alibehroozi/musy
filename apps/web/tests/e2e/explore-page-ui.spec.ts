@@ -45,6 +45,7 @@ const ITEMS = NextResponse.parse({
   ],
   phase: "discovery",
   partial: false,
+  buildingQueue: false,
 });
 
 const RESOLVE_OK = ResolveResponse.parse({
@@ -155,7 +156,7 @@ test.describe("explore page UI", () => {
     await clearOnboarding(page);
     await mockExploreEndpoints(
       page,
-      NextResponse.parse({ items: [], phase: "discovery", partial: true }),
+      NextResponse.parse({ items: [], phase: "discovery", partial: true, buildingQueue: false }),
     );
     await page.goto("/explore");
 

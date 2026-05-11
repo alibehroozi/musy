@@ -2,7 +2,7 @@
 //
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under UI-16, UI-17, UI-18, UI-19, UI-20.
+// Invariants verified here are listed in INVARIANTS.md under UI-16, UI-17, UI-18, UI-19, UI-20, UI-23.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup, fireEvent, act } from "@testing-library/react";
@@ -45,6 +45,7 @@ function exploreNextResponse(overrides: Partial<NextResponse> = {}): NextRespons
     items: ITEMS,
     phase: "discovery",
     partial: false,
+    buildingQueue: false,
     ...overrides,
   };
 }
@@ -295,7 +296,12 @@ describe("UI-20: explore queue persists across tab navigation", () => {
       if (url.includes("/api/explore/next")) {
         nextCallCount++;
         return new Response(
-          JSON.stringify({ items: LARGE_QUEUE, phase: "discovery", partial: false }),
+          JSON.stringify({
+            items: LARGE_QUEUE,
+            phase: "discovery",
+            partial: false,
+            buildingQueue: false,
+          }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -344,6 +350,189 @@ describe("UI-20: explore queue persists across tab navigation", () => {
     expect(screen.getByText("Persistent Track 1")).toBeInTheDocument();
 
     // No second /explore/next request was fired.
+    expect(nextCallCount).toBe(1);
+  });
+});
+
+describe("UI-23: explore polls /api/explore/next every 5 s while buildingQueue=true", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    cleanup();
+    localStorage.setItem("moc.explore.onboarded", "1");
+    mockAudio();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    cleanup();
+    localStorage.clear();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("when buildingQueue=true and items=[], the loading state is shown and /next is re-fetched every 5 s", async () => {
+    let nextCallCount = 0;
+    // 6 items so the FE's background-refill effect (fires when
+    // items.length < 5) doesn't kick in after the polled batch arrives —
+    // we want to assert ONLY the buildingQueue-driven poll fired.
+    const FIRST_BATCH: NextResponse["items"] = Array.from({ length: 6 }, (_, i) => ({
+      title: `Late Arrival ${i + 1}`,
+      artist: "Slowpoke",
+      durationSec: 200 + i,
+      kind: "track" as const,
+    }));
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/explore/next")) {
+        nextCallCount++;
+        // First two responses: still building, no items yet.
+        // Third response: rebuild has finished, items arrive.
+        if (nextCallCount < 3) {
+          return new Response(
+            JSON.stringify({
+              items: [],
+              phase: "discovery",
+              partial: true,
+              buildingQueue: true,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            items: FIRST_BATCH,
+            phase: "discovery",
+            partial: false,
+            buildingQueue: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/explore/profile")) {
+        return new Response(JSON.stringify(null), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/explore/swipe")) return new Response(null, { status: 204 });
+      if (url.includes("/api/play/resolve")) {
+        return new Response(
+          JSON.stringify({
+            source: "audius",
+            sourceTrackId: "a1",
+            streamUrl: "https://stream.audius.co/foo",
+            expiresAt: "2026-12-31T00:00:00.000Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/search/history")) {
+        return new Response(JSON.stringify({ entries: [], nextCursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof globalThis.fetch;
+
+    renderAuthedApp("/explore");
+
+    // Wait for the initial fetch to complete AND React to have committed
+    // the resulting state — the polling effect runs after the buildingQueue
+    // state flips to true.
+    await vi.waitFor(() => expect(nextCallCount).toBe(1));
+    await act(async () => {
+      // Flush pending microtasks so the post-fetch render + useEffect run.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("explore-refilling")).toBeInTheDocument();
+
+    // Advance 5 s — first poll should fire.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await vi.waitFor(() => expect(nextCallCount).toBe(2));
+    // Still loading (response was still buildingQueue=true).
+    expect(screen.getByTestId("explore-refilling")).toBeInTheDocument();
+
+    // Advance another 5 s — second poll fires; this one returns items.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    await vi.waitFor(() => expect(nextCallCount).toBe(3));
+
+    // Loading state disappears and the card surfaces.
+    await vi.waitFor(() => {
+      expect(screen.queryByTestId("explore-refilling")).not.toBeInTheDocument();
+      expect(screen.getByText("Late Arrival 1")).toBeInTheDocument();
+    });
+
+    // After items arrive (buildingQueue=false), another 5 s does NOT trigger
+    // another fetch — the poll has been cleared.
+    const stableCount = nextCallCount;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(nextCallCount).toBe(stableCount);
+  });
+
+  it("when buildingQueue=false and items=[], the loading state is shown WITHOUT a poll (genuine empty)", async () => {
+    let nextCallCount = 0;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/explore/next")) {
+        nextCallCount++;
+        return new Response(
+          JSON.stringify({
+            items: [],
+            phase: "discovery",
+            partial: true,
+            buildingQueue: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/explore/profile")) {
+        return new Response(JSON.stringify(null), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/explore/swipe")) return new Response(null, { status: 204 });
+      if (url.includes("/api/play/resolve")) {
+        return new Response(
+          JSON.stringify({
+            source: "audius",
+            sourceTrackId: "a1",
+            streamUrl: "https://stream.audius.co/foo",
+            expiresAt: "2026-12-31T00:00:00.000Z",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.includes("/api/search/history")) {
+        return new Response(JSON.stringify({ entries: [], nextCursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof globalThis.fetch;
+
+    renderAuthedApp("/explore");
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("explore-refilling")).toBeInTheDocument();
+    });
+    expect(nextCallCount).toBe(1);
+
+    // Advance 5 s — NO poll fires because buildingQueue=false.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
     expect(nextCallCount).toBe(1);
   });
 });

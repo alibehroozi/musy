@@ -42,6 +42,8 @@ const NOOP: ExploreContextValue = {
 const ExploreContext = createContext<ExploreContextValue>(NOOP);
 
 const REFILL_THRESHOLD = 5;
+// UI-23: poll cadence while NextResponse.buildingQueue is true.
+const BUILDING_POLL_INTERVAL_MS = 5_000;
 
 export function ExploreTopCardProvider({ children }: { children: ReactNode }): JSX.Element {
   const [topCard, setTopCard] = useState<SongSnapshot | null>(null);
@@ -49,6 +51,9 @@ export function ExploreTopCardProvider({ children }: { children: ReactNode }): J
   const [items, setItems] = useState<SongSnapshot[]>([]);
   const [phase, setPhase] = useState<QueuePhase | null>(null);
   const [status, setStatus] = useState<ExploreQueueStatus>("loading");
+  // UI-23: mirrors NextResponse.buildingQueue so the polling effect below
+  // knows when to schedule a 5 s tick.
+  const [buildingQueue, setBuildingQueue] = useState(false);
 
   const activatedRef = useRef(false);
   const refillingRef = useRef(false);
@@ -66,13 +71,28 @@ export function ExploreTopCardProvider({ children }: { children: ReactNode }): J
       void fetchProfile().catch(() => null);
       setItems((prev) => mergeUnique(prev, next.items));
       setPhase(next.phase);
+      setBuildingQueue(next.buildingQueue);
       setStatus(next.items.length === 0 ? "empty" : "ready");
     } catch {
       setStatus((prev) => (prev === "ready" ? "ready" : "error"));
+      setBuildingQueue(false);
     } finally {
       refillingRef.current = false;
     }
   }, []);
+
+  // UI-23: while the server reports a rebuild is in flight, poll
+  // /api/explore/next every 5 s until items arrive or buildingQueue
+  // flips false. The poll is cheap because rebuildQueue is idempotent
+  // server-side (API-21) — repeated calls share one underlying build.
+  useEffect(() => {
+    if (!buildingQueue) return undefined;
+    const interval = setInterval(() => {
+      if (refillingRef.current) return;
+      void refresh();
+    }, BUILDING_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [buildingQueue, refresh]);
 
   // Start the queue on first ExplorePage mount. Re-fetches if a previous
   // attempt failed (e.g. user was not yet authenticated on first visit).

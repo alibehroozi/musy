@@ -44,6 +44,11 @@ const RERANK_MAX_TOKENS = 4096;
 export class QueueBuilderService {
   private readonly logger = new Logger(QueueBuilderService.name);
 
+  // API-21: tracks in-flight rebuilds per user so concurrent calls share
+  // a single underlying build (no duplicate LLM round-trips). API-20 reads
+  // this map to set the buildingQueue flag on the /next response.
+  private readonly inFlightRebuilds = new Map<string, Promise<void>>();
+
   constructor(
     @Inject(SwipesRepository) private readonly swipes: SwipesRepository,
     @Inject(TasteProfilesRepository)
@@ -61,56 +66,99 @@ export class QueueBuilderService {
   ) {}
 
   /**
-   * Top-level read for `GET /api/explore/next`. Returns the user's
-   * current queue, building one if no queue exists yet. The build is
-   * synchronous on first hit so the response is never `partial: true`
-   * for the empty-queue case (the seed-genre Phase 1 path is local).
+   * Top-level read for `GET /api/explore/next`.
+   *
+   * Returns the user's current queue. If the queue is missing or running
+   * low (< REFILL_THRESHOLD unseen), fires `rebuildQueue` asynchronously
+   * (fire-and-forget) and signals `buildingQueue: true` so the FE can
+   * show a loading state and poll without re-triggering rebuilds (UI-23,
+   * idempotency via API-21).
+   *
+   * The previous sync-block-on-first-hit was removed: cold-start LLM
+   * latency is 5–30 s and blocking the HTTP response that long is worse
+   * UX than returning empty + the buildingQueue flag immediately.
    *
    * `count` is clamped to [MIN_COUNT, MAX_COUNT]; the response carries
    * the top `count` items of the queue.
    */
   async getNext(userId: string, count: number): Promise<NextResponse> {
     const safeCount = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Math.floor(count)));
-    let queue = await this.queues.findForUser(userId);
+    const queue = await this.queues.findForUser(userId);
+
     if (!queue) {
-      await this.rebuildQueue(userId);
-      queue = await this.queues.findForUser(userId);
-    }
-    if (!queue) {
-      // Best-effort fallback — a build that produced nothing still
-      // surfaces the seed-genre snapshots so the UI is never empty.
-      // API-17 filter: seeds without coverUrl never reach the wire.
-      const seeds = seedSnapshots().filter(hasNonEmptyCover).slice(0, safeCount);
-      return { items: seeds, phase: "discovery", partial: true };
+      // No queue yet (first visit). Fire an async rebuild — the FE will
+      // observe buildingQueue: true and poll until items arrive.
+      this.kickoffRebuild(userId);
+      return {
+        items: [],
+        phase: "discovery",
+        partial: true,
+        buildingQueue: true,
+      };
     }
 
-    // Always exclude songs the user has already swiped so they never
-    // reappear — even when the stored queue pre-dates the latest swipes.
-    // API-17 defense-in-depth: also drop any item without coverUrl. The
-    // queue builder's resolution step (rebuildQueue) is the primary
-    // enforcement; this filter catches pre-existing rows from before
-    // DATA-13 landed and any future drift.
+    // Filter against swipes and cover-completeness (API-17 defense in
+    // depth — the queue builder is the primary enforcement, but stale
+    // pre-DATA-13 rows could still slip through).
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
     const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
     const filtered = queue.items.filter(
       (item) => !seenHashes.has(computeSnapshotHash(item)) && hasNonEmptyCover(item),
     );
-    shuffleInPlace(filtered);
 
+    // Self-heal: if unseen runs low and no rebuild is in flight, fire
+    // one. This complements the swipe-write-triggered maybeRefill
+    // (API-18) — for example, a user opening the app cold with a stale
+    // queue from a previous session.
+    if (filtered.length < REFILL_THRESHOLD) {
+      this.kickoffRebuild(userId);
+    }
+
+    shuffleInPlace(filtered);
     const items = filtered.slice(0, safeCount);
     return {
       items,
       phase: queue.phase,
       partial: items.length < safeCount,
+      buildingQueue: this.inFlightRebuilds.has(userId),
     };
+  }
+
+  /** Internal: fire a rebuild fire-and-forget. No-op if one is in flight. */
+  private kickoffRebuild(userId: string): void {
+    if (this.inFlightRebuilds.has(userId)) return;
+    void this.rebuildQueue(userId).catch((err: unknown) => {
+      this.logger.error(
+        { event: "explore_queue_kickoff_failed", userId, err: errToString(err) },
+        "explore_queue_kickoff_failed",
+      );
+    });
   }
 
   /**
    * Force-rebuild the queue. Per spec, this is also fired by the swipe
    * handler when the queue dips below REFILL_THRESHOLD items (measured
    * as unseen-remaining; see API-18).
+   *
+   * Idempotent per user (API-21): concurrent invocations for the same
+   * userId share one underlying build — the second caller awaits the
+   * first's promise rather than starting a duplicate sourcing pipeline.
+   * The in-flight entry is cleared on settle so the *next* rebuild
+   * cycle starts fresh.
    */
   async rebuildQueue(userId: string): Promise<void> {
+    const inFlight = this.inFlightRebuilds.get(userId);
+    if (inFlight) return inFlight;
+
+    const promise = this.doRebuild(userId).finally(() => {
+      this.inFlightRebuilds.delete(userId);
+    });
+    this.inFlightRebuilds.set(userId, promise);
+    return promise;
+  }
+
+  /** The actual rebuild work — wrapped by rebuildQueue for idempotency. */
+  private async doRebuild(userId: string): Promise<void> {
     this.logger.log(
       { event: "explore_queue_rebuild_started", userId },
       "explore_queue_rebuild_started",

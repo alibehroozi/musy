@@ -96,22 +96,33 @@ export interface FakeQueueDoc {
 
 export class FakeQueueBuilderService {
   queuesByUser = new Map<string, FakeQueueDoc>();
+  // API-20: tests prime this to simulate "a rebuild is in flight". The
+  // fake mirrors the real QueueBuilderService.inFlightRebuilds key set.
+  inFlightUserIds = new Set<string>();
   maybeRefillCalls: string[] = [];
   rebuildCalls: string[] = [];
 
   async getNext(
     userId: string,
     count: number,
-  ): Promise<{ items: SongSnapshot[]; phase: FakeQueueDoc["phase"]; partial: boolean }> {
+  ): Promise<{
+    items: SongSnapshot[];
+    phase: FakeQueueDoc["phase"];
+    partial: boolean;
+    buildingQueue: boolean;
+  }> {
     const safeCount = Math.max(1, Math.min(50, Math.floor(count)));
     const queue = this.queuesByUser.get(userId);
-    if (!queue) return { items: [], phase: "discovery", partial: true };
+    const buildingQueue = this.inFlightUserIds.has(userId);
+    if (!queue) {
+      return { items: [], phase: "discovery", partial: true, buildingQueue };
+    }
     // Mirrors API-17 in the real QueueBuilderService.getNext: items
     // without a non-empty coverUrl never reach the wire.
     const items = queue.items
       .filter((s) => typeof s.coverUrl === "string" && s.coverUrl.length > 0)
       .slice(0, safeCount);
-    return { items, phase: queue.phase, partial: items.length < safeCount };
+    return { items, phase: queue.phase, partial: items.length < safeCount, buildingQueue };
   }
 
   async maybeRefill(userId: string): Promise<void> {

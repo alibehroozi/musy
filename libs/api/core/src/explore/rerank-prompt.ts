@@ -1,5 +1,7 @@
 import type { ProviderName } from "@moc/contracts";
 
+import { firstJsonObjectIn } from "./llm-json.js";
+
 // Bound on the candidate pool size that reaches the prompt. Above this
 // the LLM tends to over-truncate the output anyway and the cost-per-call
 // ramps without improving rerank quality. Inputs above the cap are
@@ -85,4 +87,57 @@ export function buildRerankPrompt(input: BuildRerankPromptInput): BuildRerankPro
     system: SYSTEM_PROMPT,
     userMessage: JSON.stringify(userPayload),
   };
+}
+
+// The shape the rerank LLM is asked to emit per element of `ranked`.
+// Kept separate from `PromptCandidate` because the LLM adds a `score`
+// and may return a `source` outside the strict `ProviderName` union.
+export interface RerankItem {
+  title: string;
+  artist: string;
+  source: string;
+  score: number;
+}
+
+/**
+ * Parses the rerank LLM's `{"ranked": [...]}` JSON response, tolerating
+ * the wrappers Haiku (and other models) routinely add — markdown code
+ * fences (` ```json ` / ` ``` `), leading prose, trailing prose, and
+ * any text outside the first balanced `{ … }` object. Pure: same input
+ * always produces the same output; never throws; malformed entries
+ * inside `ranked` are dropped silently and the well-formed ones
+ * survive. Returns `[]` for unparseable input or for valid JSON
+ * objects whose `ranked` field isn't an array.
+ */
+export function parseRerankResponse(text: string): RerankItem[] {
+  const objText = firstJsonObjectIn(text);
+  if (objText === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(objText);
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object") return [];
+  const ranked = (parsed as { ranked?: unknown }).ranked;
+  if (!Array.isArray(ranked)) return [];
+  const out: RerankItem[] = [];
+  for (const r of ranked) {
+    if (!r || typeof r !== "object") continue;
+    const item = r as Partial<RerankItem>;
+    if (
+      typeof item.title === "string" &&
+      typeof item.artist === "string" &&
+      typeof item.source === "string" &&
+      typeof item.score === "number"
+    ) {
+      out.push({
+        title: item.title,
+        artist: item.artist,
+        source: item.source,
+        score: item.score,
+      });
+    }
+  }
+  return out;
 }

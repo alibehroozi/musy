@@ -179,7 +179,10 @@ Tests use `describe("<ID>: <description>", ...)` to map back to this file.
 | AI-04 | The `buildRerankPrompt` pure helper produces a `(system, userMessage)` pair whose serialized bytes never contain any `userId`, `email`, IP address, session token, or raw swipe-direction history — it only ever sees `(candidatePool, profileSummary)`, and only `(title, artist, source)` from each candidate reaches the prompt body                                                                            | Critical |
 | AI-05 | `buildRerankPrompt` is deterministic: equal `(candidatePool, profileSummary)` inputs produce byte-identical `(system, userMessage)` pairs, so two users with identical inputs derive the same prompt-cache key (the SDK derives the key from system + user-message bytes — never from user identity)                                                                                                               | Critical |
 
-**Test files:** `tests/invariants/ai/taste-profile.test.ts`, `tests/invariants/ai/explore-rerank.test.ts`
+| AI-06 | The Anthropic SDK construction routes the configured credential by prefix: values starting with `sk-ant-oat01-` (OAuth tokens, e.g. issued by `claude setup-token`) are passed via the SDK's `authToken` option so Anthropic authenticates them via `Authorization: Bearer …`; values matching the standard API-key shape `sk-ant-api…` are passed via `apiKey` so Anthropic authenticates them via `x-api-key`. The decision is made by a pure helper that depends only on its argument | Critical |
+| AI-07 | Module bootstrap fails fast when the configured Anthropic credential is empty, missing, whitespace-only, or does not match a recognized credential shape (`sk-ant-api…` API key or `sk-ant-oat01-…` OAuth token). The thrown error names the env var and lists the two accepted shapes. This prevents the LLM-driven explore paths (cold start, rerank, taste-profile build) from silently 401-ing and falling back to seed snapshots when the credential is misconfigured | Critical |
+
+**Test files:** `tests/invariants/ai/taste-profile.test.ts`, `tests/invariants/ai/explore-rerank.test.ts`, `tests/invariants/ai/anthropic-client.test.ts`
 
 ---
 

@@ -74,8 +74,13 @@ export function ExploreTopCardProvider({ children }: { children: ReactNode }): J
       setBuildingQueue(next.buildingQueue);
       setStatus(next.items.length === 0 ? "empty" : "ready");
     } catch {
+      // UI-28: a transient fetchNext failure (network blip, 5xx, schema
+      // parse) does NOT clear `buildingQueue`. The polling effect stays
+      // subscribed at its 5-s cadence; the next successful poll either
+      // confirms the flag or transitions it correctly. Surfacing "error"
+      // here only kicks in when the deck is empty — if we already have
+      // cards, the user keeps swiping while we retry in the background.
       setStatus((prev) => (prev === "ready" ? "ready" : "error"));
-      setBuildingQueue(false);
     } finally {
       refillingRef.current = false;
     }

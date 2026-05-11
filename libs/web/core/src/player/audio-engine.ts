@@ -73,6 +73,23 @@ export class AudioEngine {
   }
 
   /**
+   * Pause the audio without unloading the track. Idempotent: a no-op when
+   * no track is loaded. Used by Explore to silence the just-swiped track
+   * when the deck drains to zero items while the queue rebuilds (UI-26)
+   * — the engine's `currentTrack` and the navigator.mediaSession metadata
+   * are preserved so the next loaded snapshot resumes through the same
+   * OS-level media session.
+   */
+  pause(): void {
+    if (this._track === null) return;
+    this.driver.pause();
+    if (this._status === "playing" || this._status === "loading") {
+      this._status = "paused";
+      this._emit("stateChange");
+    }
+  }
+
+  /**
    * Move playback to `positionMs`. Clamped to [0, durationMs]. No-op when no
    * track is loaded. Optimistically advances `progressMs` so the UI doesn't
    * snap back to the old position before the next `timeupdate` fires.

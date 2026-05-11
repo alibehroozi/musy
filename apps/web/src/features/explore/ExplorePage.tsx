@@ -64,17 +64,23 @@ export function ExplorePage(): JSX.Element {
   }, [engineState.status, items.length, swipe]);
 
   // Auto-advance (like) when the full preview plays to the end.
-  // Guard with a ref keyed to the snapshot so a re-render loop from the
-  // swipe itself can't re-fire for the same card.
+  // topRef lets the effect read the current top card without listing it as
+  // a dep: adding `top` as a dep would cause the effect to re-run the moment
+  // a swipe changes `items`, while the engine is still in "ended" (the 250ms
+  // fade runs before the status flips to "loading"), triggering a cascade of
+  // unwanted extra swipes.
+  const topRef = useRef(top);
+  topRef.current = top;
   const autoAdvancedKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (engineState.status !== "ended") return;
-    if (top === null) return;
-    const key = `${top.title.trim().toLowerCase()}|${top.artist.trim().toLowerCase()}`;
+    const currentTop = topRef.current;
+    if (currentTop === null) return;
+    const key = `${currentTop.title.trim().toLowerCase()}|${currentTop.artist.trim().toLowerCase()}`;
     if (autoAdvancedKeyRef.current === key) return;
     autoAdvancedKeyRef.current = key;
     swipe("right");
-  }, [engineState.status, top, swipe]);
+  }, [engineState.status, swipe]);
 
   if (authState.status === "loading") {
     return <main className="flex flex-col h-full" />;

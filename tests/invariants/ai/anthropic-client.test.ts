@@ -15,8 +15,12 @@
 import { describe, it, expect } from "vitest";
 import { anthropicAuthOptionsFor } from "@moc/api-core";
 
-const SAMPLE_OAUTH_TOKEN = "sk-ant-oat01-abcDEF123_-456ghiJKL789mnoPQR000stuVWX111yzABCD222EFGH333";
-const SAMPLE_API_KEY = "sk-ant-api03-AAAAA-BBBBB_CCCCC-DDDDD-EEEEE_FFFFF";
+// Fixtures are intentionally short — long, structurally-realistic values
+// would match the gitleaks anthropic-api-key rule (`sk-ant-[a-zA-Z0-9_-]{20,}`)
+// and fail CI even though they're plainly test-only. The helper only inspects
+// the prefix, so trimming the tail loses no coverage.
+const SAMPLE_OAUTH_TOKEN = "sk-ant-oat01-TEST";
+const SAMPLE_API_KEY = "sk-ant-api03-TEST";
 
 describe("AI-06: Anthropic SDK construction routes the configured credential by prefix", () => {
   it("OAuth tokens (sk-ant-oat01-…) go via the SDK's authToken option, not apiKey", () => {

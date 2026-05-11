@@ -29,9 +29,33 @@ type EngineEventMap = {
   started: () => void;
   completed: (elapsedMs: number) => void;
   errored: () => void;
+  /**
+   * Emitted exactly once when `driver.play()` rejects with the browser's
+   * autoplay-policy block (Error.name === "NotAllowedError") while the
+   * engine is still in `"loading"`. The engine itself transitions to
+   * `"paused"` so the UI's play button works; consumers (PlayerProvider)
+   * use this event to wire a one-shot pointerdown listener that auto-
+   * resumes on the user's next interaction. See LOGIC-24, UI-23.
+   */
+  autoplayBlocked: () => void;
 };
 
 type EngineEventName = keyof EngineEventMap;
+
+/**
+ * Recognizes the browser's autoplay-policy rejection shape. Pure; does
+ * not depend on `DOMException` class identity (which varies across
+ * jsdom/browser environments) — only on the standardized `name` field.
+ * See LOGIC-24.
+ */
+export function isAutoplayBlocked(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "name" in err &&
+    (err as { name: unknown }).name === "NotAllowedError"
+  );
+}
 
 export class AudioEngine {
   private _status: EngineStatus = "idle";
@@ -56,9 +80,7 @@ export class AudioEngine {
     this._durationMs = 0;
     this._startedAt = null;
     this.driver.setSrc(streamUrl);
-    void this.driver.play().catch(() => {
-      // The "error" event from the driver will handle this transition.
-    });
+    void this.driver.play().catch((err: unknown) => this._handlePlayRejection(err));
     this._emit("stateChange");
   }
 
@@ -68,8 +90,19 @@ export class AudioEngine {
     } else if (this._status === "paused" || this._status === "ended") {
       this._status = "loading";
       this._emit("stateChange");
-      void this.driver.play().catch(() => {});
+      void this.driver.play().catch((err: unknown) => this._handlePlayRejection(err));
     }
+  }
+
+  private _handlePlayRejection(err: unknown): void {
+    // Only autoplay-block transitions are handled here. Other rejection
+    // shapes (decoding errors, etc.) typically also fire the driver's
+    // "error" event, which moves the engine to "failed" via LOGIC-08.
+    if (this._status !== "loading") return;
+    if (!isAutoplayBlocked(err)) return;
+    this._status = "paused";
+    this._emit("autoplayBlocked");
+    this._emit("stateChange");
   }
 
   /**
@@ -109,6 +142,7 @@ export class AudioEngine {
   private _emit(event: "started"): void;
   private _emit(event: "completed", elapsedMs: number): void;
   private _emit(event: "errored"): void;
+  private _emit(event: "autoplayBlocked"): void;
   private _emit(event: string, ...args: unknown[]): void {
     for (const handler of this._listeners.get(event) ?? []) {
       handler(...args);

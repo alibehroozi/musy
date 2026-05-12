@@ -48,23 +48,32 @@ function jaccardDistance(a: string, b: string): number {
   return 1 - intersection / union;
 }
 
+// Predicate version of the same (title / artist / duration) constraints used
+// by pickBestMatch. Exported so that callers needing to pre-filter a candidate
+// pool (e.g. the bad-remix picker that sorts by playback_count and then takes
+// the first un-tried similar match) share one source of truth for "is this
+// candidate similar enough to be considered the same song?"
+export function passesSimilarity(snapshot: SongSnapshot, candidate: AudiusCandidate): boolean {
+  if (jaccardDistance(snapshot.title, candidate.title) > TITLE_DIFF_TOLERANCE) return false;
+  if (jaccardDistance(snapshot.artist, candidate.artist) > ARTIST_DIFF_TOLERANCE) return false;
+  if (
+    typeof snapshot.durationSec === "number" &&
+    Math.abs(candidate.durationSec - snapshot.durationSec) > DURATION_TOLERANCE_SEC
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function pickBestMatch(
   snapshot: SongSnapshot,
   candidates: AudiusCandidate[],
 ): AudiusMatch | null {
-  const desiredDuration = snapshot.durationSec;
   let best: { score: number; id: string } | null = null;
   for (const c of candidates) {
+    if (!passesSimilarity(snapshot, c)) continue;
     const titleDist = jaccardDistance(snapshot.title, c.title);
-    if (titleDist > TITLE_DIFF_TOLERANCE) continue;
     const artistDist = jaccardDistance(snapshot.artist, c.artist);
-    if (artistDist > ARTIST_DIFF_TOLERANCE) continue;
-    if (
-      typeof desiredDuration === "number" &&
-      Math.abs(c.durationSec - desiredDuration) > DURATION_TOLERANCE_SEC
-    ) {
-      continue;
-    }
     const score = titleDist + artistDist;
     if (!best || score < best.score) {
       best = { score, id: c.id };

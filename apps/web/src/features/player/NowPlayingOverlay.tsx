@@ -5,6 +5,7 @@ import { recordSaved } from "@moc/web-core";
 import type { SavedEventRequest, SongSnapshot, ProviderName } from "@moc/contracts";
 import { usePlayer } from "./usePlayer.js";
 import { useAuth } from "../../hooks/useAuth.js";
+import { BadRemixButton } from "./components/BadRemixButton.js";
 
 function ProviderBadge({ source }: { source: ProviderName }): JSX.Element {
   const label = source === "radio-browser" ? "Radio Browser" : source;
@@ -133,6 +134,10 @@ function TrackVariant(props: OverlayBodyProps): JSX.Element {
           </Typography>
         </div>
         <SaveHeart snapshot={snapshot} source={source} externalId={externalId} />
+      </div>
+
+      <div className="flex justify-end">
+        <BadRemixButton snapshot={snapshot} currentSourceTrackId={externalId} />
       </div>
 
       <div className="flex flex-col gap-2">

@@ -5,7 +5,7 @@ import {
   extractSourceFromHtml,
   extractClientId,
   isPlayableTranscoding,
-  passesSimilarity,
+  passesReResolveCandidacy,
   pickBestMatch,
   sortByPlaybackCountDesc,
   type AudiusCandidate,
@@ -90,34 +90,54 @@ export class SoundCloudStreamClient {
     return strictBest;
   }
 
-  // Used by the /play/reresolve endpoint (API-22). Searches the same way as
-  // findMatch's Phase 1, then filters out everything in excludeIds, sorts by
-  // playback_count desc (most-played first), and walks the result list
-  // returning the first candidate that produces a playable (non-DRM,
-  // non-snippet) stream. Returns null when every passing-and-untried candidate
-  // is unplayable. Does NOT fall through to title-only Phase 2 like findMatch:
-  // the user's intent is "a different upload of the same song", not "a remix
-  // by a different artist".
+  // Used by the /play/reresolve endpoint (API-22). Builds a broader candidate
+  // pool than findMatch's Phase 1: pulls 50 results from both the strict
+  // "title artist" query AND the title-only query, dedupes them, and applies
+  // passesReResolveCandidacy — a looser predicate that accepts user uploads
+  // whose SoundCloud account name doesn't match the artist as long as the
+  // artist appears in the candidate's title (the universal "<artist> -
+  // <title>" SoundCloud naming convention). Sorts by playback_count desc
+  // and walks the list returning the first candidate that produces a
+  // playable (non-DRM, non-snippet) stream.
   async findMatchExcluding(
     snapshot: SongSnapshot,
     excludeIds: ReadonlySet<string>,
   ): Promise<SoundCloudFindResult | null> {
-    const query = `${snapshot.title} ${snapshot.artist}`.trim();
-    const searchPageUrl = `https://soundcloud.com/search/sounds?q=${encodeURIComponent(query)}`;
+    const strictQuery = `${snapshot.title} ${snapshot.artist}`.trim();
+    const searchPageUrl = `https://soundcloud.com/search/sounds?q=${encodeURIComponent(
+      strictQuery,
+    )}`;
 
     const html = await this.fetchHtml(searchPageUrl);
     const clientId = extractClientId(html);
     if (clientId) sharedClientId = clientId;
 
-    const rawItems: RawSearchTrack[] = clientId
-      ? await this.fetchSearchItems(query, clientId, 20)
+    const rawStrict: RawSearchTrack[] = clientId
+      ? await this.fetchSearchItems(strictQuery, clientId, 50)
       : collectSearchHydration(html);
 
-    const candidates = rawItems
-      .map((it) => toCandidate(it))
-      .filter((c): c is SoundCloudCandidateInternal => c !== null)
+    // Title-only broadens the pool to fan uploads where the strict query
+    // missed (SoundCloud weights artist tokens heavily in its search).
+    const rawTitleOnly: RawSearchTrack[] =
+      clientId && snapshot.title.length > 0
+        ? await this.fetchSearchItems(snapshot.title, clientId, 50)
+        : [];
+
+    // Dedupe by SoundCloud track id while preserving order — strict matches
+    // first (those are the higher-precision hits), title-only fills the rest.
+    const seen = new Set<string>();
+    const merged: SoundCloudCandidateInternal[] = [];
+    for (const raw of [...rawStrict, ...rawTitleOnly]) {
+      const c = toCandidate(raw);
+      if (!c) continue;
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      merged.push(c);
+    }
+
+    const candidates = merged
       .filter((c) => !excludeIds.has(c.id))
-      .filter((c) => passesSimilarity(snapshot, c));
+      .filter((c) => passesReResolveCandidacy(snapshot, c));
 
     if (candidates.length === 0) return null;
 

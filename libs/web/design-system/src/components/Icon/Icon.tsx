@@ -12,6 +12,7 @@ import {
   Search,
   SkipBack,
   SkipForward,
+  ThumbsDown,
   X,
 } from "lucide-react";
 
@@ -29,6 +30,7 @@ const LUCIDE_ICONS = {
   search: Search,
   "skip-back": SkipBack,
   "skip-forward": SkipForward,
+  "thumbs-down": ThumbsDown,
   x: X,
 } as const;
 

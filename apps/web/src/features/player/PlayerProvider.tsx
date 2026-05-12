@@ -49,6 +49,14 @@ export interface PlayerContextValue {
    * `loadPreview` with the crossfade.
    */
   loadPreviewSync: (snapshot: SongSnapshot, streamUrl: string) => void;
+  /**
+   * UI-32 (Bad Remix): rotates the underlying stream URL for the currently
+   * loaded track without clearing `currentSource`. Same snapshot identity,
+   * same fade-in behaviour as `loadPreview`, but the now-playing overlay
+   * stays mounted because `currentSource` is preserved (the overlay's
+   * visibility check requires it to be non-null).
+   */
+  swapStream: (snapshot: SongSnapshot, streamUrl: string) => void;
   togglePlay: () => void;
   /**
    * Pause the audio without clearing the loaded track. Used by Explore
@@ -94,6 +102,7 @@ const NOOP_CONTEXT: PlayerContextValue = {
   playPreview: () => {},
   loadPreview: () => {},
   loadPreviewSync: () => {},
+  swapStream: () => {},
   togglePlay: () => {},
   pause: () => {},
   seek: () => {},
@@ -370,6 +379,33 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     [fadeOutAudio],
   );
 
+  // UI-32: Bad Remix — swap the underlying stream URL for the currently
+  // active track without clearing `currentSource`. Mirrors loadPreview's
+  // fade-in dance but skips the `setCurrentSource(null)` so the now-playing
+  // overlay stays mounted (its visibility check requires `currentSource`
+  // to be non-null). Snapshot identity is preserved; only the audio source
+  // rotates.
+  const swapStream = useCallback(
+    (snapshot: SongSnapshot, streamUrl: string) => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const gen = ++previewGenRef.current;
+
+      void fadeOutAudio(250).then(() => {
+        if (previewGenRef.current !== gen) return;
+        setFailedTitle(null);
+        setEngineState((prev) => ({
+          ...prev,
+          status: "loading",
+          currentTrack: { snapshot, streamUrl },
+        }));
+        if (audioRef.current) audioRef.current.volume = 1;
+        engine.load(snapshot, streamUrl);
+      });
+    },
+    [fadeOutAudio],
+  );
+
   const togglePlay = useCallback(() => {
     engineRef.current?.togglePlay();
   }, []);
@@ -485,6 +521,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playPreview,
       loadPreview,
       loadPreviewSync,
+      swapStream,
       togglePlay,
       pause,
       seek,
@@ -503,6 +540,7 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playPreview,
       loadPreview,
       loadPreviewSync,
+      swapStream,
       togglePlay,
       pause,
       seek,

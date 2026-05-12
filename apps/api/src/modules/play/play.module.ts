@@ -5,10 +5,15 @@ import {
   PlayResolutionsSchemaDefinition,
 } from "./play-resolutions.schema.js";
 import {
+  RESOLUTION_PREFERENCES_MODEL,
+  ResolutionPreferencesSchemaDefinition,
+} from "./resolution-preferences.schema.js";
+import {
   LISTENING_EVENTS_MODEL,
   ListeningEventsSchemaDefinition,
 } from "./listening-events.schema.js";
 import { PlayRepository } from "./play.repository.js";
+import { ResolutionPreferencesRepository } from "./resolution-preferences.repository.js";
 import { ListeningEventsRepository } from "./listening-events.repository.js";
 import { PlayService } from "./play.service.js";
 import { PlayEventsService } from "./play-events.service.js";
@@ -22,6 +27,10 @@ import { SearchModule } from "../search/search.module.js";
   imports: [
     MongooseModule.forFeature([
       { name: PLAY_RESOLUTIONS_MODEL, schema: PlayResolutionsSchemaDefinition },
+      {
+        name: RESOLUTION_PREFERENCES_MODEL,
+        schema: ResolutionPreferencesSchemaDefinition,
+      },
       { name: LISTENING_EVENTS_MODEL, schema: ListeningEventsSchemaDefinition },
     ]),
     SearchModule,
@@ -31,6 +40,7 @@ import { SearchModule } from "../search/search.module.js";
     PlayService,
     PlayEventsService,
     PlayRepository,
+    ResolutionPreferencesRepository,
     ListeningEventsRepository,
     AudiusStreamClient,
     SoundCloudStreamClient,

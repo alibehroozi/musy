@@ -18,6 +18,10 @@ import {
   PlayRepository,
   type CachedResolution,
 } from "../../../apps/api/src/modules/play/play.repository.js";
+import {
+  ResolutionPreferencesRepository,
+  type ResolutionPreference,
+} from "../../../apps/api/src/modules/play/resolution-preferences.repository.js";
 import { PlayRateLimiterGuard } from "../../../apps/api/src/modules/play/play-rate-limiter.guard.js";
 import {
   AudiusStreamClient,
@@ -97,11 +101,31 @@ export class FakeSoundCloudStreamClient {
   findCalls: SongSnapshot[] = [];
   produceCalls: string[] = [];
 
+  // Bad-Remix re-resolution support (API-22). When excludingResults is
+  // non-empty, findMatchExcluding draws from it in order, filtered by the
+  // requested exclude set. Falls back to `match` if no exclude-list entry
+  // matches. excludingCalls captures (snapshot, excludeIds) for assertions.
+  excludingResults: SoundCloudFindResult[] = [];
+  excludingShouldFail = false;
+  excludingCalls: Array<{ snapshot: SongSnapshot; excludeIds: string[] }> = [];
+
   async findMatch(snapshot: SongSnapshot): Promise<SoundCloudFindResult | null> {
     this.findCalls.push(snapshot);
     if (this.shouldFailFind) throw new Error("SoundCloud findMatch failed");
     if (this.matchQueue.length > 0) return this.matchQueue.shift() ?? null;
     return this.match;
+  }
+
+  async findMatchExcluding(
+    snapshot: SongSnapshot,
+    excludeIds: ReadonlySet<string>,
+  ): Promise<SoundCloudFindResult | null> {
+    this.excludingCalls.push({ snapshot, excludeIds: Array.from(excludeIds) });
+    if (this.excludingShouldFail) throw new Error("SoundCloud findMatchExcluding failed");
+    for (const candidate of this.excludingResults) {
+      if (!excludeIds.has(candidate.sourceTrackId)) return candidate;
+    }
+    return null;
   }
 
   async produceStreamUrl(sourceLocator: string): Promise<SoundCloudStreamUrlResult | null> {
@@ -114,7 +138,60 @@ export class FakeSoundCloudStreamClient {
   }
 }
 
+export class FakeResolutionPreferencesRepository {
+  store: ResolutionPreference[] = [];
+  saved: Array<{
+    snapshotHash: string;
+    sourceTrackId: string;
+    sourceLocator: string;
+    score: number;
+    chosenAt: Date;
+  }> = [];
+
+  async findByHash(snapshotHash: string): Promise<ResolutionPreference[]> {
+    return this.store.filter((p) => p.snapshotHash === snapshotHash);
+  }
+
+  async findHighestScore(snapshotHash: string): Promise<ResolutionPreference | null> {
+    let best: ResolutionPreference | null = null;
+    for (const p of this.store) {
+      if (p.snapshotHash !== snapshotHash) continue;
+      if (!best || p.score > best.score) best = p;
+    }
+    return best;
+  }
+
+  async add(input: {
+    snapshotHash: string;
+    sourceTrackId: string;
+    sourceLocator: string;
+    score: number;
+    chosenAt: Date;
+  }): Promise<void> {
+    // Mirror DATA-14's unique compound index — duplicates throw.
+    const dupe = this.store.some(
+      (p) =>
+        p.snapshotHash === input.snapshotHash &&
+        p.source === "soundcloud" &&
+        p.sourceTrackId === input.sourceTrackId,
+    );
+    if (dupe) {
+      throw new Error("duplicate resolution_preferences (snapshotHash, source, sourceTrackId)");
+    }
+    this.saved.push(input);
+    this.store.push({
+      snapshotHash: input.snapshotHash,
+      source: "soundcloud",
+      sourceTrackId: input.sourceTrackId,
+      sourceLocator: input.sourceLocator,
+      score: input.score,
+      chosenAt: input.chosenAt,
+    });
+  }
+}
+
 const fakePlayRepoToken = Symbol.for("test:fake-play-repo");
+const fakePrefsToken = Symbol.for("test:fake-resolution-preferences-repo");
 const fakeAudiusToken = Symbol.for("test:fake-audius-stream");
 const fakeSoundCloudToken = Symbol.for("test:fake-soundcloud-stream");
 const fakeUsersToken = Symbol.for("test:fake-users-repo-play");
@@ -160,6 +237,16 @@ const fakeUsersToken = Symbol.for("test:fake-users-repo-play");
       inject: [fakePlayRepoToken],
     },
     {
+      provide: fakePrefsToken,
+      useFactory: () => new FakeResolutionPreferencesRepository(),
+    },
+    {
+      provide: ResolutionPreferencesRepository,
+      useFactory: (fake: FakeResolutionPreferencesRepository) =>
+        fake as unknown as ResolutionPreferencesRepository,
+      inject: [fakePrefsToken],
+    },
+    {
       provide: fakeAudiusToken,
       useFactory: () => new FakeAudiusStreamClient(),
     },
@@ -186,8 +273,11 @@ class TestPlayModule {}
 export interface PlayTestAppHandle {
   app: INestApplication;
   repo: FakePlayRepository;
+  prefs: FakeResolutionPreferencesRepository;
   audius: FakeAudiusStreamClient;
   soundcloud: FakeSoundCloudStreamClient;
+  authService: AuthService;
+  usersRepo: FakeUsersRepository;
   env: typeof PLAY_TEST_ENV;
 }
 
@@ -200,10 +290,13 @@ export async function buildPlayTestApp(): Promise<PlayTestAppHandle> {
   await app.init();
 
   const repo = app.get<FakePlayRepository>(fakePlayRepoToken);
+  const prefs = app.get<FakeResolutionPreferencesRepository>(fakePrefsToken);
   const audius = app.get<FakeAudiusStreamClient>(fakeAudiusToken);
   const soundcloud = app.get<FakeSoundCloudStreamClient>(fakeSoundCloudToken);
+  const authService = app.get<AuthService>(AuthService);
+  const usersRepo = app.get<FakeUsersRepository>(fakeUsersToken);
 
-  return { app, repo, audius, soundcloud, env: PLAY_TEST_ENV };
+  return { app, repo, prefs, audius, soundcloud, authService, usersRepo, env: PLAY_TEST_ENV };
 }
 
 export function makeSnapshot(overrides: Partial<SongSnapshot> = {}): SongSnapshot {

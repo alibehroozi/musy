@@ -1,15 +1,23 @@
 import {
   resolveStream as resolveStreamCore,
+  reresolveAndReplay as reresolveAndReplayCore,
   recordPlayStarted as recordPlayStartedCore,
   recordPlayCompleted as recordPlayCompletedCore,
 } from "@moc/web-core";
 import type { PlayCompletedBody, PlayStartedBody } from "@moc/web-core";
-import type { ResolveRequest, ResolveResponse } from "@moc/contracts";
+import type { ResolveRequest, ResolveResponse, SongSnapshot } from "@moc/contracts";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
 
 export function resolveStream(body: ResolveRequest): Promise<ResolveResponse> {
   return resolveStreamCore(body, API_BASE);
+}
+
+export function reresolveAndReplay(
+  snapshot: SongSnapshot,
+  currentSourceTrackId: string,
+): Promise<ResolveResponse> {
+  return reresolveAndReplayCore(snapshot, currentSourceTrackId, API_BASE);
 }
 
 export function recordPlayStarted(body: PlayStartedBody): Promise<void> {

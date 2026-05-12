@@ -4,6 +4,7 @@ import { Card, Typography } from "@moc/design-system";
 import { directionFromDrag } from "@moc/web-core";
 import type { SongSnapshot, SwipeDirection } from "@moc/contracts";
 import { usePlayer } from "../../player/usePlayer.js";
+import { BadRemixButton } from "../../player/components/BadRemixButton.js";
 
 const SWIPE_THRESHOLD = 100;
 
@@ -166,7 +167,16 @@ function CardContent({
 }): JSX.Element {
   return (
     <Card className="h-full flex flex-col gap-3 p-4">
-      <CardArtwork snapshot={snapshot} />
+      <div className="relative flex-1 min-h-0">
+        <CardArtwork snapshot={snapshot} />
+        {/* UI-32: small secondary "Bad remix" button overlaid on the cover.
+            On Explore the active source isn't tracked in currentSource (preview
+            playback), so the button performs a /play/resolve probe before
+            issuing /play/reresolve. */}
+        <div className="absolute top-2 right-2 z-10">
+          <BadRemixButton snapshot={snapshot} />
+        </div>
+      </div>
       <div className="flex flex-col gap-1">
         <Typography variant="h3" className="truncate">
           {snapshot.title}
@@ -205,7 +215,7 @@ function CardArtwork({ snapshot }: { snapshot: SongSnapshot }): JSX.Element {
   return (
     <div
       data-testid="explore-artwork"
-      className="flex-1 min-h-0 rounded-md overflow-hidden bg-border"
+      className="size-full rounded-md overflow-hidden bg-border"
       role="img"
       aria-label={hasUsableCover ? `${snapshot.title} cover art` : "Artwork unavailable"}
     >

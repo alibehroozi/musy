@@ -14,6 +14,7 @@ import {
   searchTracks,
   getSearchHistory,
   resolveStream,
+  reresolveStream,
   recordPlayStarted,
   recordPlayCompleted,
   recordExplored,
@@ -66,6 +67,11 @@ const cases: Case[] = [
     name: "resolveStream",
     response: okJson({ source: null, sourceTrackId: null, streamUrl: null, expiresAt: null }),
     invoke: () => resolveStream({ snapshot }),
+  },
+  {
+    name: "reresolveStream",
+    response: okJson({ source: null, sourceTrackId: null, streamUrl: null, expiresAt: null }),
+    invoke: () => reresolveStream({ snapshot, currentSourceTrackId: "sc-current" }),
   },
   {
     name: "recordPlayStarted",

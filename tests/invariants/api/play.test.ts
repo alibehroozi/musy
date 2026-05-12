@@ -234,6 +234,12 @@ const AUDIUS_TRACK = { title: "Ghosts N Stuff", artist: "deadmau5", kind: "track
 // only exposes DRM-encrypted (FairPlay/Widevine) transcodings. Used to verify the
 // resolver falls through to a non-DRM alternative (remix / sped-up edit / cover).
 const SC_DRM_TRACK = { title: "Without Me", artist: "Eminem", kind: "track" as const };
+// "vampire" by Olivia Rodrigo — exercises findMatchExcluding's broader pool.
+// Pop tracks with a single-word title have lots of fan uploads on SoundCloud
+// whose "artist" field is the uploader's account name rather than the song's
+// real artist; the loose passesReResolveCandidacy predicate plus the merged
+// strict+title-only fetch is what makes them reachable.
+const SC_VAMPIRE = { title: "vampire", artist: "Olivia Rodrigo", kind: "track" as const };
 
 describe("SoundCloudStreamClient: real provider (no mocking)", () => {
   it("findMatch returns a non-null result with sourceTrackId and a soundcloud.com permalink", async () => {
@@ -310,6 +316,33 @@ describe("SoundCloudStreamClient: real provider (no mocking)", () => {
     expect(stream?.streamUrl).not.toContain("/cenc/");
     expect(stream?.streamUrl).not.toContain("playback.media-streaming.soundcloud.cloud");
   }, 60_000);
+
+  it("findMatchExcluding rotates through ≥ 3 distinct candidates for a pop track with many fan uploads", async () => {
+    // Regression for the original /play/reresolve report: the picker's
+    // strict-similarity predicate filtered out almost every SoundCloud upload
+    // of "vampire" because the artist field on user uploads is "LyricLand" /
+    // "MusicVibes" / etc., not "Olivia Rodrigo". After 1-2 clicks the user
+    // hit an empty result. This test simulates clicking "Bad remix" three
+    // times: each call's exclude-set is the union of all previously-returned
+    // sourceTrackIds, mirroring how /play/reresolve composes them server-side.
+    const client = new SoundCloudStreamClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: DEFAULT_UA }));
+    const seen = new Set<string>();
+
+    for (let i = 0; i < 3; i++) {
+      const m = await client.findMatchExcluding(SC_VAMPIRE, seen);
+      expect(
+        m,
+        `findMatchExcluding returned null on click ${i + 1} of 3 — the broader candidate pool ` +
+          `(strict + title-only fetch, passesReResolveCandidacy predicate) regressed`,
+      ).not.toBeNull();
+      if (!m) break;
+      expect(m.sourceLocator).toMatch(/^https:\/\/soundcloud\.com\//);
+      expect(seen.has(m.sourceTrackId)).toBe(false);
+      seen.add(m.sourceTrackId);
+    }
+
+    expect(seen.size).toBeGreaterThanOrEqual(3);
+  }, 90_000);
 });
 
 import {

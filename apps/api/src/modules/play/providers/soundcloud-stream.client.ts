@@ -5,7 +5,9 @@ import {
   extractSourceFromHtml,
   extractClientId,
   isPlayableTranscoding,
+  passesReResolveCandidacy,
   pickBestMatch,
+  sortByPlaybackCountDesc,
   type AudiusCandidate,
 } from "@moc/api-core";
 
@@ -65,9 +67,9 @@ export class SoundCloudStreamClient {
     // (e.g. major-label SoundCloud-Go content).
     if (clientId && snapshot.title) {
       const titleItems = await this.fetchSearchItems(snapshot.title, clientId, 20);
-      const titleCandidates = titleItems
-        .map(toCandidate)
-        .filter((c): c is AudiusCandidate & { permalink: string } => c !== null);
+      const titleCandidates = sortByPlaybackCountDesc(
+        titleItems.map(toCandidate).filter((c): c is SoundCloudCandidateInternal => c !== null),
+      );
 
       // Check candidates in parallel batches of 4 to keep latency manageable.
       for (let i = 0; i < Math.min(titleCandidates.length, 16); i += 4) {
@@ -86,6 +88,75 @@ export class SoundCloudStreamClient {
     // produceStreamUrl will still refuse to hand back a DRM URL, so the resolver
     // gracefully degrades to streamUrl: null if even this candidate is unplayable.
     return strictBest;
+  }
+
+  // Used by the /play/reresolve endpoint (API-22). Builds a broader candidate
+  // pool than findMatch's Phase 1: pulls 50 results from both the strict
+  // "title artist" query AND the title-only query, dedupes them, and applies
+  // passesReResolveCandidacy — a looser predicate that accepts user uploads
+  // whose SoundCloud account name doesn't match the artist as long as the
+  // artist appears in the candidate's title (the universal "<artist> -
+  // <title>" SoundCloud naming convention). Sorts by playback_count desc
+  // and walks the list returning the first candidate that produces a
+  // playable (non-DRM, non-snippet) stream.
+  async findMatchExcluding(
+    snapshot: SongSnapshot,
+    excludeIds: ReadonlySet<string>,
+  ): Promise<SoundCloudFindResult | null> {
+    const strictQuery = `${snapshot.title} ${snapshot.artist}`.trim();
+    const searchPageUrl = `https://soundcloud.com/search/sounds?q=${encodeURIComponent(
+      strictQuery,
+    )}`;
+
+    const html = await this.fetchHtml(searchPageUrl);
+    const clientId = extractClientId(html);
+    if (clientId) sharedClientId = clientId;
+
+    const rawStrict: RawSearchTrack[] = clientId
+      ? await this.fetchSearchItems(strictQuery, clientId, 50)
+      : collectSearchHydration(html);
+
+    // Title-only broadens the pool to fan uploads where the strict query
+    // missed (SoundCloud weights artist tokens heavily in its search).
+    const rawTitleOnly: RawSearchTrack[] =
+      clientId && snapshot.title.length > 0
+        ? await this.fetchSearchItems(snapshot.title, clientId, 50)
+        : [];
+
+    // Dedupe by SoundCloud track id while preserving order — strict matches
+    // first (those are the higher-precision hits), title-only fills the rest.
+    const seen = new Set<string>();
+    const merged: SoundCloudCandidateInternal[] = [];
+    for (const raw of [...rawStrict, ...rawTitleOnly]) {
+      const c = toCandidate(raw);
+      if (!c) continue;
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      merged.push(c);
+    }
+
+    const candidates = merged
+      .filter((c) => !excludeIds.has(c.id))
+      .filter((c) => passesReResolveCandidacy(snapshot, c));
+
+    if (candidates.length === 0) return null;
+
+    const sorted = sortByPlaybackCountDesc(candidates);
+
+    if (!clientId) {
+      // Without a clientId we can't probe playability. Return the highest-play
+      // candidate and let downstream produceStreamUrl decide.
+      const top = sorted[0];
+      if (!top) return null;
+      return { sourceTrackId: top.id, sourceLocator: top.permalink };
+    }
+
+    for (const c of sorted) {
+      if (await this.canStreamPlayable(c.permalink, clientId)) {
+        return { sourceTrackId: c.id, sourceLocator: c.permalink };
+      }
+    }
+    return null;
   }
 
   async produceStreamUrl(sourceLocator: string): Promise<SoundCloudStreamUrlResult | null> {
@@ -135,10 +206,16 @@ export class SoundCloudStreamClient {
   ): SoundCloudFindResult | null {
     const candidates = items
       .map((it) => toCandidate(it))
-      .filter((c): c is AudiusCandidate & { permalink: string } => c !== null);
-    const match = pickBestMatch(snapshot, candidates);
+      .filter((c): c is SoundCloudCandidateInternal => c !== null);
+    // Most-played tracks first. pickBestMatch uses strict-less-than tiebreaking
+    // on similarity score, so among equally-similar candidates the one appearing
+    // earlier in the input wins — sorting by playback_count desc thus realises
+    // "most played comes earlier in resolving" without changing the similarity
+    // algorithm. Pure ordering happens in @moc/api-core (sortByPlaybackCountDesc).
+    const sorted = sortByPlaybackCountDesc(candidates);
+    const match = pickBestMatch(snapshot, sorted);
     if (!match) return null;
-    const winner = candidates.find((c) => c.id === match.sourceTrackId);
+    const winner = sorted.find((c) => c.id === match.sourceTrackId);
     if (!winner) return null;
     return { sourceTrackId: winner.id, sourceLocator: winner.permalink };
   }
@@ -273,8 +350,14 @@ interface RawSearchTrack {
   title?: unknown;
   permalink_url?: unknown;
   duration?: unknown;
+  playback_count?: unknown;
   user?: { username?: unknown };
 }
+
+type SoundCloudCandidateInternal = AudiusCandidate & {
+  permalink: string;
+  playbackCount: number;
+};
 
 function collectSearchHydration(html: string): RawSearchTrack[] {
   const re = /window\.__sc_hydration\s*=\s*(\[[\s\S]*?\]);/;
@@ -301,7 +384,7 @@ function collectSearchHydration(html: string): RawSearchTrack[] {
   return tracks;
 }
 
-function toCandidate(raw: RawSearchTrack): (AudiusCandidate & { permalink: string }) | null {
+function toCandidate(raw: RawSearchTrack): SoundCloudCandidateInternal | null {
   const id = typeof raw.id === "string" ? raw.id : typeof raw.id === "number" ? String(raw.id) : "";
   if (!id) return null;
   const title = typeof raw.title === "string" ? raw.title : "";
@@ -310,5 +393,7 @@ function toCandidate(raw: RawSearchTrack): (AudiusCandidate & { permalink: strin
   const durationSec = Math.round(durationMs / 1000);
   const permalink = typeof raw.permalink_url === "string" ? raw.permalink_url : "";
   if (!permalink) return null;
-  return { id, title, artist, durationSec, permalink };
+  const playbackCount =
+    typeof raw.playback_count === "number" && raw.playback_count >= 0 ? raw.playback_count : 0;
+  return { id, title, artist, durationSec, permalink, playbackCount };
 }

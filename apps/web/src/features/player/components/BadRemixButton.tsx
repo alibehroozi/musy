@@ -33,7 +33,7 @@ export function BadRemixButton({
   currentSourceTrackId,
   className,
 }: BadRemixButtonProps): JSX.Element {
-  const { loadPreview } = usePlayer();
+  const { swapStream } = usePlayer();
   const [busy, setBusy] = useState(false);
 
   const handleClick = (): void => {
@@ -49,11 +49,11 @@ export function BadRemixButton({
         }
         const next = await reresolveAndReplay(snapshot, currentId);
         if (next.streamUrl !== null) {
-          // Same snapshot, new stream — keeps the active track identity
-          // (UI-32) so the title/artist render unchanged while the audio
-          // source rotates underneath. loadPreview re-uses the player's
-          // existing crossfade.
-          loadPreview(snapshot, next.streamUrl);
+          // Same snapshot, new stream — swapStream preserves currentSource
+          // so the now-playing overlay stays mounted (it checks
+          // currentSource !== null for visibility). loadPreview would have
+          // cleared currentSource and unmounted the overlay (UI-32).
+          swapStream(snapshot, next.streamUrl);
         }
       } finally {
         setBusy(false);

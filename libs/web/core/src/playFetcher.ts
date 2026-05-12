@@ -1,5 +1,5 @@
 import { ResolveResponse } from "@moc/contracts";
-import type { ResolveRequest, SongSnapshot } from "@moc/contracts";
+import type { ReresolveRequest, ResolveRequest, SongSnapshot } from "@moc/contracts";
 import type { ProviderName } from "@moc/contracts";
 import { fetchJson, HttpError } from "./fetcher.js";
 
@@ -8,6 +8,17 @@ export async function resolveStream(
   apiBase = "/api",
 ): Promise<import("@moc/contracts").ResolveResponse> {
   return fetchJson(`${apiBase}/play/resolve`, ResolveResponse, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function reresolveStream(
+  body: ReresolveRequest,
+  apiBase = "/api",
+): Promise<import("@moc/contracts").ResolveResponse> {
+  return fetchJson(`${apiBase}/play/reresolve`, ResolveResponse, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

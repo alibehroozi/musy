@@ -100,3 +100,31 @@ export function pickBestMatchTitleOnly(
   }
   return best ? { sourceTrackId: best.id } : null;
 }
+
+// Re-resolve (/play/reresolve) candidacy predicate. Looser than
+// passesSimilarity because SoundCloud is full of valid fan uploads whose
+// "artist" field is the uploader's account name (e.g. "LyricLand",
+// "MusicVibes") rather than the song's actual artist. The artist is still
+// signal — we accept it when it matches the artist field directly, OR when
+// any normalized artist token appears in the candidate's title (the common
+// pattern "<artist> - <title>" used by user uploads).
+//
+// Title similarity is still required so unrelated tracks that happen to
+// share a word with our title don't sneak through. No duration check —
+// Bad Remix is meant to surface alternate uploads which may include
+// outros / fades of different lengths.
+export function passesReResolveCandidacy(
+  snapshot: SongSnapshot,
+  candidate: AudiusCandidate,
+): boolean {
+  if (jaccardDistance(snapshot.title, candidate.title) > TITLE_DIFF_TOLERANCE) {
+    return false;
+  }
+  if (jaccardDistance(snapshot.artist, candidate.artist) <= ARTIST_DIFF_TOLERANCE) {
+    return true;
+  }
+  const artistTokens = tokens(snapshot.artist);
+  if (artistTokens.length === 0) return false;
+  const titleTokens = new Set(tokens(candidate.title));
+  return artistTokens.some((t) => titleTokens.has(t));
+}

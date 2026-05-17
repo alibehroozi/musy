@@ -1,13 +1,13 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-18, API-19, API-20, API-21.
+// Invariants verified here are listed in INVARIANTS.md under API-18, API-19, API-20, API-21, API-25.
 //
 // These tests exercise QueueBuilderService directly (not through HTTP)
 // because the invariants are about service-internal control flow — refill
-// trigger semantics and the await-profile-build ordering — that's not
-// observable from a single /next round-trip.
+// trigger semantics, the await-profile-build ordering, and slot-eligibility
+// filtering — that's not observable from a single /next round-trip.
 
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import type { SongSnapshot, TasteProfile } from "@moc/contracts";
 import { computeSnapshotHash } from "@moc/api-core";
 
@@ -601,5 +601,307 @@ describe("API-20: getNext surfaces buildingQueue: true while a rebuild is in fli
     const response = await builder.getNext(userId, 20);
     expect(response.buildingQueue).toBe(false);
     expect(response.items.length).toBe(20);
+  });
+});
+
+describe("API-25: GET /api/explore/next contextual slot eligibility (per LOGIC-33)", () => {
+  // Anchor "now" inside getNext. The service derives the current slot via
+  // server-side new Date() so we control time globally for these tests.
+  // 2026-05-19 19:30 = Tuesday / evening.
+  const TUE_EVENING = new Date(2026, 4, 19, 19, 30);
+  // 2026-05-20 09:00 = Wednesday / morning.
+  const WED_MORNING = new Date(2026, 4, 20, 9, 0);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TUE_EVENING);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("includes a song whose only swipe was in a different slot — the eligibility filter is contextual, not 'any swipe forever'", async () => {
+    const userId = "u-context-1";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const swipedSnap = snapshot("swiped-on-wed-morning");
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [swipedSnap, snapshot("never-swiped")],
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+
+    // Swipe happened in Wednesday-morning slot — different from "now" (Tue eve).
+    swipes.swipes.push({
+      userId,
+      snapshot: swipedSnap,
+      snapshotHash: computeSnapshotHash(swipedSnap),
+      direction: "right",
+      at: WED_MORNING,
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const response = await builder.getNext(userId, 20);
+    const titles = response.items.map((i) => i.title);
+    expect(titles).toContain("swiped-on-wed-morning");
+    expect(titles).toContain("never-swiped");
+  });
+
+  it("excludes a song whose swipe lands in the current slot — slot-burnt at (tue, evening)", async () => {
+    const userId = "u-context-2";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const swipedSnap = snapshot("swiped-now-tue-evening");
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [swipedSnap, snapshot("never-swiped")],
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+    swipes.swipes.push({
+      userId,
+      snapshot: swipedSnap,
+      snapshotHash: computeSnapshotHash(swipedSnap),
+      direction: "right",
+      at: TUE_EVENING,
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const response = await builder.getNext(userId, 20);
+    const titles = response.items.map((i) => i.title);
+    expect(titles).not.toContain("swiped-now-tue-evening");
+    expect(titles).toContain("never-swiped");
+  });
+
+  it("left-swipe in the current slot also burns the slot — both directions exclude equally", async () => {
+    const userId = "u-context-3";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const swipedSnap = snapshot("left-at-tue-evening");
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [swipedSnap],
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+    swipes.swipes.push({
+      userId,
+      snapshot: swipedSnap,
+      snapshotHash: computeSnapshotHash(swipedSnap),
+      direction: "left",
+      at: TUE_EVENING,
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const response = await builder.getNext(userId, 20);
+    expect(response.items.map((i) => i.title)).not.toContain("left-at-tue-evening");
+  });
+
+  it("after 28 distinct (weekday, timeOfDay) swipes of the same song, it is permanently excluded at every slot", async () => {
+    const userId = "u-context-4";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const burntSnap = snapshot("28-slot-burnt");
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [burntSnap, snapshot("fresh")],
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+
+    // Push 28 swipes covering all (weekday, timeOfDay) slots.
+    // 2026-05-17 = Sunday anchor.
+    const sunday = new Date(2026, 4, 17, 0, 0);
+    const hours = [2, 9, 14, 20]; // night / morning / afternoon / evening
+    for (let d = 0; d < 7; d++) {
+      for (const h of hours) {
+        const at = new Date(sunday);
+        at.setDate(sunday.getDate() + d);
+        at.setHours(h, 0, 0, 0);
+        swipes.swipes.push({
+          userId,
+          snapshot: burntSnap,
+          snapshotHash: computeSnapshotHash(burntSnap),
+          direction: "right",
+          at,
+        });
+      }
+    }
+    expect(swipes.swipes).toHaveLength(28);
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    // At every slot the burnt song must be excluded. Sample a few.
+    for (const t of [
+      TUE_EVENING,
+      WED_MORNING,
+      new Date(2026, 4, 17, 3, 0), // Sun night
+      new Date(2026, 4, 23, 14, 0), // Sat afternoon
+    ]) {
+      vi.setSystemTime(t);
+      const r = await builder.getNext(userId, 20);
+      const titles = r.items.map((i) => i.title);
+      expect(titles, `expected '28-slot-burnt' excluded at ${t.toISOString()}`).not.toContain(
+        "28-slot-burnt",
+      );
+      expect(titles).toContain("fresh");
+    }
+  });
+
+  it("user A's swipe at the current slot does not affect user B's eligibility", async () => {
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const sharedSnap = snapshot("shared-song");
+    queues.queues.set("A", {
+      id: "qA",
+      userId: "A",
+      items: [sharedSnap],
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+    queues.queues.set("B", {
+      id: "qB",
+      userId: "B",
+      items: [sharedSnap],
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+    // Only user A swiped at (tue, evening).
+    swipes.swipes.push({
+      userId: "A",
+      snapshot: sharedSnap,
+      snapshotHash: computeSnapshotHash(sharedSnap),
+      direction: "right",
+      at: TUE_EVENING,
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const ra = await builder.getNext("A", 20);
+    expect(ra.items.map((i) => i.title)).not.toContain("shared-song");
+    const rb = await builder.getNext("B", 20);
+    expect(rb.items.map((i) => i.title)).toContain("shared-song");
+  });
+
+  it("a malformed swipe timestamp keeps the song excluded (defensive — does not crash)", async () => {
+    const userId = "u-context-5";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const malformedSnap = snapshot("malformed-at");
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [malformedSnap, snapshot("ok")],
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+    swipes.swipes.push({
+      userId,
+      snapshot: malformedSnap,
+      snapshotHash: computeSnapshotHash(malformedSnap),
+      direction: "right",
+      at: new Date("not-a-date"),
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const response = await builder.getNext(userId, 20);
+    const titles = response.items.map((i) => i.title);
+    expect(titles).not.toContain("malformed-at");
+    expect(titles).toContain("ok");
+  });
+
+  it("maybeRefill does NOT trigger when many items are swiped but only at other slots (slot-eligible count is still high)", async () => {
+    const userId = "u-refill-1";
+    const items = Array.from({ length: 20 }, (_, i) => snapshot(`song-${i}`));
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items,
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+    // All 20 items have swipes — but at WED_MORNING (different slot from now).
+    // Under contextual eligibility, all 20 are still slot-eligible at
+    // (tue, evening), so the refill must NOT trigger.
+    for (const item of items) {
+      swipes.swipes.push({
+        userId,
+        snapshot: item,
+        snapshotHash: computeSnapshotHash(item),
+        direction: "left",
+        at: WED_MORNING,
+      });
+    }
+
+    const { builder } = makeBuilder({ swipes, queues });
+    const rebuildSpy = vi.spyOn(builder, "rebuildQueue").mockResolvedValue();
+
+    await builder.maybeRefill(userId);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(rebuildSpy).not.toHaveBeenCalled();
+  });
+
+  it("maybeRefill DOES trigger when ≥16 items are slot-burnt at the current slot", async () => {
+    const userId = "u-refill-2";
+    const items = Array.from({ length: 20 }, (_, i) => snapshot(`song-${i}`));
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items,
+      phase: "discovery",
+      generatedAt: TUE_EVENING,
+      swipesSeenAtBuild: 0,
+    });
+    // 16 items swiped at the *current* slot — slot-eligible drops to 4.
+    for (const item of items.slice(0, 16)) {
+      swipes.swipes.push({
+        userId,
+        snapshot: item,
+        snapshotHash: computeSnapshotHash(item),
+        direction: "right",
+        at: TUE_EVENING,
+      });
+    }
+
+    const { builder } = makeBuilder({ swipes, queues });
+    const rebuildSpy = vi.spyOn(builder, "rebuildQueue").mockResolvedValue();
+
+    await builder.maybeRefill(userId);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(rebuildSpy).toHaveBeenCalledWith(userId);
   });
 });

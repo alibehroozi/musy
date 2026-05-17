@@ -32,6 +32,12 @@ export const TasteBucket = z.object({
   errorReason: z.string().nullable(),
   createdAt: z.string().datetime(),
   lastBuiltAt: z.string().datetime(),
+  // API-28: server-computed cover artwork URL — the snapshot.artworkUrl of
+  // the highest-score bucket_song_scores row for this bucket. Null when the
+  // bucket has no scored songs yet (e.g. state: "building"), when the top
+  // row's artworkUrl is null, or when it fails URL parsing. The FE falls
+  // back to a deterministic gradient cover when this is null.
+  coverArtworkUrl: z.string().url().nullable(),
 });
 export type TasteBucket = z.infer<typeof TasteBucket>;
 

@@ -278,7 +278,9 @@ test.describe("bucket detail UI", () => {
     await page.goto("/taste/buckets/00000000-0000-4000-8000-00000000dead");
 
     await expect(page.getByRole("heading", { name: "Bucket not found" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Back to Taste" })).toBeVisible();
+    // The 404 page renders two "Back to Taste" buttons: the header back
+    // icon and the body CTA. Use .last() to assert the prominent body CTA.
+    await expect(page.getByRole("button", { name: "Back to Taste" }).last()).toBeVisible();
 
     await expectAccessible(page);
   });
@@ -288,10 +290,14 @@ test.describe("bucket detail UI", () => {
   // ──────────────────────────────────────────────────────────────────
 
   test("5xx renders 'Try again'; clicking it re-fetches successfully", async ({ page }) => {
-    let calls = 0;
+    // React Strict Mode fires effects twice in dev; the first invocation is
+    // immediately cleaned up (mounted = false), so its response is discarded.
+    // Both initial mount calls must return 502 so the *second* one (the real
+    // mount) actually sets the error state. The flag flips to false before the
+    // user-triggered retry so the next request returns 200.
+    let shouldFail = true;
     await page.route(/\/api\/me\/taste\/buckets\//, async (route) => {
-      calls += 1;
-      if (calls === 1) {
+      if (shouldFail) {
         await route.fulfill({
           status: 502,
           contentType: "application/json",
@@ -309,6 +315,7 @@ test.describe("bucket detail UI", () => {
     });
     await page.goto(`/taste/buckets/${READY_BUCKET.id}`);
     await expect(page.getByText("Couldn't load this bucket.")).toBeVisible();
+    shouldFail = false;
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Late night drives" })).toBeVisible();
   });

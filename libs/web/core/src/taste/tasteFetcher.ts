@@ -1,4 +1,8 @@
-import { CustomMixCreatedResponse, TasteBucketsResponse } from "@moc/contracts";
+import {
+  BucketDetailResponse,
+  CustomMixCreatedResponse,
+  TasteBucketsResponse,
+} from "@moc/contracts";
 import { fetchJson } from "../fetcher.js";
 
 /**
@@ -31,4 +35,20 @@ export function requestCustomMix(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ promptText }),
   });
+}
+
+/**
+ * GET /api/me/taste/buckets/:bucketId — validates the response against
+ * BucketDetailResponse. The HttpError thrown on non-2xx (404 for "not
+ * found / not yours", 5xx for server failure) bubbles to the caller so
+ * the page can render the matching empty / error UI per UI-37.
+ */
+export function fetchBucketDetail(
+  bucketId: string,
+  apiBase = "/api",
+): Promise<BucketDetailResponse> {
+  return fetchJson(
+    `${apiBase}/me/taste/buckets/${encodeURIComponent(bucketId)}`,
+    BucketDetailResponse,
+  );
 }

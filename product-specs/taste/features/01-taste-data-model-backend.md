@@ -1,7 +1,8 @@
 ---
 epic: taste
-status: pending
+status: done
 estimated-invariants: 5
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/41
 ---
 
 # Feature 01: Taste data model backend

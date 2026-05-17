@@ -29,6 +29,6 @@ import { TasteController } from "./taste.controller.js";
     ContextScoresRepository,
     ScoringService,
   ],
-  exports: [ScoringService],
+  exports: [ScoringService, BucketsRepository, BucketSongScoresRepository],
 })
 export class TasteModule {}

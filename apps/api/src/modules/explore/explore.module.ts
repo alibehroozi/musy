@@ -13,6 +13,7 @@ import { ExploreService } from "./explore.service.js";
 import { ExploreController } from "./explore.controller.js";
 import { ProfileBuilderService } from "./profile-builder.service.js";
 import { QueueBuilderService } from "./queue-builder.service.js";
+import { BucketBuilderService } from "./bucket-builder.service.js";
 import {
   AnthropicClient,
   ANTHROPIC_FALLBACK_MODEL_TOKEN,
@@ -41,6 +42,7 @@ import { TasteModule } from "../taste/taste.module.js";
     ExploreQueueRepository,
     ProfileBuilderService,
     QueueBuilderService,
+    BucketBuilderService,
     AnthropicClient,
     {
       provide: ANTHROPIC_SDK_TOKEN,

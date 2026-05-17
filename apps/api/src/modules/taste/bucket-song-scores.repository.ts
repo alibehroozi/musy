@@ -55,6 +55,40 @@ export class BucketSongScoresRepository {
   }
 
   /**
+   * Insert-only score seeding per LOGIC-34. On the first insert the
+   * LLM-supplied initialScore (already clamped by the caller) is
+   * written; if the row already exists its score is left entirely
+   * untouched — only the first-time assignment seeds the value.
+   *
+   * SEC-14: userId comes from the caller (never from LLM output).
+   */
+  async insertInitialScore(input: {
+    userId: string;
+    bucketId: string;
+    songKey: string;
+    snapshot: import("@moc/contracts").SongSnapshot;
+    initialScore: number;
+    at: Date;
+  }): Promise<void> {
+    await this.model
+      .findOneAndUpdate(
+        { userId: input.userId, bucketId: input.bucketId, songKey: input.songKey },
+        {
+          $setOnInsert: {
+            userId: input.userId,
+            bucketId: input.bucketId,
+            songKey: input.songKey,
+            snapshot: input.snapshot,
+            score: input.initialScore,
+            lastUpdatedAt: input.at,
+          },
+        },
+        { upsert: true, new: false },
+      )
+      .exec();
+  }
+
+  /**
    * Atomic increment with [0, 100] clamping at the application layer.
    * Mirrors ContextScoresRepository.inc — apply $inc, then clamp.
    * `delta` may be negative (feature 06 skip-in-mix), so the clamp

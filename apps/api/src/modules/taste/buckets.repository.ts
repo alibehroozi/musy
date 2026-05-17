@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
-import { TasteBucket } from "@moc/contracts";
+import { type BucketKind, type BucketState, TasteBucket } from "@moc/contracts";
 import { BUCKETS_MODEL, type BucketsDocument } from "./buckets.schema.js";
 
 @Injectable()
@@ -12,6 +12,34 @@ export class BucketsRepository {
     @InjectModel(BUCKETS_MODEL)
     private readonly model: Model<BucketsDocument>,
   ) {}
+
+  /**
+   * Insert a new bucket document for the auto-bucket builder.
+   * SEC-14: userId comes from the caller; never from external input.
+   */
+  async insertBucket(input: {
+    id: string;
+    userId: string;
+    name: string;
+    description: string | null;
+    kind: BucketKind;
+    state: BucketState;
+    createdAt: Date;
+    lastBuiltAt: Date;
+  }): Promise<void> {
+    await this.model.create({
+      id: input.id,
+      userId: input.userId,
+      name: input.name,
+      description: input.description ?? null,
+      kind: input.kind,
+      state: input.state,
+      promptText: null,
+      errorReason: null,
+      createdAt: input.createdAt,
+      lastBuiltAt: input.lastBuiltAt,
+    });
+  }
 
   /**
    * SEC-12: every read is filtered by the authenticated session's userId.

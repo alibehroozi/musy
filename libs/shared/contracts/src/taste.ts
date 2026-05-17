@@ -44,3 +44,42 @@ export const TasteBucketsResponse = z.object({
   buckets: z.array(TasteBucket),
 });
 export type TasteBucketsResponse = z.infer<typeof TasteBucketsResponse>;
+
+// ── Context scores (epic Taste — feature 02) ─────────────────────────
+//
+// Every interaction (right-swipe, left-swipe, save, listen-completed)
+// writes contextual-scoring rows along four axes: weekday, time-of-day,
+// month, and bucket. The first three are stored in `context_scores`;
+// the fourth lives in `bucket_song_scores` (locked in feature 01).
+//
+// These enums are the closed value sets for each time-context axis —
+// the Zod schemas double as the source of truth for the Mongoose
+// schema's `enum` constraint and for any future read endpoint.
+
+export const ContextAxis = z.enum(["weekday", "timeOfDay", "month"]);
+export type ContextAxis = z.infer<typeof ContextAxis>;
+
+export const WeekdayValue = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+export type WeekdayValue = z.infer<typeof WeekdayValue>;
+
+export const TimeOfDayValue = z.enum(["morning", "afternoon", "evening", "night"]);
+export type TimeOfDayValue = z.infer<typeof TimeOfDayValue>;
+
+export const MonthValue = z.enum([
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+]);
+export type MonthValue = z.infer<typeof MonthValue>;
+
+export const ScoringEventType = z.enum(["right-swipe", "left-swipe", "save", "listen-completed"]);
+export type ScoringEventType = z.infer<typeof ScoringEventType>;

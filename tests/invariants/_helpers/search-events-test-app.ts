@@ -15,7 +15,9 @@ import { UsersRepository } from "../../../apps/api/src/modules/users/users.repos
 import { UsersService } from "../../../apps/api/src/modules/users/users.service.js";
 import { SearchEventsController } from "../../../apps/api/src/modules/search/search-events.controller.js";
 import { InterestScoresRepository } from "../../../apps/api/src/modules/search/interest-scores.repository.js";
+import { ScoringService } from "../../../apps/api/src/modules/taste/scoring.service.js";
 import { FakeUsersRepository } from "./test-app.js";
+import { FakeScoringService } from "./fake-scoring-service.js";
 
 export const EVENTS_TEST_ENV = {
   GOOGLE_CLIENT_ID: "test-google-client-id",
@@ -143,6 +145,7 @@ export class FakeInterestScoresRepository {
 
 const fakeRepoToken = Symbol.for("test:fake-interest-repo");
 const fakeUsersToken = Symbol.for("test:fake-users-repo-events");
+const fakeScoringToken = Symbol.for("test:fake-scoring-search-events");
 
 @Module({
   imports: [
@@ -183,6 +186,15 @@ const fakeUsersToken = Symbol.for("test:fake-users-repo-events");
         fake as unknown as InterestScoresRepository,
       inject: [fakeRepoToken],
     },
+    {
+      provide: fakeScoringToken,
+      useFactory: () => new FakeScoringService(),
+    },
+    {
+      provide: ScoringService,
+      useFactory: (fake: FakeScoringService) => fake as unknown as ScoringService,
+      inject: [fakeScoringToken],
+    },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -192,6 +204,7 @@ class TestSearchEventsModule {}
 export interface SearchEventsTestAppHandle {
   app: INestApplication;
   repo: FakeInterestScoresRepository;
+  scoring: FakeScoringService;
   authService: AuthService;
   env: typeof EVENTS_TEST_ENV;
 }
@@ -205,6 +218,7 @@ export async function buildSearchEventsTestApp(): Promise<SearchEventsTestAppHan
   await app.init();
 
   const repo = app.get<FakeInterestScoresRepository>(fakeRepoToken);
+  const scoring = app.get<FakeScoringService>(fakeScoringToken);
   const authService = app.get(AuthService);
-  return { app, repo, authService, env: EVENTS_TEST_ENV };
+  return { app, repo, scoring, authService, env: EVENTS_TEST_ENV };
 }

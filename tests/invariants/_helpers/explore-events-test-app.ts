@@ -18,8 +18,10 @@ import { SwipesRepository } from "../../../apps/api/src/modules/explore/explore.
 import { ProfileBuilderService } from "../../../apps/api/src/modules/explore/profile-builder.service.js";
 import { QueueBuilderService } from "../../../apps/api/src/modules/explore/queue-builder.service.js";
 import { InterestScoresRepository } from "../../../apps/api/src/modules/search/interest-scores.repository.js";
+import { ScoringService } from "../../../apps/api/src/modules/taste/scoring.service.js";
 import { FakeUsersRepository } from "./test-app.js";
 import { FakeInterestScoresRepository } from "./search-events-test-app.js";
+import { FakeScoringService } from "./fake-scoring-service.js";
 
 export const EXPLORE_EVENTS_TEST_ENV = {
   GOOGLE_CLIENT_ID: "test-google-client-id",
@@ -139,6 +141,7 @@ const fakeSwipesRepoToken = Symbol.for("test:fake-swipes-repo");
 const fakeInterestRepoToken = Symbol.for("test:fake-interest-repo-explore");
 const fakeProfileBuilderToken = Symbol.for("test:fake-profile-builder");
 const fakeQueueBuilderToken = Symbol.for("test:fake-queue-builder");
+const fakeScoringToken = Symbol.for("test:fake-scoring-explore");
 
 @Module({
   imports: [
@@ -207,6 +210,15 @@ const fakeQueueBuilderToken = Symbol.for("test:fake-queue-builder");
       useFactory: (fake: FakeQueueBuilderService) => fake as unknown as QueueBuilderService,
       inject: [fakeQueueBuilderToken],
     },
+    {
+      provide: fakeScoringToken,
+      useFactory: () => new FakeScoringService(),
+    },
+    {
+      provide: ScoringService,
+      useFactory: (fake: FakeScoringService) => fake as unknown as ScoringService,
+      inject: [fakeScoringToken],
+    },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -219,6 +231,7 @@ export interface ExploreEventsTestAppHandle {
   interestRepo: FakeInterestScoresRepository;
   profileBuilder: FakeProfileBuilderService;
   queueBuilder: FakeQueueBuilderService;
+  scoring: FakeScoringService;
   authService: AuthService;
   env: typeof EXPLORE_EVENTS_TEST_ENV;
 }
@@ -235,6 +248,7 @@ export async function buildExploreEventsTestApp(): Promise<ExploreEventsTestAppH
   const interestRepo = app.get<FakeInterestScoresRepository>(fakeInterestRepoToken);
   const profileBuilder = app.get<FakeProfileBuilderService>(fakeProfileBuilderToken);
   const queueBuilder = app.get<FakeQueueBuilderService>(fakeQueueBuilderToken);
+  const scoring = app.get<FakeScoringService>(fakeScoringToken);
   const authService = app.get(AuthService);
   return {
     app,
@@ -242,6 +256,7 @@ export async function buildExploreEventsTestApp(): Promise<ExploreEventsTestAppH
     interestRepo,
     profileBuilder,
     queueBuilder,
+    scoring,
     authService,
     env: EXPLORE_EVENTS_TEST_ENV,
   };

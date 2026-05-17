@@ -15,6 +15,7 @@ import { DeezerClient } from "./providers/deezer.client.js";
 import { RadioBrowserClient } from "./providers/radio-browser.client.js";
 import { GeniusClient } from "./providers/genius.client.js";
 import { SoundCloudClient } from "./providers/soundcloud.client.js";
+import { TasteModule } from "../taste/taste.module.js";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { SoundCloudClient } from "./providers/soundcloud.client.js";
       { name: SEARCH_HISTORY_MODEL, schema: SearchHistorySchemaDefinition },
       { name: INTEREST_SCORES_MODEL, schema: InterestScoresSchemaDefinition },
     ]),
+    TasteModule,
   ],
   controllers: [SearchController, SearchHistoryController, SearchEventsController],
   providers: [

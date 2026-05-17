@@ -20,6 +20,7 @@ import {
 } from "./anthropic.client.js";
 import { SearchModule } from "../search/search.module.js";
 import { PlayModule } from "../play/play.module.js";
+import { TasteModule } from "../taste/taste.module.js";
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { PlayModule } from "../play/play.module.js";
     ]),
     SearchModule,
     PlayModule,
+    TasteModule,
   ],
   controllers: [ExploreController],
   providers: [

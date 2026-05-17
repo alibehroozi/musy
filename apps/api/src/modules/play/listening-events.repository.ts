@@ -11,6 +11,9 @@ export interface ListeningEventInput {
   externalId: string;
   eventType: PlayEventType;
   elapsedMs: number;
+  // DATA-21: both null together or both non-null together.
+  bucketId?: string | null;
+  bucketKind?: "auto" | "custom" | null;
 }
 
 @Injectable()
@@ -34,6 +37,8 @@ export class ListeningEventsRepository {
       eventType: input.eventType,
       elapsedMs: input.elapsedMs,
       at: new Date(),
+      bucketId: input.bucketId ?? null,
+      bucketKind: input.bucketKind ?? null,
     });
   }
 

@@ -96,4 +96,19 @@ export class CustomMixJobsRepository {
   async countInFlight(userId: string): Promise<number> {
     return await this.model.countDocuments({ userId, state: "building" }).exec();
   }
+
+  /**
+   * Read the completed job for a bucket to look up its sourceBuckets map.
+   * Used by the skip detector (feature 06) to attribute decrements.
+   * SEC-17: query is scoped by userId to prevent cross-user attribution.
+   */
+  async findCompletedByBucket(
+    userId: string,
+    bucketId: string,
+  ): Promise<CustomMixJobsDocument | null> {
+    return this.model
+      .findOne({ userId, bucketId, state: "completed" satisfies CustomMixJobState })
+      .lean()
+      .exec() as unknown as CustomMixJobsDocument | null;
+  }
 }

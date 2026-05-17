@@ -1,6 +1,7 @@
 ---
 epic: taste
-status: pending
+status: done
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/46
 estimated-invariants: 5
 ---
 

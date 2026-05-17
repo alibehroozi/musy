@@ -36,6 +36,7 @@ function BuildingCard({ bucket }: { bucket: TasteBucket }): JSX.Element {
   return (
     <div className="flex flex-col gap-2" role="listitem">
       <div
+        role="img"
         aria-label="Bucket cover, building"
         className="w-full bg-surface rounded-md shadow-md taste-shimmer"
         style={{ aspectRatio: "1 / 1" }}

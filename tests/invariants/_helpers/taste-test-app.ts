@@ -15,6 +15,8 @@ import { UsersService } from "../../../apps/api/src/modules/users/users.service.
 import { TasteController } from "../../../apps/api/src/modules/taste/taste.controller.js";
 import { TasteService } from "../../../apps/api/src/modules/taste/taste.service.js";
 import { BucketsRepository } from "../../../apps/api/src/modules/taste/buckets.repository.js";
+import { BucketSongScoresRepository } from "../../../apps/api/src/modules/taste/bucket-song-scores.repository.js";
+import type { BucketSongScoresDocument } from "../../../apps/api/src/modules/taste/bucket-song-scores.schema.js";
 import { FakeUsersRepository } from "./test-app.js";
 
 const TASTE_TEST_ENV = {
@@ -41,8 +43,28 @@ export class FakeBucketsRepository {
   }
 }
 
+/**
+ * In-memory stand-in for BucketSongScoresRepository — the read path the
+ * profile endpoint uses to compute API-28's `coverArtworkUrl`. Tests
+ * prime `rowsByUserAndBucket` with sparse rows; everything else is
+ * irrelevant to the profile read.
+ */
+export class FakeBucketSongScoresRepository {
+  rowsByUserAndBucket = new Map<string, BucketSongScoresDocument[]>();
+
+  async findForUserBucket(userId: string, bucketId: string): Promise<BucketSongScoresDocument[]> {
+    const key = `${userId}::${bucketId}`;
+    return [...(this.rowsByUserAndBucket.get(key) ?? [])];
+  }
+
+  setRows(userId: string, bucketId: string, rows: BucketSongScoresDocument[]): void {
+    this.rowsByUserAndBucket.set(`${userId}::${bucketId}`, rows);
+  }
+}
+
 const fakeUsersToken = Symbol.for("test:fake-users-repo-taste");
 const fakeBucketsRepoToken = Symbol.for("test:fake-buckets-repo");
+const fakeBucketSongScoresRepoToken = Symbol.for("test:fake-bucket-song-scores-repo");
 
 @Module({
   imports: [
@@ -83,6 +105,16 @@ const fakeBucketsRepoToken = Symbol.for("test:fake-buckets-repo");
       useFactory: (fake: FakeBucketsRepository) => fake as unknown as BucketsRepository,
       inject: [fakeBucketsRepoToken],
     },
+    {
+      provide: fakeBucketSongScoresRepoToken,
+      useFactory: () => new FakeBucketSongScoresRepository(),
+    },
+    {
+      provide: BucketSongScoresRepository,
+      useFactory: (fake: FakeBucketSongScoresRepository) =>
+        fake as unknown as BucketSongScoresRepository,
+      inject: [fakeBucketSongScoresRepoToken],
+    },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -92,6 +124,7 @@ class TestTasteModule {}
 export interface TasteTestAppHandle {
   app: INestApplication;
   bucketsRepo: FakeBucketsRepository;
+  bucketSongScoresRepo: FakeBucketSongScoresRepository;
   authService: AuthService;
   env: typeof TASTE_TEST_ENV;
 }
@@ -105,10 +138,14 @@ export async function buildTasteTestApp(): Promise<TasteTestAppHandle> {
   await app.init();
 
   const bucketsRepo = app.get<FakeBucketsRepository>(fakeBucketsRepoToken);
+  const bucketSongScoresRepo = app.get<FakeBucketSongScoresRepository>(
+    fakeBucketSongScoresRepoToken,
+  );
   const authService = app.get(AuthService);
   return {
     app,
     bucketsRepo,
+    bucketSongScoresRepo,
     authService,
     env: TASTE_TEST_ENV,
   };
@@ -126,5 +163,6 @@ export function makeBucket(overrides: Partial<TasteBucket> = {}): TasteBucket {
     errorReason: overrides.errorReason ?? null,
     createdAt: overrides.createdAt ?? "2026-05-15T10:00:00.000Z",
     lastBuiltAt: overrides.lastBuiltAt ?? "2026-05-17T08:00:00.000Z",
+    coverArtworkUrl: overrides.coverArtworkUrl ?? null,
   };
 }

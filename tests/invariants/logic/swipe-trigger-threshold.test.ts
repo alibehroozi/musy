@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under LOGIC-38.
+// Invariants verified here are listed in INVARIANTS.md under LOGIC-39.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -25,7 +25,7 @@ function walk(dir: string): string[] {
   return out;
 }
 
-describe("LOGIC-38: SWIPE_TRIGGER_THRESHOLD is hosted in @moc/api-core", () => {
+describe("LOGIC-39: SWIPE_TRIGGER_THRESHOLD is hosted in @moc/api-core", () => {
   it("@moc/api-core exports SWIPE_TRIGGER_THRESHOLD equal to 20", () => {
     const exported = (apiCore as Record<string, unknown>).SWIPE_TRIGGER_THRESHOLD;
     expect(exported).toBe(20);

@@ -11,3 +11,5 @@ export * from "./player/playable-handoff-decision.js";
 export * from "./explore/direction-from-drag.js";
 export * from "./explore/snapshot-match.js";
 export * from "./explore/explore-fetcher.js";
+export * from "./taste/polling-cadence.js";
+export * from "./taste/tasteFetcher.js";

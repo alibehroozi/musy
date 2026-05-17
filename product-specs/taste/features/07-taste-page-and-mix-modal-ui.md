@@ -1,7 +1,8 @@
 ---
 epic: taste
-status: pending
+status: done
 estimated-invariants: 8
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/47
 ---
 
 # Feature 07: Taste page and mix modal UI

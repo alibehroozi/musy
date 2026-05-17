@@ -159,6 +159,19 @@ export class BucketsRepository {
     }
     return out;
   }
+
+  /**
+   * SEC-18: both `userId` and `id` are required so user A cannot fetch
+   * user B's bucket by guessing the id. Returns null when not found or
+   * when the doc belongs to a different user.
+   */
+  async findByIdForUser(userId: string, id: string): Promise<TasteBucket | null> {
+    const doc = await this.model.findOne({ userId, id }).lean().exec();
+    if (!doc) return null;
+    const parsed = TasteBucket.safeParse(toBucketWire(doc as unknown as BucketsDocument));
+    if (!parsed.success) return null;
+    return parsed.data;
+  }
 }
 
 function toBucketWire(doc: BucketsDocument): Record<string, unknown> {

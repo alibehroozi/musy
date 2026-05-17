@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { TasteBucket, TasteBucketsResponse } from "@moc/contracts";
+import type { BucketDetailResponse, TasteBucket, TasteBucketsResponse } from "@moc/contracts";
 import { BucketsRepository } from "./buckets.repository.js";
 import { BucketSongScoresRepository } from "./bucket-song-scores.repository.js";
 
@@ -30,6 +30,29 @@ export class TasteService {
       enriched.push({ ...bucket, coverArtworkUrl });
     }
     return { buckets: enriched };
+  }
+
+  /**
+   * API-29 / SEC-18: returns null when the bucket doesn't exist or belongs
+   * to a different user (caller maps null → 404). Songs are sorted by score
+   * desc, ties broken by lastUpdatedAt desc (LOGIC-39 on the server side).
+   */
+  async getBucketDetail(userId: string, bucketId: string): Promise<BucketDetailResponse | null> {
+    const bucket = await this.buckets.findByIdForUser(userId, bucketId);
+    if (!bucket) return null;
+    const coverArtworkUrl = await this.computeCoverArtworkUrl(userId, bucketId);
+    const rows = await this.bucketScores.findForUserBucket(userId, bucketId);
+    rows.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.lastUpdatedAt.getTime() - a.lastUpdatedAt.getTime();
+    });
+    const songs = rows.map((r) => ({
+      songKey: r.songKey,
+      snapshot: r.snapshot,
+      score: r.score,
+      lastUpdatedAt: r.lastUpdatedAt.toISOString(),
+    }));
+    return { bucket: { ...bucket, coverArtworkUrl }, songs };
   }
 
   /**

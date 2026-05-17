@@ -54,6 +54,19 @@ export class BucketSongScoresRepository {
   }
 
   /**
+   * SEC-15 / LOGIC-38: scoped to the caller's userId. Returns the set of
+   * songKeys the user already has at least one bucket_song_scores row for.
+   * The bucket-builder uses this to skip songs it has already considered,
+   * keeping each run's LLM input small (AI-13's 20-song per-run cap).
+   */
+  async findScoredSongKeysForUser(userId: string): Promise<Set<string>> {
+    const rows = (await this.model.find({ userId }, { songKey: 1 }).lean().exec()) as unknown as {
+      songKey: string;
+    }[];
+    return new Set(rows.map((r) => r.songKey));
+  }
+
+  /**
    * SEC-13: scoped to the caller's userId. Returns the bucketIds the
    * song already belongs to, so the scoring service knows which
    * (userId, bucketId, songKey) rows to bump.

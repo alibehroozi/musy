@@ -139,7 +139,9 @@ function makeService(opts: {
   );
 }
 
-// Helper to push enough right-swipes to exceed MIN_SIGNAL_POOL (20).
+// Helper to push positive-signal right-swipes. The legacy MIN_SIGNAL_POOL
+// floor inside the bucket-builder is gone (LOGIC-38) — the trigger from
+// profile-builder still requires SWIPE_TRIGGER_THRESHOLD total swipes.
 function addRightSwipes(swipes: FakeSwipes, userId: string, count: number): SongSnapshot[] {
   const snaps: SongSnapshot[] = [];
   for (let i = 0; i < count; i++) {

@@ -6,6 +6,7 @@ import {
   clampScore,
   normalizeBucketName,
   parseBucketBuilderResponse,
+  selectUnbucketedPool,
   type PromptSong,
   MAX_BUCKET_SONGS,
 } from "@moc/api-core";
@@ -15,14 +16,13 @@ import { AnthropicClient } from "./anthropic.client.js";
 import { BucketsRepository } from "../taste/buckets.repository.js";
 import { BucketSongScoresRepository } from "../taste/bucket-song-scores.repository.js";
 import { InterestScoresRepository } from "../search/interest-scores.repository.js";
-import { SWIPE_TRIGGER_THRESHOLD } from "./profile-builder.service.js";
 
 const DEFAULT_MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS = 4096;
-
-// Minimum positive-signal pool size before a build fires. Mirrors the
-// profile-builder's swipe threshold so both builds activate together.
-const MIN_SIGNAL_POOL = SWIPE_TRIGGER_THRESHOLD;
+// Doubled from 4096 as belt-and-braces against `max_tokens` truncation —
+// per-run input is now bounded by AI-13's 20-song cap so 4096 would
+// already be safe, but leaving headroom protects against future spec
+// changes that grow per-song assignment fan-out.
+const MAX_TOKENS = 8192;
 
 @Injectable()
 export class BucketBuilderService {
@@ -77,22 +77,34 @@ export class BucketBuilderService {
 
   private async runBuild(userId: string): Promise<void> {
     // SEC-15: all reads scoped to userId.
-    const [swipeDocs, scoreDocs, existingBuckets] = await Promise.all([
+    const [swipeDocs, scoreDocs, existingBuckets, scoredSongKeys] = await Promise.all([
       this.swipes.findSwipesForUser(userId),
       this.interestScores.findScoresForUser(userId),
       this.bucketsRepo.findForUser(userId),
+      this.scoresRepo.findScoredSongKeysForUser(userId),
     ]);
 
     const { pool, snapshotLookup } = buildSignalData(swipeDocs, scoreDocs);
 
-    if (pool.length < MIN_SIGNAL_POOL) {
+    // LOGIC-38: incremental policy — only consider songs the LLM has not
+    // already bucketed for this user. Cap is the AI-13 per-run bound.
+    const unbucketed = selectUnbucketedPool({
+      pool,
+      scoredSongKeys,
+      cap: MAX_BUCKET_SONGS,
+    });
+
+    if (unbucketed.length === 0) {
       return;
     }
 
-    this.logger.log({ event: "auto_bucket_build_started", userId }, "auto_bucket_build_started");
+    this.logger.log(
+      { event: "auto_bucket_build_started", userId, poolSize: unbucketed.length },
+      "auto_bucket_build_started",
+    );
 
     const { system, userMessage } = buildBucketPrompt({
-      recentSongs: pool,
+      recentSongs: unbucketed,
       existingBuckets: existingBuckets.map((b) => ({ name: b.name, description: b.description })),
     });
 
@@ -200,9 +212,11 @@ export class BucketBuilderService {
 }
 
 /**
- * Reads swipes + interest_scores once and returns both the positive-signal
- * pool (newest-first, capped at MAX_BUCKET_SONGS) and a songKey → snapshot
- * lookup for assignment resolution.
+ * Reads swipes + interest_scores once and returns both the full
+ * newest-first positive-signal pool and a songKey → snapshot lookup
+ * for assignment resolution. The pool is NOT capped here — `runBuild`
+ * applies `selectUnbucketedPool` to filter already-scored songs and
+ * cap to MAX_BUCKET_SONGS in a single step (LOGIC-38).
  *
  * Positive signal:
  * - Right-swiped songs from swipes (snapshot embedded)
@@ -267,9 +281,12 @@ function buildSignalData(
     }
   }
 
+  // Returns the FULL newest-first positive-signal pool. The MAX_BUCKET_SONGS
+  // cap is applied later by `selectUnbucketedPool` AFTER filtering out
+  // already-scored songKeys — otherwise bucketed entries near the top would
+  // steal slots from unbucketed entries further down.
   const pool = [...poolMap.values()]
     .sort((a, b) => b.at.getTime() - a.at.getTime())
-    .slice(0, MAX_BUCKET_SONGS)
     .map(({ song }) => song);
 
   return { pool, snapshotLookup };

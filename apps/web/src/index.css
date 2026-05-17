@@ -38,3 +38,37 @@ body {
     animation: none !important;
   }
 }
+
+/* Taste page — shimmer treatment on building bucket covers (UI-34).
+ * The mockup uses a translateX sweep; we mirror it 1:1 so the snapshot
+ * test (BROWSER-07) matches. prefers-reduced-motion freezes it so the
+ * snapshot stays stable and motion-sensitive users get a static block. */
+.taste-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.taste-shimmer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    oklch(0.3 0.01 270) 50%,
+    transparent 100%
+  );
+  animation: taste-shimmer 1.6s linear infinite;
+}
+@keyframes taste-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .taste-shimmer::before {
+    animation: none;
+  }
+}

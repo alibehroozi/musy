@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-24.
+// Invariants verified here are listed in INVARIANTS.md under API-24, API-28.
 
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
@@ -77,4 +77,21 @@ describe("API-24: GET /api/me/taste/profile contract — auth, body shape, no Mo
     // Body keys are exactly { buckets } at the top level.
     expect(Object.keys(res.body as object)).toEqual(["buckets"]);
   });
+});
+
+describe("API-28: GET /api/me/taste/profile carries server-computed coverArtworkUrl per bucket", () => {
+  // Filled in by the feat(api) commit that lands the read-time join in
+  // taste.service.ts; the test home is here so the spec ID grep already
+  // resolves.
+  it.todo("every bucket carries coverArtworkUrl: string | null (Zod contract holds)");
+  it.todo("coverArtworkUrl is the snapshot.artworkUrl of the highest-score bucket_song_scores row");
+  it.todo("ties on score are broken by lexicographically smallest songKey");
+  it.todo("coverArtworkUrl is null when the top-scored row has snapshot.artworkUrl == null");
+  it.todo(
+    "coverArtworkUrl is null when no bucket_song_scores row exists for the bucket (e.g. state: building)",
+  );
+  it.todo("coverArtworkUrl is null when the top-scored row's artworkUrl fails URL parsing");
+  it.todo(
+    "SEC-12 holds: artwork URL join is scoped by session userId — user A never leaks into user B",
+  );
 });

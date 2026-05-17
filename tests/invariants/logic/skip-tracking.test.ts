@@ -2,8 +2,10 @@
 //
 // Invariants verified here are listed in INVARIANTS.md under LOGIC-36, LOGIC-37.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import type { SongSnapshot } from "@moc/contracts";
 import { isSkip } from "@moc/api-core";
+import { PlayEventsService } from "../../../apps/api/src/modules/play/play-events.service.js";
 
 describe("LOGIC-36: isSkip({ playedMs, durationMs }) encodes the < 30 s AND < 50 % rule", () => {
   it("returns true when playedMs < 30_000 and ratio < 0.5", () => {
@@ -40,9 +42,208 @@ describe("LOGIC-36: isSkip({ playedMs, durationMs }) encodes the < 30 s AND < 50
   });
 });
 
+// ── Fakes for LOGIC-37 service tests ─────────────────────────────────
+
+function snap(title = "Test Song"): SongSnapshot {
+  return { title, artist: "Artist", kind: "track", durationSec: 240 };
+}
+
+class FakeListeningEvents {
+  async record() {}
+}
+
+class FakeInterestScores {
+  async upsertEvent() {}
+}
+
+class FakeScoringService {
+  async recordListenCompleted() {}
+}
+
+interface FakeScoreRow {
+  userId: string;
+  bucketId: string;
+  songKey: string;
+  delta: number;
+}
+
+class FakeBucketScores {
+  calls: FakeScoreRow[] = [];
+  async inc(input: { userId: string; bucketId: string; songKey: string; delta: number }) {
+    this.calls.push(input);
+  }
+  async findBucketIdsForSong() {
+    return [];
+  }
+  async insertInitialScore() {}
+  async findForUserBucket() {
+    return [];
+  }
+}
+
+class FakeCustomMixJobs {
+  jobRow: {
+    sourceBuckets: Map<string, string[]> | null;
+    state: string;
+  } | null = null;
+
+  async findCompletedByBucket() {
+    return this.jobRow as unknown as
+      | import("../../../apps/api/src/modules/taste/custom-mix-jobs.schema.js").CustomMixJobsDocument
+      | null;
+  }
+}
+
+function makeService(opts: { bucketScores: FakeBucketScores; customMixJobs: FakeCustomMixJobs }) {
+  return new PlayEventsService(
+    new FakeListeningEvents() as never,
+    new FakeInterestScores() as never,
+    new FakeScoringService() as never,
+    opts.bucketScores as never,
+    opts.customMixJobs as never,
+  );
+}
+
 describe("LOGIC-37: skip decrement fires only for custom-mix plays with a completed job row", () => {
-  it.todo("bucketKind=custom with matching completed job row → decrement fires");
-  it.todo("bucketKind=auto → no decrement, even if the song is skipped");
-  it.todo("bucketKind=custom but no custom_mix_jobs row → graceful no-op + log");
-  it.todo("null bucketKind (non-bucket play) → no decrement");
+  it("bucketKind=custom with matching completed job row → decrement fires for each sourceBucket", async () => {
+    const bucketScores = new FakeBucketScores();
+    const customMixJobs = new FakeCustomMixJobs();
+    const sourceBucketId = "src-bucket-id";
+    const songKey = "soundcloud:12345";
+
+    customMixJobs.jobRow = {
+      state: "completed",
+      sourceBuckets: new Map([[songKey, [sourceBucketId]]]),
+    };
+
+    const svc = makeService({ bucketScores, customMixJobs });
+
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 0,
+      eventType: "started",
+      bucketId: "custom-bucket-id",
+      bucketKind: "custom",
+    });
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 5_000,
+      eventType: "completed",
+      bucketId: "custom-bucket-id",
+      bucketKind: "custom",
+    });
+
+    // Wait for the async applySkipDecrement to settle.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(bucketScores.calls).toHaveLength(1);
+    expect(bucketScores.calls[0]).toMatchObject({
+      userId: "user1",
+      bucketId: sourceBucketId,
+      songKey,
+      delta: -15,
+    });
+  });
+
+  it("bucketKind=auto → no decrement even if the song is skipped", async () => {
+    const bucketScores = new FakeBucketScores();
+    const customMixJobs = new FakeCustomMixJobs();
+
+    const svc = makeService({ bucketScores, customMixJobs });
+
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 0,
+      eventType: "started",
+      bucketId: "auto-bucket-id",
+      bucketKind: "auto",
+    });
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 5_000,
+      eventType: "completed",
+      bucketId: "auto-bucket-id",
+      bucketKind: "auto",
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bucketScores.calls).toHaveLength(0);
+  });
+
+  it("bucketKind=custom but no custom_mix_jobs row → graceful no-op, no decrement", async () => {
+    const bucketScores = new FakeBucketScores();
+    const customMixJobs = new FakeCustomMixJobs();
+    customMixJobs.jobRow = null;
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const svc = makeService({ bucketScores, customMixJobs });
+
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 0,
+      eventType: "started",
+      bucketId: "custom-bucket-id",
+      bucketKind: "custom",
+    });
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 5_000,
+      eventType: "completed",
+      bucketId: "custom-bucket-id",
+      bucketKind: "custom",
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bucketScores.calls).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it("null bucketKind (non-bucket play) → no decrement", async () => {
+    const bucketScores = new FakeBucketScores();
+    const customMixJobs = new FakeCustomMixJobs();
+
+    const svc = makeService({ bucketScores, customMixJobs });
+
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 0,
+      eventType: "started",
+      bucketId: null,
+      bucketKind: null,
+    });
+    await svc.record({
+      userId: "user1",
+      source: "soundcloud",
+      externalId: "12345",
+      snapshot: snap(),
+      elapsedMs: 5_000,
+      eventType: "completed",
+      bucketId: null,
+      bucketKind: null,
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bucketScores.calls).toHaveLength(0);
+  });
 });

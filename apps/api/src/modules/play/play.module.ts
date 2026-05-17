@@ -35,6 +35,8 @@ import { TasteModule } from "../taste/taste.module.js";
       { name: LISTENING_EVENTS_MODEL, schema: ListeningEventsSchemaDefinition },
     ]),
     SearchModule,
+    // TasteModule exports BucketSongScoresRepository and CustomMixJobsRepository
+    // which are injected into PlayEventsService for skip attribution (feature 06).
     TasteModule,
   ],
   controllers: [PlayController, PlayEventsController],

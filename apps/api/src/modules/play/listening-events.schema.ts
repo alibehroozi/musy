@@ -11,6 +11,9 @@ export interface ListeningEventsDocument extends Document {
   eventType: PlayEventType;
   elapsedMs: number;
   at: Date;
+  // DATA-19: both null (non-bucket play) or both non-null (bucket play).
+  bucketId: string | null;
+  bucketKind: "auto" | "custom" | null;
 }
 
 export const ListeningEventsSchemaDefinition = new Schema<ListeningEventsDocument>(
@@ -22,6 +25,8 @@ export const ListeningEventsSchemaDefinition = new Schema<ListeningEventsDocumen
     eventType: { type: String, required: true, enum: ["started", "completed"] },
     elapsedMs: { type: Number, required: true, min: 0 },
     at: { type: Date, required: true },
+    bucketId: { type: String, default: null },
+    bucketKind: { type: String, enum: ["auto", "custom", null], default: null },
   },
   { collection: "listening_events", versionKey: false },
 );

@@ -32,6 +32,8 @@ export class PlayEventsController {
       snapshot: parsed.data.snapshot,
       elapsedMs: 0,
       eventType: "started",
+      bucketId: parsed.data.bucketId ?? null,
+      bucketKind: parsed.data.bucketKind ?? null,
     });
   }
 
@@ -51,6 +53,8 @@ export class PlayEventsController {
       snapshot: parsed.data.snapshot,
       elapsedMs: parsed.data.elapsedMs,
       eventType: "completed",
+      bucketId: parsed.data.bucketId ?? null,
+      bucketKind: parsed.data.bucketKind ?? null,
     });
   }
 }

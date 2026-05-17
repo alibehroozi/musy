@@ -32,7 +32,8 @@ export const CustomMixJobsSchemaDefinition = new Schema<CustomMixJobsDocument>(
 );
 
 // DATA-19:
-// (jobId)         — unique; one document per job.
+// (jobId)         — unique; declared on the path itself via `unique: true`
+//                   above, so a separate `schema.index` call would only
+//                   produce a duplicate-index warning at boot.
 // (userId, state) — rate-limit guard counts in-flight jobs per user cheaply.
-CustomMixJobsSchemaDefinition.index({ jobId: 1 }, { unique: true });
 CustomMixJobsSchemaDefinition.index({ userId: 1, state: 1 });

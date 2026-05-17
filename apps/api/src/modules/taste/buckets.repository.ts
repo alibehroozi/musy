@@ -45,8 +45,13 @@ export class BucketsRepository {
    * Insert a custom-mix bucket pre-LLM (DATA-20). `kind` is always
    * `"custom"` and `state` is always `"building"` — the LLM build path
    * later flips the state via `markCustomReady` / `markCustomFailed`.
-   * `name` and `description` are seeded as empty strings; the LLM fills
-   * them in once the build completes.
+   *
+   * `name` is seeded from `promptText` (truncated to 60 chars, with a
+   * `"Custom mix"` fallback if the prompt is whitespace-only). This
+   * keeps DATA-15's "non-empty name" invariant intact during the
+   * building window and gives the polling UI something to render while
+   * the LLM call is in flight; the LLM-supplied name overwrites it on
+   * `markCustomReady`.
    *
    * SEC-16: userId comes from the caller; never from request body or
    * LLM output.
@@ -57,10 +62,11 @@ export class BucketsRepository {
     promptText: string;
     createdAt: Date;
   }): Promise<void> {
+    const initialName = input.promptText.trim().slice(0, 60) || "Custom mix";
     await this.model.create({
       id: input.id,
       userId: input.userId,
-      name: "",
+      name: initialName,
       description: "",
       kind: "custom" satisfies BucketKind,
       state: "building" satisfies BucketState,

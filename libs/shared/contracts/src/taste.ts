@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SongSnapshot } from "./search.js";
 
 // ── Taste buckets (epic Taste — feature 01) ──────────────────────────
 //
@@ -50,6 +51,28 @@ export const TasteBucketsResponse = z.object({
   buckets: z.array(TasteBucket),
 });
 export type TasteBucketsResponse = z.infer<typeof TasteBucketsResponse>;
+
+// ── Bucket detail (epic Taste — feature 08) ──────────────────────────
+//
+// `GET /api/me/taste/buckets/:bucketId` returns the full song list for
+// a single bucket, sorted server-side by `score` desc (LOGIC-40 owns
+// the tie-break order). The list endpoint (TasteBucketsResponse above)
+// intentionally does NOT carry the per-song rows because the home
+// screen renders thumbnails only — carrying every song would inflate
+// the home-screen payload by an order of magnitude.
+
+export const BucketDetailSong = z.object({
+  songKey: z.string().min(1),
+  snapshot: SongSnapshot,
+  score: z.number().int().min(0).max(100),
+});
+export type BucketDetailSong = z.infer<typeof BucketDetailSong>;
+
+export const BucketDetailResponse = z.object({
+  bucket: TasteBucket,
+  songs: z.array(BucketDetailSong),
+});
+export type BucketDetailResponse = z.infer<typeof BucketDetailResponse>;
 
 // ── Context scores (epic Taste — feature 02) ─────────────────────────
 //

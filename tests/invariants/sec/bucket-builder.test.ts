@@ -108,6 +108,11 @@ class FakeBucketScoresRepo {
       score: input.initialScore,
     });
   }
+  scoredKeysReadCalls: string[] = [];
+  async findScoredSongKeysForUser(userId: string): Promise<Set<string>> {
+    this.scoredKeysReadCalls.push(userId);
+    return new Set(this.rows.filter((r) => r.userId === userId).map((r) => r.songKey));
+  }
   async findBucketIdsForSong() {
     return [];
   }
@@ -182,6 +187,45 @@ describe("SEC-15: auto-bucket builder reads/writes only the caller userId's data
     // findSwipesForUser should only have been called with "userA".
     expect(swipes.readCalls).toContain("userA");
     expect(swipes.readCalls).not.toContain("userB");
+  });
+
+  it("BucketBuilderService.maybeBuild(userA) only reads bucket_song_scores keys for userA (LOGIC-38 lookup)", async () => {
+    const swipes = new FakeSwipes();
+    const scores = new FakeInterestScores();
+    const buckets = new FakeBucketsRepo();
+    const bucketScores = new FakeBucketScoresRepo();
+
+    // Seed bucketed-key rows for both users so the helper can confirm scoping.
+    bucketScores.rows.push({
+      userId: "userA",
+      bucketId: "bucket-a",
+      songKey: "snap:userA-key",
+      score: 50,
+    });
+    bucketScores.rows.push({
+      userId: "userB",
+      bucketId: "bucket-b",
+      songKey: "snap:userB-key",
+      score: 50,
+    });
+
+    addRightSwipes(swipes, "userA", 20);
+    addRightSwipes(swipes, "userB", 20);
+
+    const llmOutput = JSON.stringify({ newBuckets: [], assignments: [] });
+    const svc = makeService({
+      swipes,
+      scores,
+      buckets,
+      bucketScores,
+      anthropicResponse: llmOutput,
+    });
+
+    await svc.maybeBuild("userA");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(bucketScores.scoredKeysReadCalls).toContain("userA");
+    expect(bucketScores.scoredKeysReadCalls).not.toContain("userB");
   });
 
   it("BucketBuilderService.maybeBuild(userA) never reads interest_scores belonging to userB", async () => {

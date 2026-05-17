@@ -106,6 +106,9 @@ class FakeBucketScoresRepo {
       score: input.initialScore,
     });
   }
+  async findScoredSongKeysForUser(userId: string): Promise<Set<string>> {
+    return new Set(this.rows.filter((r) => r.userId === userId).map((r) => r.songKey));
+  }
   async findBucketIdsForSong() {
     return [];
   }
@@ -232,7 +235,7 @@ describe("DATA-18: auto-built bucket shape — kind=auto, state=ready, no dup na
     expect(u1Rows[0]!.id).toBe("existing-id");
   });
 
-  it("build is skipped silently when the positive-signal pool is below the threshold (< 20 songs)", async () => {
+  it("LOGIC-38: build is skipped silently when every positive-signal song is already in bucket_song_scores", async () => {
     const swipes = new FakeSwipes();
     const scores = new FakeInterestScores();
     const buckets = new FakeBucketsRepo();
@@ -240,8 +243,25 @@ describe("DATA-18: auto-built bucket shape — kind=auto, state=ready, no dup na
     const fakeAnthropic = { complete: vi.fn() };
     const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
 
-    // Only 5 right-swipes — below MIN_SIGNAL_POOL.
-    addRightSwipes(swipes, "u1", 5);
+    // Seed a positive-signal pool and a pre-existing score row for every entry —
+    // simulating "everything already bucketed by an earlier run".
+    const snaps = addRightSwipes(swipes, "u1", 25);
+    buckets.rows.push({
+      id: "bucket-pre",
+      userId: "u1",
+      name: "Pre-existing",
+      description: null,
+      kind: "auto",
+      state: "ready",
+    });
+    for (const snap of snaps) {
+      bucketScores.rows.push({
+        userId: "u1",
+        bucketId: "bucket-pre",
+        songKey: `snap:${computeSnapshotHash(snap)}`,
+        score: 50,
+      });
+    }
 
     const svc = new BucketBuilderService(
       swipes as never,
@@ -255,7 +275,139 @@ describe("DATA-18: auto-built bucket shape — kind=auto, state=ready, no dup na
     await new Promise((r) => setTimeout(r, 0));
 
     expect(fakeAnthropic.complete).not.toHaveBeenCalled();
-    expect(buckets.rows).toHaveLength(0);
+  });
+
+  it("LOGIC-38: build runs even with a small positive-signal pool (< 20) as long as there is at least one unbucketed song", async () => {
+    // Under the incremental policy the legacy MIN_SIGNAL_POOL floor inside the
+    // bucket-builder is gone. The trigger from profile-builder already
+    // guarantees the global SWIPE_TRIGGER_THRESHOLD — the bucket-builder
+    // does NOT add a second floor.
+    const swipes = new FakeSwipes();
+    const scores = new FakeInterestScores();
+    const buckets = new FakeBucketsRepo();
+    const bucketScores = new FakeBucketScoresRepo();
+
+    addRightSwipes(swipes, "u1", 5);
+
+    const llmOutput = JSON.stringify({ newBuckets: [], assignments: [] });
+    const fakeAnthropic = { complete: vi.fn().mockResolvedValue({ text: llmOutput }) };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const svc = new BucketBuilderService(
+      swipes as never,
+      scores as never,
+      buckets as never,
+      bucketScores as never,
+      fakeAnthropic as never,
+      fakeConfig as never,
+    );
+    await svc.maybeBuild("u1");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(fakeAnthropic.complete).toHaveBeenCalledTimes(1);
+    const userMessage = fakeAnthropic.complete.mock.calls[0]![0].userMessage as string;
+    const parsed = JSON.parse(userMessage) as { recentSongs: { songKey: string }[] };
+    expect(parsed.recentSongs).toHaveLength(5);
+  });
+
+  it("LOGIC-38: the LLM input is capped at 20 newest songs even when the positive-signal pool is larger", async () => {
+    const swipes = new FakeSwipes();
+    const scores = new FakeInterestScores();
+    const buckets = new FakeBucketsRepo();
+    const bucketScores = new FakeBucketScoresRepo();
+
+    // 30 right-swipes — 10 over the new cap. The newest 20 should be sent.
+    const snaps: SongSnapshot[] = [];
+    for (let i = 0; i < 30; i++) {
+      const snap = snapshot(`Song ${i}`);
+      snaps.push(snap);
+      swipes.docs.push({
+        userId: "u1",
+        snapshotHash: computeSnapshotHash(snap),
+        snapshot: snap,
+        direction: "right",
+        // Newest-first: index 0 is the most recent (now), each next is older.
+        at: new Date(Date.now() - i * 1000),
+      });
+    }
+
+    const llmOutput = JSON.stringify({ newBuckets: [], assignments: [] });
+    const fakeAnthropic = { complete: vi.fn().mockResolvedValue({ text: llmOutput }) };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const svc = new BucketBuilderService(
+      swipes as never,
+      scores as never,
+      buckets as never,
+      bucketScores as never,
+      fakeAnthropic as never,
+      fakeConfig as never,
+    );
+    await svc.maybeBuild("u1");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(fakeAnthropic.complete).toHaveBeenCalledTimes(1);
+    const userMessage = fakeAnthropic.complete.mock.calls[0]![0].userMessage as string;
+    const parsed = JSON.parse(userMessage) as { recentSongs: { songKey: string }[] };
+    expect(parsed.recentSongs).toHaveLength(20);
+    // Newest-first: should contain the 20 most-recent songKeys (snaps[0..19]).
+    const expectedKeys = snaps.slice(0, 20).map((s) => `snap:${computeSnapshotHash(s)}`);
+    expect(parsed.recentSongs.map((s) => s.songKey).sort()).toEqual([...expectedKeys].sort());
+  });
+
+  it("LOGIC-38: songKeys already in bucket_song_scores are filtered out of the LLM input", async () => {
+    const swipes = new FakeSwipes();
+    const scores = new FakeInterestScores();
+    const buckets = new FakeBucketsRepo();
+    const bucketScores = new FakeBucketScoresRepo();
+
+    // 25 right-swipes. Mark 10 of them as already bucketed.
+    const snaps = addRightSwipes(swipes, "u1", 25);
+    buckets.rows.push({
+      id: "bucket-pre",
+      userId: "u1",
+      name: "Pre-existing",
+      description: null,
+      kind: "auto",
+      state: "ready",
+    });
+    const alreadyBucketedKeys = new Set<string>();
+    for (let i = 0; i < 10; i++) {
+      const k = `snap:${computeSnapshotHash(snaps[i]!)}`;
+      alreadyBucketedKeys.add(k);
+      bucketScores.rows.push({
+        userId: "u1",
+        bucketId: "bucket-pre",
+        songKey: k,
+        score: 50,
+      });
+    }
+
+    const llmOutput = JSON.stringify({ newBuckets: [], assignments: [] });
+    const fakeAnthropic = { complete: vi.fn().mockResolvedValue({ text: llmOutput }) };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const svc = new BucketBuilderService(
+      swipes as never,
+      scores as never,
+      buckets as never,
+      bucketScores as never,
+      fakeAnthropic as never,
+      fakeConfig as never,
+    );
+    await svc.maybeBuild("u1");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(fakeAnthropic.complete).toHaveBeenCalledTimes(1);
+    const userMessage = fakeAnthropic.complete.mock.calls[0]![0].userMessage as string;
+    const parsed = JSON.parse(userMessage) as { recentSongs: { songKey: string }[] };
+    const sentKeys = new Set(parsed.recentSongs.map((s) => s.songKey));
+    // None of the already-bucketed songKeys are present.
+    for (const k of alreadyBucketedKeys) {
+      expect(sentKeys.has(k)).toBe(false);
+    }
+    // The remaining 15 unbucketed entries are all included (under the 20 cap).
+    expect(parsed.recentSongs).toHaveLength(15);
   });
 
   it("LOGIC-34: running the builder twice with identical inputs does not overwrite existing bucket_song_scores", async () => {

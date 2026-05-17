@@ -90,22 +90,29 @@ describe("AI-12: buildBucketPrompt is deterministic — equal inputs produce byt
   });
 });
 
-describe("AI-13: buildBucketPrompt enforces a bounded prompt (≤300 songs) and truncates newest-first", () => {
-  it("at most N=300 songs reach the user message; entries past the cap are dropped", () => {
-    const songs = Array.from({ length: MAX_BUCKET_SONGS + 50 }, (_, i) => song(i));
-    const out = buildBucketPrompt({ recentSongs: songs, existingBuckets: [] });
-    const parsed = JSON.parse(out.userMessage) as { recentSongs: PromptSong[] };
-    expect(parsed.recentSongs).toHaveLength(MAX_BUCKET_SONGS);
-    // First MAX_BUCKET_SONGS entries retained (newest-first = first in array).
-    expect(parsed.recentSongs[0]).toEqual(song(0));
-    expect(parsed.recentSongs[MAX_BUCKET_SONGS - 1]).toEqual(song(MAX_BUCKET_SONGS - 1));
-    expect(
-      parsed.recentSongs.find((s) => s.songKey === `snap:hash${MAX_BUCKET_SONGS}`),
-    ).toBeUndefined();
+describe("AI-13: buildBucketPrompt enforces a bounded prompt (≤20 songs) and truncates newest-first", () => {
+  it("the exported MAX_BUCKET_SONGS constant is 20 — the incremental-builder per-run cap", () => {
+    // Literal assertion so a stray 300 / 50 / 100 fails the test directly.
+    // The constant drives both runtime truncation here and BucketBuilderService's
+    // per-run pool size (LOGIC-38).
+    expect(MAX_BUCKET_SONGS).toBe(20);
   });
 
-  it("does not throw on oversized inputs", () => {
-    const songs = Array.from({ length: MAX_BUCKET_SONGS + 200 }, (_, i) => song(i));
+  it("at most N=20 songs reach the user message; entries past the cap are dropped", () => {
+    // 30 oversized input — current bug-state code (cap=300) would keep all 30;
+    // the fix caps at 20.
+    const songs = Array.from({ length: 30 }, (_, i) => song(i));
+    const out = buildBucketPrompt({ recentSongs: songs, existingBuckets: [] });
+    const parsed = JSON.parse(out.userMessage) as { recentSongs: PromptSong[] };
+    expect(parsed.recentSongs).toHaveLength(20);
+    // First 20 entries retained (newest-first = first in array).
+    expect(parsed.recentSongs[0]).toEqual(song(0));
+    expect(parsed.recentSongs[19]).toEqual(song(19));
+    expect(parsed.recentSongs.find((s) => s.songKey === "snap:hash20")).toBeUndefined();
+  });
+
+  it("does not throw on oversized inputs (well past the 20 cap)", () => {
+    const songs = Array.from({ length: 500 }, (_, i) => song(i));
     expect(() => buildBucketPrompt({ recentSongs: songs, existingBuckets: [] })).not.toThrow();
   });
 });

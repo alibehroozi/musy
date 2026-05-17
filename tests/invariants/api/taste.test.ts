@@ -80,18 +80,150 @@ describe("API-24: GET /api/me/taste/profile contract — auth, body shape, no Mo
 });
 
 describe("API-28: GET /api/me/taste/profile carries server-computed coverArtworkUrl per bucket", () => {
-  // Filled in by the feat(api) commit that lands the read-time join in
-  // taste.service.ts; the test home is here so the spec ID grep already
-  // resolves.
-  it.todo("every bucket carries coverArtworkUrl: string | null (Zod contract holds)");
-  it.todo("coverArtworkUrl is the snapshot.artworkUrl of the highest-score bucket_song_scores row");
-  it.todo("ties on score are broken by lexicographically smallest songKey");
-  it.todo("coverArtworkUrl is null when the top-scored row has snapshot.artworkUrl == null");
-  it.todo(
-    "coverArtworkUrl is null when no bucket_song_scores row exists for the bucket (e.g. state: building)",
-  );
-  it.todo("coverArtworkUrl is null when the top-scored row's artworkUrl fails URL parsing");
-  it.todo(
-    "SEC-12 holds: artwork URL join is scoped by session userId — user A never leaks into user B",
-  );
+  let h: TasteTestAppHandle | undefined;
+  afterEach(async () => {
+    if (h) await h.app.close();
+    h = undefined;
+  });
+
+  // Minimal BucketSongScoresDocument-shaped object — the service only
+  // reads `score`, `songKey`, and `snapshot.coverUrl`. The repository
+  // fake type-coerces, so unused fields stay out of the way.
+  function row(input: {
+    userId: string;
+    bucketId: string;
+    songKey: string;
+    score: number;
+    coverUrl?: string;
+  }): unknown {
+    return {
+      userId: input.userId,
+      bucketId: input.bucketId,
+      songKey: input.songKey,
+      score: input.score,
+      snapshot: {
+        title: `t-${input.songKey}`,
+        artist: "a",
+        kind: "track" as const,
+        ...(input.coverUrl !== undefined ? { coverUrl: input.coverUrl } : {}),
+      },
+      lastUpdatedAt: new Date("2026-05-01T00:00:00.000Z"),
+    };
+  }
+
+  it("returns the highest-score row's coverUrl as coverArtworkUrl", async () => {
+    h = await buildTasteTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440b00";
+    const token = h.authService.signSession({ uid: userId, gid: "g_api28_top" });
+    h.bucketsRepo.bucketsByUser.set(userId, [makeBucket({ id: "b-1", userId })]);
+    h.bucketSongScoresRepo.setRows(userId, "b-1", [
+      row({ userId, bucketId: "b-1", songKey: "s-mid", score: 50, coverUrl: "https://cdn/m.jpg" }),
+      row({ userId, bucketId: "b-1", songKey: "s-top", score: 90, coverUrl: "https://cdn/t.jpg" }),
+      row({ userId, bucketId: "b-1", songKey: "s-low", score: 10, coverUrl: "https://cdn/l.jpg" }),
+      // deliberately untyped — see local `row` helper for shape
+    ] as never);
+    const res = await request(h.app.getHttpServer())
+      .get("/api/me/taste/profile")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    const parsed = TasteBucketsResponse.parse(res.body);
+    expect(parsed.buckets[0]!.coverArtworkUrl).toBe("https://cdn/t.jpg");
+  });
+
+  it("breaks ties on score by lexicographically smallest songKey", async () => {
+    h = await buildTasteTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440b01";
+    const token = h.authService.signSession({ uid: userId, gid: "g_api28_tie" });
+    h.bucketsRepo.bucketsByUser.set(userId, [makeBucket({ id: "b-1", userId })]);
+    h.bucketSongScoresRepo.setRows(userId, "b-1", [
+      row({ userId, bucketId: "b-1", songKey: "z-key", score: 80, coverUrl: "https://cdn/z.jpg" }),
+      row({ userId, bucketId: "b-1", songKey: "a-key", score: 80, coverUrl: "https://cdn/a.jpg" }),
+      row({ userId, bucketId: "b-1", songKey: "m-key", score: 80, coverUrl: "https://cdn/m.jpg" }),
+    ] as never);
+    const res = await request(h.app.getHttpServer())
+      .get("/api/me/taste/profile")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    const parsed = TasteBucketsResponse.parse(res.body);
+    expect(parsed.buckets[0]!.coverArtworkUrl).toBe("https://cdn/a.jpg");
+  });
+
+  it("returns null when the top-scored row's snapshot.coverUrl is undefined", async () => {
+    h = await buildTasteTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440b02";
+    const token = h.authService.signSession({ uid: userId, gid: "g_api28_no_cover" });
+    h.bucketsRepo.bucketsByUser.set(userId, [makeBucket({ id: "b-1", userId })]);
+    h.bucketSongScoresRepo.setRows(userId, "b-1", [
+      // Top row has no coverUrl.
+      row({ userId, bucketId: "b-1", songKey: "s-top", score: 95 }),
+      row({ userId, bucketId: "b-1", songKey: "s-low", score: 10, coverUrl: "https://cdn/l.jpg" }),
+    ] as never);
+    const res = await request(h.app.getHttpServer())
+      .get("/api/me/taste/profile")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    const parsed = TasteBucketsResponse.parse(res.body);
+    expect(parsed.buckets[0]!.coverArtworkUrl).toBeNull();
+  });
+
+  it("returns null when no bucket_song_scores row exists for the bucket", async () => {
+    h = await buildTasteTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440b03";
+    const token = h.authService.signSession({ uid: userId, gid: "g_api28_empty" });
+    h.bucketsRepo.bucketsByUser.set(userId, [
+      makeBucket({ id: "b-building", userId, state: "building" }),
+    ]);
+    // No rows pushed — emulates a state: "building" bucket without songs yet.
+    const res = await request(h.app.getHttpServer())
+      .get("/api/me/taste/profile")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    const parsed = TasteBucketsResponse.parse(res.body);
+    expect(parsed.buckets[0]!.coverArtworkUrl).toBeNull();
+  });
+
+  it("returns null when the top-scored row's coverUrl fails URL parsing", async () => {
+    h = await buildTasteTestApp();
+    const userId = "550e8400-e29b-41d4-a716-446655440b04";
+    const token = h.authService.signSession({ uid: userId, gid: "g_api28_bad_url" });
+    h.bucketsRepo.bucketsByUser.set(userId, [makeBucket({ id: "b-1", userId })]);
+    h.bucketSongScoresRepo.setRows(userId, "b-1", [
+      // Mongo may carry historical malformed data (e.g. a literal "(none)"
+      // injected by an earlier upstream parser). The service must not 500.
+      row({ userId, bucketId: "b-1", songKey: "s-top", score: 75, coverUrl: "(none)" }),
+    ] as never);
+    const res = await request(h.app.getHttpServer())
+      .get("/api/me/taste/profile")
+      .set("Cookie", `session=${token}`);
+    expect(res.status).toBe(200);
+    const parsed = TasteBucketsResponse.parse(res.body);
+    expect(parsed.buckets[0]!.coverArtworkUrl).toBeNull();
+  });
+
+  it("scopes the cover-URL join by session userId — A's covers never appear in B's response", async () => {
+    h = await buildTasteTestApp();
+    const userA = "550e8400-e29b-41d4-a716-446655440b10";
+    const userB = "550e8400-e29b-41d4-a716-446655440b11";
+    const tokenB = h.authService.signSession({ uid: userB, gid: "g_api28_userB" });
+
+    // User A has a bucket with the same id as B; we prime cover rows ONLY
+    // under A's (userId, bucketId) pair. The fake repo keys on userId, so
+    // a B-scoped call must see no rows even though "b-shared" matches.
+    h.bucketsRepo.bucketsByUser.set(userB, [makeBucket({ id: "b-shared", userId: userB })]);
+    h.bucketSongScoresRepo.setRows(userA, "b-shared", [
+      row({
+        userId: userA,
+        bucketId: "b-shared",
+        songKey: "leak",
+        score: 99,
+        coverUrl: "https://cdn/A.jpg",
+      }),
+    ] as never);
+    const res = await request(h.app.getHttpServer())
+      .get("/api/me/taste/profile")
+      .set("Cookie", `session=${tokenB}`);
+    expect(res.status).toBe(200);
+    const parsed = TasteBucketsResponse.parse(res.body);
+    expect(parsed.buckets[0]!.coverArtworkUrl).toBeNull();
+  });
 });

@@ -70,6 +70,7 @@ class FakeBucketsRepo {
         errorReason: null,
         createdAt: new Date().toISOString(),
         lastBuiltAt: new Date().toISOString(),
+        coverArtworkUrl: null,
       }));
   }
   async insertBucket(input: FakeBucketRow): Promise<void> {

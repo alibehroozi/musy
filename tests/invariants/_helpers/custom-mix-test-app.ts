@@ -100,6 +100,7 @@ export class FakeBucketsRepository {
         errorReason: r.errorReason,
         createdAt: "2026-05-17T00:00:00.000Z",
         lastBuiltAt: "2026-05-17T00:00:00.000Z",
+        coverArtworkUrl: null,
       }));
   }
   async insertBucket(input: Omit<FakeBucketRow, "promptText" | "errorReason">): Promise<void> {
@@ -179,6 +180,9 @@ export class FakeBucketSongScoresRepository {
   }
   async findScoresForUser(userId: string): Promise<FakeBucketSongScoreRow[]> {
     return this.rows.filter((r) => r.userId === userId);
+  }
+  async findForUserBucket(userId: string, bucketId: string): Promise<FakeBucketSongScoreRow[]> {
+    return this.rows.filter((r) => r.userId === userId && r.bucketId === bucketId);
   }
   async findBucketIdsForSong(): Promise<string[]> {
     return [];

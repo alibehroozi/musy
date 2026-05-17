@@ -173,5 +173,11 @@ function toBucketWire(doc: BucketsDocument): Record<string, unknown> {
     errorReason: doc.errorReason ?? null,
     createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
     lastBuiltAt: doc.lastBuiltAt instanceof Date ? doc.lastBuiltAt.toISOString() : doc.lastBuiltAt,
+    // API-28: `buckets` documents don't store the cover URL — it's a
+    // read-time join from `bucket_song_scores`. The repository emits null
+    // here so the Zod parse satisfies the contract; the taste.service
+    // layer overwrites with the actual top-scored song's coverUrl
+    // (single source of truth).
+    coverArtworkUrl: null,
   };
 }

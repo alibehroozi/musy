@@ -76,7 +76,7 @@ export class BucketBuilderService {
   }
 
   private async runBuild(userId: string): Promise<void> {
-    // SEC-14: all reads scoped to userId.
+    // SEC-15: all reads scoped to userId.
     const [swipeDocs, scoreDocs, existingBuckets] = await Promise.all([
       this.swipes.findSwipesForUser(userId),
       this.interestScores.findScoresForUser(userId),
@@ -208,7 +208,7 @@ export class BucketBuilderService {
  * - Right-swiped songs from swipes (snapshot embedded)
  * - Saved + listened-completed songs from interest_scores (snapshot embedded)
  *
- * SEC-14: callers must pass docs already scoped to userId.
+ * SEC-15: callers must pass docs already scoped to userId.
  */
 function buildSignalData(
   swipeDocs: Array<{

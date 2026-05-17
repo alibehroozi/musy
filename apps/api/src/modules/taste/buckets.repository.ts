@@ -15,7 +15,7 @@ export class BucketsRepository {
 
   /**
    * Insert a new bucket document for the auto-bucket builder.
-   * SEC-14: userId comes from the caller; never from external input.
+   * SEC-15: userId comes from the caller; never from external input.
    */
   async insertBucket(input: {
     id: string;

@@ -1,11 +1,11 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under LOGIC-33.
+// Invariants verified here are listed in INVARIANTS.md under LOGIC-35.
 
 import { describe, it, expect } from "vitest";
 import { normalizeBucketName } from "./normalize-bucket-name.js";
 
-describe("LOGIC-33: normalizeBucketName is deterministic — trim, single-space, lowercase", () => {
+describe("LOGIC-35: normalizeBucketName is deterministic — trim, single-space, lowercase", () => {
   it("trims leading and trailing whitespace", () => {
     expect(normalizeBucketName("  hello  ")).toBe("hello");
   });

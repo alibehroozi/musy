@@ -1,7 +1,8 @@
 ---
 epic: taste
-status: pending
+status: done
 estimated-invariants: 3
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/43
 ---
 
 # Feature 03: Explore queue context eligibility backend

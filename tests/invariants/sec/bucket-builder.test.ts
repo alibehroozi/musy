@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under SEC-14.
+// Invariants verified here are listed in INVARIANTS.md under SEC-15.
 
 import { describe, it, expect, vi } from "vitest";
 import type { SongSnapshot, TasteBucket } from "@moc/contracts";
@@ -156,7 +156,7 @@ function makeService(opts: {
 
 // ── Tests ─────────────────────────────────────────────────────────────
 
-describe("SEC-14: auto-bucket builder reads/writes only the caller userId's data", () => {
+describe("SEC-15: auto-bucket builder reads/writes only the caller userId's data", () => {
   it("BucketBuilderService.maybeBuild(userA) never reads swipes belonging to userB", async () => {
     const swipes = new FakeSwipes();
     const scores = new FakeInterestScores();

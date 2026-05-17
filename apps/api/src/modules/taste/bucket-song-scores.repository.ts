@@ -60,7 +60,7 @@ export class BucketSongScoresRepository {
    * written; if the row already exists its score is left entirely
    * untouched — only the first-time assignment seeds the value.
    *
-   * SEC-14: userId comes from the caller (never from LLM output).
+   * SEC-15: userId comes from the caller (never from LLM output).
    */
   async insertInitialScore(input: {
     userId: string;

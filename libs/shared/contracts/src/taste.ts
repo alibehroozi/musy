@@ -107,3 +107,43 @@ export const BucketBuilderLLMOutput = z.object({
   ),
 });
 export type BucketBuilderLLMOutput = z.infer<typeof BucketBuilderLLMOutput>;
+
+// ── Custom-mix builder (epic Taste — feature 05) ──────────────────────
+//
+// The user-prompted "build me a mix" backend. Three contracts:
+//
+//   - `CustomMixRequest`: the POST body. `promptText` is the free-text
+//     prompt the user typed; we cap at 500 chars so the LLM prompt body
+//     stays bounded (AI-16) and the user sees a clean validation error
+//     before we touch the database.
+//   - `CustomMixCreatedResponse`: the synchronous response. Returned in
+//     a microtask of the pre-insert; the LLM build is fire-and-forget.
+//     Both ids are uuid v4 so the client can correlate the eventual
+//     `state: "ready"` flip via `GET /me/taste/profile` polling.
+//   - `CustomMixLLMOutput`: the validated Anthropic response shape.
+//     `sourceBuckets` is optional per song — when present, it records
+//     which auto-bucket ids the LLM said it drew the song from, used
+//     by feature 06 to attribute skips.
+export const CustomMixRequest = z.object({
+  promptText: z.string().min(1).max(500),
+});
+export type CustomMixRequest = z.infer<typeof CustomMixRequest>;
+
+export const CustomMixCreatedResponse = z.object({
+  jobId: z.string().uuid(),
+  bucketId: z.string().uuid(),
+});
+export type CustomMixCreatedResponse = z.infer<typeof CustomMixCreatedResponse>;
+
+export const CustomMixLLMOutput = z.object({
+  name: z.string().min(1).max(60),
+  description: z.string().max(200),
+  songs: z.array(
+    z.object({
+      songKey: z.string().min(1),
+      initialScore: z.number().int().min(0).max(100),
+      sourceBuckets: z.array(z.string().min(1)).optional(),
+    }),
+  ),
+});
+export type CustomMixLLMOutput = z.infer<typeof CustomMixLLMOutput>;

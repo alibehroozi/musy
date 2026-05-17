@@ -53,6 +53,50 @@ export function isEligibleAtSlot(input: IsEligibleAtSlotInput): boolean {
   return true;
 }
 
+/**
+ * Bulk companion to `isEligibleAtSlot`: collect every `snapshotHash` from
+ * `swipeHistory` that is "burnt" at `currentSlot` — i.e. for which
+ * `isEligibleAtSlot` would return `false`. Useful in the queue builder
+ * where the same slot decision is applied to N candidates and a single
+ * pass over the swipe ledger is cheaper than N invocations of the
+ * per-candidate helper.
+ *
+ * Matches the defensive contract of `isEligibleAtSlot`: a swipe with a
+ * missing / NaN `at` adds its `snapshotHash` to the burnt set
+ * unconditionally (treated as all-slots-burnt for that hash).
+ */
+export function collectSlotBurntHashes(
+  swipeHistory: ReadonlyArray<EligibilitySwipe>,
+  currentSlot: EligibilitySlot,
+): Set<string> {
+  const burnt = new Set<string>();
+  for (const s of swipeHistory) {
+    if (!isUsableDate(s.at)) {
+      burnt.add(s.snapshotHash);
+      continue;
+    }
+    if (
+      bucketWeekday(s.at) === currentSlot.weekday &&
+      bucketTimeOfDay(s.at) === currentSlot.timeOfDay
+    ) {
+      burnt.add(s.snapshotHash);
+    }
+  }
+  return burnt;
+}
+
+/**
+ * Project a `Date` into the eligibility slot tuple that `isEligibleAtSlot`
+ * and `collectSlotBurntHashes` consume. Pure wrapper around
+ * `bucketWeekday` / `bucketTimeOfDay` from `@moc/api-core`.
+ */
+export function slotFor(date: Date): EligibilitySlot {
+  return {
+    weekday: bucketWeekday(date),
+    timeOfDay: bucketTimeOfDay(date),
+  };
+}
+
 function isUsableDate(value: unknown): value is Date {
   return value instanceof Date && !Number.isNaN(value.getTime());
 }

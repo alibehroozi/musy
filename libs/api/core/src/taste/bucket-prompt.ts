@@ -3,7 +3,15 @@ import { BucketBuilderLLMOutput, type SongSnapshot } from "@moc/contracts";
 import { firstJsonObjectIn } from "../explore/llm-json.js";
 
 // Bound per AI-13. Inputs above the cap are dropped newest-first.
-export const MAX_BUCKET_SONGS = 300;
+//
+// The cap is small (20) because the bucket-builder is an INCREMENTAL worker
+// (LOGIC-38): each run only ever considers songs the LLM has not yet
+// bucketed for this user, so a per-run pool of 20 is a worst-case bound.
+// Keeping the output JSON small also keeps the LLM well below its
+// `max_tokens` cap — the previous value (300) let Sonnet truncate the
+// response mid-object and surface as
+// `auto_bucket_build_failed reason=llm_parse_failed`.
+export const MAX_BUCKET_SONGS = 20;
 
 // Only these snapshot fields ever reach the prompt — direction, timestamps,
 // coverUrl, userId, etc. are structurally absent (AI-11 / PRIVACY-14).

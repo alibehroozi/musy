@@ -1,7 +1,8 @@
 ---
 epic: taste
-status: pending
+status: done
 estimated-invariants: 7
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/42
 ---
 
 # Feature 02: Context score recording backend

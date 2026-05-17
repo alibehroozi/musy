@@ -1,7 +1,8 @@
 ---
 epic: taste
-status: pending
+status: done
 estimated-invariants: 9
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/45
 ---
 
 # Feature 05: Custom mix job backend

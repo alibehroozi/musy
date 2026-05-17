@@ -18,9 +18,34 @@ import { PlayEventsService } from "../../../apps/api/src/modules/play/play-event
 import { ListeningEventsRepository } from "../../../apps/api/src/modules/play/listening-events.repository.js";
 import { InterestScoresRepository } from "../../../apps/api/src/modules/search/interest-scores.repository.js";
 import { ScoringService } from "../../../apps/api/src/modules/taste/scoring.service.js";
+import { BucketSongScoresRepository } from "../../../apps/api/src/modules/taste/bucket-song-scores.repository.js";
+import { CustomMixJobsRepository } from "../../../apps/api/src/modules/taste/custom-mix-jobs.repository.js";
 import { FakeUsersRepository } from "./test-app.js";
 import { FakeInterestScoresRepository } from "./search-events-test-app.js";
 import { FakeScoringService } from "./fake-scoring-service.js";
+
+class FakeBucketSongScoresRepository {
+  async inc() {}
+  async insertInitialScore() {}
+  async findBucketIdsForSong() {
+    return [];
+  }
+  async findForUserBucket() {
+    return [];
+  }
+}
+
+class FakeCustomMixJobsRepository {
+  async findCompletedByBucket() {
+    return null;
+  }
+  async insert() {}
+  async markCompleted() {}
+  async markFailed() {}
+  async countInFlight() {
+    return 0;
+  }
+}
 
 export const PLAY_EVENTS_TEST_ENV = {
   GOOGLE_CLIENT_ID: "test-google-client-id",
@@ -39,6 +64,8 @@ export interface FakeListeningEventDoc {
   eventType: PlayEventType;
   elapsedMs: number;
   at: Date;
+  bucketId: string | null;
+  bucketKind: "auto" | "custom" | null;
 }
 
 /**
@@ -54,6 +81,8 @@ export class FakeListeningEventsRepository {
     externalId: string;
     eventType: PlayEventType;
     elapsedMs: number;
+    bucketId?: string | null;
+    bucketKind?: "auto" | "custom" | null;
   }): Promise<void> {
     this.events.push({
       userId: input.userId,
@@ -63,6 +92,8 @@ export class FakeListeningEventsRepository {
       eventType: input.eventType,
       elapsedMs: input.elapsedMs,
       at: new Date(),
+      bucketId: input.bucketId ?? null,
+      bucketKind: input.bucketKind ?? null,
     });
   }
 
@@ -134,6 +165,15 @@ const fakeScoringToken = Symbol.for("test:fake-scoring-play-events");
       provide: ScoringService,
       useFactory: (fake: FakeScoringService) => fake as unknown as ScoringService,
       inject: [fakeScoringToken],
+    },
+    {
+      provide: BucketSongScoresRepository,
+      useFactory: () =>
+        new FakeBucketSongScoresRepository() as unknown as BucketSongScoresRepository,
+    },
+    {
+      provide: CustomMixJobsRepository,
+      useFactory: () => new FakeCustomMixJobsRepository() as unknown as CustomMixJobsRepository,
     },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },

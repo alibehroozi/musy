@@ -83,3 +83,27 @@ export type MonthValue = z.infer<typeof MonthValue>;
 
 export const ScoringEventType = z.enum(["right-swipe", "left-swipe", "save", "listen-completed"]);
 export type ScoringEventType = z.infer<typeof ScoringEventType>;
+
+// ── Auto-bucket builder (epic Taste — feature 04) ─────────────────────
+//
+// The LLM output parsed and validated before writing buckets +
+// bucket_song_scores. Both arrays may be empty (the LLM found nothing
+// to classify). A song can appear in multiple assignments rows (one per
+// bucket it belongs to, each with its own initialScore).
+
+export const BucketBuilderLLMOutput = z.object({
+  newBuckets: z.array(
+    z.object({
+      name: z.string().min(1).max(60),
+      description: z.string().max(200),
+    }),
+  ),
+  assignments: z.array(
+    z.object({
+      songKey: z.string().min(1),
+      bucket: z.string().min(1).max(60),
+      initialScore: z.number().int().min(0).max(100),
+    }),
+  ),
+});
+export type BucketBuilderLLMOutput = z.infer<typeof BucketBuilderLLMOutput>;

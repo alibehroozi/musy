@@ -13,6 +13,7 @@ import { SwipesRepository } from "./explore.repository.js";
 import { ListeningEventsRepository } from "../play/listening-events.repository.js";
 import { TasteProfilesRepository } from "./taste-profile.repository.js";
 import { AnthropicClient } from "./anthropic.client.js";
+import { BucketBuilderService } from "./bucket-builder.service.js";
 
 // Exported so QueueBuilderService can mirror the threshold in its
 // API-19 discovery-exit guard ("await build only when one would actually
@@ -40,6 +41,7 @@ export class ProfileBuilderService {
     private readonly profiles: TasteProfilesRepository,
     @Inject(AnthropicClient) private readonly anthropic: AnthropicClient,
     @Inject(ConfigService) private readonly config: ConfigService,
+    @Inject(BucketBuilderService) private readonly bucketBuilder: BucketBuilderService,
   ) {}
 
   /**
@@ -191,6 +193,10 @@ export class ProfileBuilderService {
       { event: "taste_profile_build_completed", userId },
       "taste_profile_build_completed",
     );
+
+    // Fire-and-forget bucket build downstream. Errors are logged inside
+    // BucketBuilderService.maybeBuild and never surface to the caller.
+    void this.bucketBuilder.maybeBuild(userId);
   }
 }
 

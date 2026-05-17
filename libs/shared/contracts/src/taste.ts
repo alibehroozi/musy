@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SongSnapshot } from "./search.js";
 
 // ── Taste buckets (epic Taste — feature 01) ──────────────────────────
 //
@@ -153,3 +154,24 @@ export const CustomMixLLMOutput = z.object({
   ),
 });
 export type CustomMixLLMOutput = z.infer<typeof CustomMixLLMOutput>;
+
+// ── Bucket detail (epic Taste — feature 08) ──────────────────────────
+//
+// `GET /api/me/taste/buckets/:bucketId` returns the full bucket plus its
+// song list sorted by score desc. `BucketDetailSong` includes
+// `lastUpdatedAt` so the client can tie-break deterministically (LOGIC-39)
+// and so future read surfaces (e.g. "recently added" badge) have the data.
+
+export const BucketDetailSong = z.object({
+  songKey: z.string().min(1),
+  snapshot: SongSnapshot,
+  score: z.number().int().min(0).max(100),
+  lastUpdatedAt: z.string().datetime(),
+});
+export type BucketDetailSong = z.infer<typeof BucketDetailSong>;
+
+export const BucketDetailResponse = z.object({
+  bucket: TasteBucket,
+  songs: z.array(BucketDetailSong),
+});
+export type BucketDetailResponse = z.infer<typeof BucketDetailResponse>;

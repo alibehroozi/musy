@@ -42,6 +42,18 @@ export class BucketSongScoresRepository {
   }
 
   /**
+   * SEC-16: all rows for the user across every bucket. Used by the
+   * custom-mix prompt builder to compute the per-song `generalScore`
+   * (LOGIC-32) without re-issuing per-song queries.
+   */
+  async findScoresForUser(userId: string): Promise<BucketSongScoresDocument[]> {
+    return (await this.model
+      .find({ userId })
+      .lean()
+      .exec()) as unknown as BucketSongScoresDocument[];
+  }
+
+  /**
    * SEC-13: scoped to the caller's userId. Returns the bucketIds the
    * song already belongs to, so the scoring service knows which
    * (userId, bucketId, songKey) rows to bump.

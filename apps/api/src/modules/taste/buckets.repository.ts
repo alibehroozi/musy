@@ -42,6 +42,88 @@ export class BucketsRepository {
   }
 
   /**
+   * Insert a custom-mix bucket pre-LLM (DATA-20). `kind` is always
+   * `"custom"` and `state` is always `"building"` — the LLM build path
+   * later flips the state via `markCustomReady` / `markCustomFailed`.
+   * `name` and `description` are seeded as empty strings; the LLM fills
+   * them in once the build completes.
+   *
+   * SEC-16: userId comes from the caller; never from request body or
+   * LLM output.
+   */
+  async insertCustomBucket(input: {
+    id: string;
+    userId: string;
+    promptText: string;
+    createdAt: Date;
+  }): Promise<void> {
+    await this.model.create({
+      id: input.id,
+      userId: input.userId,
+      name: "",
+      description: "",
+      kind: "custom" satisfies BucketKind,
+      state: "building" satisfies BucketState,
+      promptText: input.promptText,
+      errorReason: null,
+      createdAt: input.createdAt,
+      lastBuiltAt: input.createdAt,
+    });
+  }
+
+  /**
+   * Flip a custom-mix bucket from `state: "building"` to `state: "ready"`,
+   * applying the LLM-supplied name + description. Scoped to the caller's
+   * userId so a stray bucketId collision (shouldn't happen — uuid v4) on
+   * a different user cannot be mutated.
+   */
+  async markCustomReady(input: {
+    userId: string;
+    bucketId: string;
+    name: string;
+    description: string;
+    lastBuiltAt: Date;
+  }): Promise<void> {
+    await this.model
+      .updateOne(
+        { userId: input.userId, id: input.bucketId },
+        {
+          $set: {
+            name: input.name,
+            description: input.description,
+            state: "ready" satisfies BucketState,
+            lastBuiltAt: input.lastBuiltAt,
+          },
+        },
+      )
+      .exec();
+  }
+
+  /**
+   * Flip a custom-mix bucket to `state: "failed"` with a non-null
+   * errorReason. The row stays in place so the polling client can
+   * surface the failure to the user; the user can dismiss it or
+   * submit a fresh prompt to retry.
+   */
+  async markCustomFailed(input: {
+    userId: string;
+    bucketId: string;
+    errorReason: string;
+  }): Promise<void> {
+    await this.model
+      .updateOne(
+        { userId: input.userId, id: input.bucketId },
+        {
+          $set: {
+            state: "failed" satisfies BucketState,
+            errorReason: input.errorReason,
+          },
+        },
+      )
+      .exec();
+  }
+
+  /**
    * SEC-12: every read is filtered by the authenticated session's userId.
    * Returns plain TasteBucket objects parsed through the Zod contract —
    * Mongoose internals (`_id`, `__v`) never reach the wire.

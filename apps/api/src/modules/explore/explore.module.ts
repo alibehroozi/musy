@@ -14,6 +14,8 @@ import { ExploreController } from "./explore.controller.js";
 import { ProfileBuilderService } from "./profile-builder.service.js";
 import { QueueBuilderService } from "./queue-builder.service.js";
 import { BucketBuilderService } from "./bucket-builder.service.js";
+import { CustomMixService } from "./custom-mix.service.js";
+import { CustomMixController } from "./custom-mix.controller.js";
 import {
   AnthropicClient,
   ANTHROPIC_FALLBACK_MODEL_TOKEN,
@@ -34,7 +36,7 @@ import { TasteModule } from "../taste/taste.module.js";
     PlayModule,
     TasteModule,
   ],
-  controllers: [ExploreController],
+  controllers: [ExploreController, CustomMixController],
   providers: [
     ExploreService,
     SwipesRepository,
@@ -43,6 +45,7 @@ import { TasteModule } from "../taste/taste.module.js";
     ProfileBuilderService,
     QueueBuilderService,
     BucketBuilderService,
+    CustomMixService,
     AnthropicClient,
     {
       provide: ANTHROPIC_SDK_TOKEN,

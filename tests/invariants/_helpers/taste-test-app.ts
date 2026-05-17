@@ -36,10 +36,18 @@ const TASTE_TEST_ENV = {
 export class FakeBucketsRepository {
   bucketsByUser = new Map<string, TasteBucket[]>();
   readUserIds: string[] = [];
+  /** Tracks every call to findByIdForUser (SEC-18 assertions). */
+  byIdCalls: Array<{ userId: string; bucketId: string }> = [];
 
   async findForUser(userId: string): Promise<TasteBucket[]> {
     this.readUserIds.push(userId);
     return [...(this.bucketsByUser.get(userId) ?? [])];
+  }
+
+  async findByIdForUser(userId: string, bucketId: string): Promise<TasteBucket | null> {
+    this.byIdCalls.push({ userId, bucketId });
+    const list = this.bucketsByUser.get(userId) ?? [];
+    return list.find((b) => b.id === bucketId) ?? null;
   }
 }
 
@@ -51,9 +59,12 @@ export class FakeBucketsRepository {
  */
 export class FakeBucketSongScoresRepository {
   rowsByUserAndBucket = new Map<string, BucketSongScoresDocument[]>();
+  /** Tracks every call to findForUserBucket (SEC-18 assertions). */
+  readCalls: Array<{ userId: string; bucketId: string }> = [];
 
   async findForUserBucket(userId: string, bucketId: string): Promise<BucketSongScoresDocument[]> {
     const key = `${userId}::${bucketId}`;
+    this.readCalls.push({ userId, bucketId });
     return [...(this.rowsByUserAndBucket.get(key) ?? [])];
   }
 

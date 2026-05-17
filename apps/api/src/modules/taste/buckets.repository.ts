@@ -159,6 +159,32 @@ export class BucketsRepository {
     }
     return out;
   }
+
+  /**
+   * SEC-18: the (userId, id) compound filter is the only way a bucket
+   * is matched — a row owned by a different user never satisfies the
+   * filter even when the path bucketId happens to collide. Returns
+   * `null` when no row matches so the controller can map to 404 +
+   * ErrorResponse before issuing any `bucket_song_scores` join.
+   */
+  async findByIdForUser(userId: string, bucketId: string): Promise<TasteBucket | null> {
+    const doc = await this.model.findOne({ userId, id: bucketId }).lean().exec();
+    if (!doc) return null;
+    const parsed = TasteBucket.safeParse(toBucketWire(doc as unknown as BucketsDocument));
+    if (!parsed.success) {
+      this.logger.warn(
+        {
+          event: "taste_bucket_doc_dropped",
+          userId,
+          id: bucketId,
+          issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
+        },
+        "taste_bucket_doc_dropped",
+      );
+      return null;
+    }
+    return parsed.data;
+  }
 }
 
 function toBucketWire(doc: BucketsDocument): Record<string, unknown> {

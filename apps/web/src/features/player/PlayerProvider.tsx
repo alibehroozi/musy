@@ -13,6 +13,21 @@ import { AudioEngine } from "@moc/web-core";
 import type { AudioDriver, EngineState } from "@moc/web-core";
 import type { ProviderName, SongSnapshot } from "@moc/contracts";
 import { resolveStream, recordPlayStarted, recordPlayCompleted } from "./api.js";
+
+/**
+ * Optional bucket-origin context for `playSnapshot`. When the play
+ * starts from a bucket-detail page (feature 08), the page passes the
+ * bucket's `{ id, kind }` so feature 06's skip-attribution can scope
+ * the `bucket_song_scores` decrement to the originating bucket.
+ *
+ * Both fields are emitted together on the wire (DATA-21). Omit the
+ * second arg entirely for plays that originate outside a bucket
+ * (Search, Explore, direct resolve).
+ */
+export interface BucketOrigin {
+  bucketId: string;
+  bucketKind: "auto" | "custom";
+}
 import { useAuth } from "../../hooks/useAuth.js";
 import { useMediaSession } from "./useMediaSession.js";
 
@@ -24,7 +39,12 @@ export interface PlayerContextValue {
   currentSource: { source: ProviderName; externalId: string } | null;
   /** Whether the now-playing overlay is currently expanded. */
   isExpanded: boolean;
-  playSnapshot: (snapshot: SongSnapshot, source: ProviderName, externalId: string) => void;
+  playSnapshot: (
+    snapshot: SongSnapshot,
+    source: ProviderName,
+    externalId: string,
+    bucketOrigin?: BucketOrigin,
+  ) => void;
   /**
    * Resolve + play a snapshot without recording listening events. Used
    * by the Explore swipe deck where each top card auto-previews — the
@@ -203,7 +223,12 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   const isAuthed = authState.status === "authenticated";
 
   const playSnapshot = useCallback(
-    (snapshot: SongSnapshot, source: ProviderName, externalId: string) => {
+    (
+      snapshot: SongSnapshot,
+      source: ProviderName,
+      externalId: string,
+      bucketOrigin?: BucketOrigin,
+    ) => {
       const engine = engineRef.current;
       if (!engine) return;
 
@@ -216,6 +241,13 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
         currentTrack: { snapshot, streamUrl: "" },
       }));
 
+      // Feature 06 / DATA-21: when the play originates in a bucket,
+      // both bucketId and bucketKind go on the wire together. Outside
+      // a bucket, the fields are omitted entirely.
+      const bucketBody = bucketOrigin
+        ? { bucketId: bucketOrigin.bucketId, bucketKind: bucketOrigin.bucketKind }
+        : {};
+
       resolveStream({ snapshot })
         .then((result) => {
           if (result.streamUrl === null) {
@@ -227,14 +259,20 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
           engine.load(snapshot, result.streamUrl);
 
           if (isAuthed) {
-            void recordPlayStarted({ source, externalId, snapshot }).catch(() => {});
+            void recordPlayStarted({ source, externalId, snapshot, ...bucketBody }).catch(() => {});
           }
 
           // Listen for completion once per load.
           const offCompleted = engine.on("completed", (elapsedMs) => {
             offCompleted();
             if (isAuthed) {
-              void recordPlayCompleted({ source, externalId, snapshot, elapsedMs }).catch(() => {});
+              void recordPlayCompleted({
+                source,
+                externalId,
+                snapshot,
+                elapsedMs,
+                ...bucketBody,
+              }).catch(() => {});
             }
           });
         })

@@ -6,6 +6,7 @@ import {
   clampScore,
   normalizeBucketName,
   parseBucketBuilderResponse,
+  SWIPE_TRIGGER_THRESHOLD,
   type PromptSong,
   MAX_BUCKET_SONGS,
 } from "@moc/api-core";
@@ -15,7 +16,6 @@ import { AnthropicClient } from "./anthropic.client.js";
 import { BucketsRepository } from "../taste/buckets.repository.js";
 import { BucketSongScoresRepository } from "../taste/bucket-song-scores.repository.js";
 import { InterestScoresRepository } from "../search/interest-scores.repository.js";
-import { SWIPE_TRIGGER_THRESHOLD } from "./profile-builder.service.js";
 
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 4096;

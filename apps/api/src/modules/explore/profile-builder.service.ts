@@ -5,6 +5,7 @@ import type { TasteProfile } from "@moc/contracts";
 import {
   buildTastePrompt,
   parseTasteProfileResponse,
+  SWIPE_TRIGGER_THRESHOLD,
   type PromptListen,
   type PromptSwipe,
 } from "@moc/api-core";
@@ -15,10 +16,6 @@ import { TasteProfilesRepository } from "./taste-profile.repository.js";
 import { AnthropicClient } from "./anthropic.client.js";
 import { BucketBuilderService } from "./bucket-builder.service.js";
 
-// Exported so QueueBuilderService can mirror the threshold in its
-// API-19 discovery-exit guard ("await build only when one would actually
-// be triggered — i.e. swipes ≥ this threshold").
-export const SWIPE_TRIGGER_THRESHOLD = 20;
 const REBUILD_TIME_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 2048;

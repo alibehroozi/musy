@@ -8,6 +8,13 @@ export const STRONG_ARTIST_SCORE_THRESHOLD = 0.5;
 // Distinct strong-signal artists needed to leave artist-refinement.
 export const STRONG_ARTISTS_TO_LEAVE_ARTIST_REFINEMENT = 8;
 
+// Per LOGIC-38: the swipe count that activates the first taste-profile build
+// AND the first auto-bucket build. Hosted here (a pure value with no NestJS
+// deps) so every consumer — profile builder, queue builder's discovery-exit
+// await, auto-bucket signal-pool floor — imports the same number without
+// forming a value-level import cycle between Nest services.
+export const SWIPE_TRIGGER_THRESHOLD = 20;
+
 export type QueuePhaseLiteral = "discovery" | "artist-refinement" | "personalized";
 
 /**

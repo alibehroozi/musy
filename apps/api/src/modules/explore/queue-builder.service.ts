@@ -18,6 +18,7 @@ import {
   seedSnapshots,
   slotFor,
   STRONG_ARTIST_SCORE_THRESHOLD,
+  SWIPE_TRIGGER_THRESHOLD,
   type ArtistRefinementPromptCandidate,
   type ColdStartPromptSwipe,
   type EligibilitySwipe,
@@ -36,7 +37,7 @@ import type {
 import { SwipesRepository } from "./explore.repository.js";
 import { TasteProfilesRepository } from "./taste-profile.repository.js";
 import { ExploreQueueRepository } from "./explore-queue.repository.js";
-import { ProfileBuilderService, SWIPE_TRIGGER_THRESHOLD } from "./profile-builder.service.js";
+import { ProfileBuilderService } from "./profile-builder.service.js";
 import { AnthropicClient } from "./anthropic.client.js";
 import { AudiusClient } from "../search/providers/audius.client.js";
 import { SoundCloudClient } from "../search/providers/soundcloud.client.js";

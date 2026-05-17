@@ -1,12 +1,12 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under PRIVACY-15.
+// Invariants verified here are listed in INVARIANTS.md under PRIVACY-16.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-describe("PRIVACY-15: skip detector makes no outgoing HTTP or LLM calls", () => {
+describe("PRIVACY-16: skip detector makes no outgoing HTTP or LLM calls", () => {
   it("play-events.service.ts contains no fetch() invocation", () => {
     const src = readFileSync(
       resolve(import.meta.dirname, "../../../apps/api/src/modules/play/play-events.service.ts"),

@@ -28,7 +28,7 @@ export interface MarkCustomMixJobFailedInput {
 }
 
 /**
- * Repository for the `custom_mix_jobs` collection.
+ * Repository for the `custom_mix_jobs` collection (DATA-19).
  *
  * SEC-16: every write derives `userId` from the caller's argument
  * (which itself originates from the authenticated session). The
@@ -86,8 +86,12 @@ export class CustomMixJobsRepository {
   }
 
   /**
-   * Cross-process safety for the rate-limit guard. Backed by the compound
-   * `(userId, state)` index.
+   * Cross-process safety for the API-27 rate-limit guard. The in-process
+   * `Map<userId, Set<jobId>>` in CustomMixService handles single-replica
+   * contention; this count handles the multi-replica case (e.g. two Cloud
+   * Run instances each holding part of the user's in-flight set).
+   *
+   * Backed by the compound `(userId, state)` index.
    */
   async countInFlight(userId: string): Promise<number> {
     return await this.model.countDocuments({ userId, state: "building" }).exec();
@@ -96,7 +100,7 @@ export class CustomMixJobsRepository {
   /**
    * Read the completed job for a bucket to look up its sourceBuckets map.
    * Used by the skip detector (feature 06) to attribute decrements.
-   * SEC-16: query is scoped by userId to prevent cross-user attribution.
+   * SEC-17: query is scoped by userId to prevent cross-user attribution.
    */
   async findCompletedByBucket(
     userId: string,

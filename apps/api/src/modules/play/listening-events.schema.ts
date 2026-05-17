@@ -11,7 +11,7 @@ export interface ListeningEventsDocument extends Document {
   eventType: PlayEventType;
   elapsedMs: number;
   at: Date;
-  // DATA-19: both null (non-bucket play) or both non-null (bucket play).
+  // DATA-21: both null (non-bucket play) or both non-null (bucket play).
   bucketId: string | null;
   bucketKind: "auto" | "custom" | null;
 }

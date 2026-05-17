@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under SEC-16.
+// Invariants verified here are listed in INVARIANTS.md under SEC-17.
 
 import { describe, it, expect } from "vitest";
 import type { SongSnapshot } from "@moc/contracts";
@@ -56,7 +56,7 @@ class FakeCustomMixJobs {
   }
 }
 
-describe("SEC-16: skip decrements only modify bucket_song_scores rows owned by the session user", () => {
+describe("SEC-17: skip decrements only modify bucket_song_scores rows owned by the session user", () => {
   it("skip decrement for user A does not touch user B's bucket_song_scores rows", async () => {
     const bucketScores = new FakeBucketScores();
     const songKey = "soundcloud:12345";

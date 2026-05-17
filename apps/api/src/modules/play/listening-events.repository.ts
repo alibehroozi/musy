@@ -11,7 +11,7 @@ export interface ListeningEventInput {
   externalId: string;
   eventType: PlayEventType;
   elapsedMs: number;
-  // DATA-19: both null together or both non-null together.
+  // DATA-21: both null together or both non-null together.
   bucketId?: string | null;
   bucketKind?: "auto" | "custom" | null;
 }

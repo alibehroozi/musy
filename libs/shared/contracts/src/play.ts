@@ -53,7 +53,7 @@ const PlayEventBodyBase = z.object({
   externalId: z.string().min(1),
   snapshot: SongSnapshot,
   // Present when the play originated inside a bucket (feature 06).
-  // Both fields must be null together or non-null together (DATA-19).
+  // Both fields must be null together or non-null together (DATA-21).
   bucketId: z.string().uuid().nullable().optional(),
   bucketKind: z.enum(["auto", "custom"]).nullable().optional(),
 });

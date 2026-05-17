@@ -76,6 +76,16 @@ export class ContextScoresRepository {
   }
 
   /**
+   * SEC-16: every read is scoped by the authenticated session's userId.
+   * Returns every context-score row for the user across all axes — the
+   * custom-mix prompt builder groups by songKey and joins with bucket
+   * scores to compute the per-song `generalScore` (LOGIC-32).
+   */
+  async findForUser(userId: string): Promise<ContextScoresDocument[]> {
+    return (await this.model.find({ userId }).lean().exec()) as unknown as ContextScoresDocument[];
+  }
+
+  /**
    * Left-swipe write: HARD set the row to a given score (always 0 in
    * the current product rules). Upsert so a never-seen context still
    * gets a row at 0 to record the explicit dismissal (LOGIC-30).

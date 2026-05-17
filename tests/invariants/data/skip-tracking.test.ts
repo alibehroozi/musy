@@ -1,11 +1,11 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under DATA-19.
+// Invariants verified here are listed in INVARIANTS.md under DATA-21.
 
 import { describe, it, expect } from "vitest";
 import { ListeningEventsSchemaDefinition } from "../../../apps/api/src/modules/play/listening-events.schema.js";
 
-describe("DATA-19: listening_events bucketId/bucketKind co-null invariant", () => {
+describe("DATA-21: listening_events bucketId/bucketKind co-null invariant", () => {
   it("schema defines a bucketId field with default null", () => {
     const path = ListeningEventsSchemaDefinition.paths["bucketId"] as unknown as {
       options?: { default?: unknown };

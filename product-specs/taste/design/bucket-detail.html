@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=375, initial-scale=1" />
+  <title>Taste — bucket detail</title>
+  <link rel="stylesheet" href="./tokens.css" />
+  <style>
+    .app { display: flex; flex-direction: column; height: 667px; }
+
+    .header {
+      flex: 0 0 auto;
+      padding: var(--spacing-3) var(--spacing-4);
+      display: flex; align-items: center;
+    }
+    .icon-btn {
+      width: 36px; height: 36px;
+      border-radius: var(--radius-full);
+      background: transparent;
+      color: var(--color-text);
+      display: flex; align-items: center; justify-content: center;
+      border: none; cursor: pointer;
+      font-size: 1.25rem;
+    }
+
+    .content {
+      flex: 1 1 auto;
+      overflow-y: auto;
+    }
+
+    .hero {
+      display: flex; flex-direction: column; align-items: center;
+      padding: var(--spacing-2) var(--spacing-6) var(--spacing-6);
+      text-align: center;
+    }
+    .hero-cover {
+      width: 200px; height: 200px;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-lg);
+      background: linear-gradient(135deg, oklch(0.32 0.12 270), oklch(0.18 0.08 320));
+      margin-bottom: var(--spacing-4);
+    }
+    .hero-title {
+      font-size: var(--text-2xl);
+      font-weight: var(--font-weight-bold);
+      line-height: var(--leading-tight);
+      margin-bottom: var(--spacing-1);
+    }
+    .hero-subtitle {
+      font-size: var(--text-sm);
+      color: var(--color-text-muted);
+      margin-bottom: var(--spacing-4);
+    }
+    .play-all {
+      width: 100%;
+      max-width: 280px;
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--radius-md);
+      background: var(--color-primary);
+      color: var(--color-text);
+      font-size: var(--text-md);
+      font-weight: var(--font-weight-medium);
+      border: none; cursor: pointer;
+      min-height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      gap: var(--spacing-2);
+    }
+
+    .song-list { padding: 0 var(--spacing-4) var(--spacing-4); }
+    .song-row {
+      display: flex; align-items: center; gap: var(--spacing-3);
+      padding: var(--spacing-2) 0;
+    }
+    .song-art {
+      width: 48px; height: 48px;
+      border-radius: var(--radius-sm);
+      flex: 0 0 auto;
+    }
+    .song-art.a1 { background: linear-gradient(135deg, oklch(0.5 0.14 270), oklch(0.3 0.08 320)); }
+    .song-art.a2 { background: linear-gradient(135deg, oklch(0.45 0.12 230), oklch(0.28 0.06 260)); }
+    .song-art.a3 { background: linear-gradient(135deg, oklch(0.55 0.15 60), oklch(0.32 0.08 30)); }
+    .song-art.a4 { background: linear-gradient(135deg, oklch(0.5 0.12 320), oklch(0.3 0.08 350)); }
+    .song-art.a5 { background: linear-gradient(135deg, oklch(0.45 0.10 200), oklch(0.28 0.06 220)); }
+
+    .song-meta { flex: 1 1 auto; min-width: 0; }
+    .song-title {
+      font-size: var(--text-md);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .song-artist {
+      font-size: var(--text-sm);
+      color: var(--color-text-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Mini player */
+    .mini-player {
+      flex: 0 0 auto;
+      height: 56px;
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      display: flex; align-items: center;
+      padding: 0 var(--spacing-3);
+      gap: var(--spacing-3);
+    }
+    .mp-art {
+      width: 40px; height: 40px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, oklch(0.5 0.14 270), oklch(0.3 0.08 320));
+      flex: 0 0 auto;
+    }
+    .mp-meta { flex: 1 1 auto; min-width: 0; }
+    .mp-title {
+      font-size: var(--text-sm);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .mp-artist {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .mp-play {
+      width: 36px; height: 36px;
+      border-radius: var(--radius-full);
+      background: var(--color-text);
+      color: var(--color-bg);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem;
+      flex: 0 0 auto;
+    }
+
+    /* Bottom nav */
+    .bottom-nav {
+      flex: 0 0 auto;
+      height: 64px;
+      border-top: 1px solid var(--color-border);
+      background: var(--color-bg);
+      display: flex; align-items: center; justify-content: space-around;
+    }
+    .nav-item {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px;
+      color: var(--color-text-muted);
+      font-size: var(--text-xs);
+      padding: var(--spacing-2);
+    }
+    .nav-item.active { color: var(--color-text); }
+    .nav-item .nav-icon { font-size: 1.25rem; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <button class="icon-btn">←</button>
+    </header>
+
+    <main class="content">
+      <section class="hero">
+        <div class="hero-cover"></div>
+        <h1 class="hero-title">Late night drives</h1>
+        <div class="hero-subtitle">12 songs</div>
+        <button class="play-all">▶ Play all</button>
+      </section>
+
+      <section class="song-list">
+        <div class="song-row">
+          <div class="song-art a1"></div>
+          <div class="song-meta">
+            <div class="song-title">Whatever</div>
+            <div class="song-artist">The Strokes</div>
+          </div>
+        </div>
+        <div class="song-row">
+          <div class="song-art a2"></div>
+          <div class="song-meta">
+            <div class="song-title">Strange brew</div>
+            <div class="song-artist">Cream</div>
+          </div>
+        </div>
+        <div class="song-row">
+          <div class="song-art a3"></div>
+          <div class="song-meta">
+            <div class="song-title">Midnight city</div>
+            <div class="song-artist">M83</div>
+          </div>
+        </div>
+        <div class="song-row">
+          <div class="song-art a4"></div>
+          <div class="song-meta">
+            <div class="song-title">Nightcall</div>
+            <div class="song-artist">Kavinsky</div>
+          </div>
+        </div>
+        <div class="song-row">
+          <div class="song-art a5"></div>
+          <div class="song-meta">
+            <div class="song-title">Drive</div>
+            <div class="song-artist">The Cars</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="mini-player">
+      <div class="mp-art"></div>
+      <div class="mp-meta">
+        <div class="mp-title">Whatever</div>
+        <div class="mp-artist">The Strokes</div>
+      </div>
+      <div class="mp-play">▶</div>
+    </div>
+
+    <nav class="bottom-nav">
+      <div class="nav-item"><span class="nav-icon">🔥</span>Explore</div>
+      <div class="nav-item"><span class="nav-icon">🔍</span>Search</div>
+      <div class="nav-item active"><span class="nav-icon">✨</span>Taste</div>
+    </nav>
+  </div>
+</body>
+</html>

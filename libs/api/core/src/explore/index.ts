@@ -6,4 +6,5 @@ export * from "./artist-refinement-prompt.js";
 export * from "./seed-genres.js";
 export * from "./cold-start-prompt.js";
 export * from "./cover-resolution.js";
+export * from "./eligibility.js";
 export * from "./llm-json.js";

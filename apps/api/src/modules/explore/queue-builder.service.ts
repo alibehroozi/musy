@@ -7,6 +7,7 @@ import {
   buildColdStartPrompt,
   buildPersonalizedPrompt,
   COLD_START_MAX_RECENT_SWIPES,
+  collectSlotBurntHashes,
   computeSnapshotHash,
   parseArtistRefinementResponse,
   parseColdStartResponse,
@@ -15,9 +16,11 @@ import {
   pickCoverMatch,
   resolveCoversForQueue,
   seedSnapshots,
+  slotFor,
   STRONG_ARTIST_SCORE_THRESHOLD,
   type ArtistRefinementPromptCandidate,
   type ColdStartPromptSwipe,
+  type EligibilitySwipe,
   type PersonalizedPromptCandidate,
   type PersonalizedScoreBuckets,
   type ScoreBucketEntry,
@@ -130,13 +133,15 @@ export class QueueBuilderService {
       };
     }
 
-    // Filter against swipes and cover-completeness (API-17 defense in
-    // depth — the queue builder is the primary enforcement, but stale
-    // pre-DATA-13 rows could still slip through).
+    // Filter against per-slot eligibility (API-25 / LOGIC-33) and
+    // cover-completeness (API-17 defense in depth — the queue builder is
+    // the primary enforcement, but stale pre-DATA-13 rows could still
+    // slip through). A song is burnt only for its (weekday, timeOfDay)
+    // slots — see the prior commit's INVARIANTS update.
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
-    const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
+    const slotBurnt = collectSlotBurntHashes(toEligibilitySwipes(swipeDocs), slotFor(new Date()));
     const filtered = queue.items.filter(
-      (item) => !seenHashes.has(computeSnapshotHash(item)) && hasNonEmptyCover(item),
+      (item) => !slotBurnt.has(computeSnapshotHash(item)) && hasNonEmptyCover(item),
     );
 
     // Self-heal: if unseen runs low and no rebuild is in flight, fire
@@ -216,7 +221,11 @@ export class QueueBuilderService {
 
     const phase = phaseFor(profile, swipeDocs.length);
 
-    const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
+    // API-25: exclusion is per-slot, not per-snapshot-forever. The same
+    // slot is computed at the moment of build so candidates burnt at the
+    // *current* slot are excluded from sourcing while songs only swiped
+    // in other slots remain eligible.
+    const slotBurnt = collectSlotBurntHashes(toEligibilitySwipes(swipeDocs), slotFor(new Date()));
     // Project swipes for the cold-start soft signal (LOGIC-28). Newest-
     // first so the per-prompt truncation drops oldest. Only the discovery
     // path actually reads this; other phases ignore it.
@@ -235,7 +244,7 @@ export class QueueBuilderService {
         userId,
         phase,
         profile,
-        seenHashes,
+        slotBurnt,
         recentSwipesForColdStart,
       );
     } catch (err) {
@@ -247,7 +256,7 @@ export class QueueBuilderService {
         },
         "explore_queue_source_failed",
       );
-      items = seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
+      items = seedSnapshots().filter((s) => !slotBurnt.has(computeSnapshotHash(s)));
     }
 
     // DATA-13: any candidate that didn't pick up a coverUrl during
@@ -313,15 +322,19 @@ export class QueueBuilderService {
     if (!queue) return;
 
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
-    const seenHashes = new Set(swipeDocs.map((s) => s.snapshotHash));
-    const unseen = queue.items.filter((item) => !seenHashes.has(computeSnapshotHash(item))).length;
-    if (unseen >= REFILL_THRESHOLD) return;
+    // API-18 / API-25: refill triggers on the count of items still
+    // eligible at the *current* (weekday, timeOfDay) slot, not the
+    // historical seen-set. A song swiped only in a different slot is
+    // still eligible now.
+    const slotBurnt = collectSlotBurntHashes(toEligibilitySwipes(swipeDocs), slotFor(new Date()));
+    const eligible = queue.items.filter((item) => !slotBurnt.has(computeSnapshotHash(item))).length;
+    if (eligible >= REFILL_THRESHOLD) return;
 
     this.logger.log(
       {
         event: "explore_queue_refill_triggered",
         userId,
-        unseen,
+        eligible,
         raw: queue.items.length,
       },
       "explore_queue_refill_triggered",
@@ -405,18 +418,18 @@ export class QueueBuilderService {
     userId: string,
     phase: QueuePhase,
     profile: TasteProfile | null,
-    seenHashes: Set<string>,
+    excludedHashes: Set<string>,
     recentSwipesForColdStart: ColdStartPromptSwipe[],
   ): Promise<SongSnapshot[]> {
     if (phase === "discovery") {
-      return await this.sourceDiscovery(seenHashes, recentSwipesForColdStart);
+      return await this.sourceDiscovery(excludedHashes, recentSwipesForColdStart);
     }
 
     if (phase === "artist-refinement") {
-      return await this.sourceArtistRefinement(profile, seenHashes);
+      return await this.sourceArtistRefinement(profile, excludedHashes);
     }
 
-    return await this.sourcePersonalized(userId, profile, seenHashes);
+    return await this.sourcePersonalized(userId, profile, excludedHashes);
   }
 
   /**
@@ -439,7 +452,7 @@ export class QueueBuilderService {
    * hard-excluding any artist.
    */
   private async sourceDiscovery(
-    seenHashes: Set<string>,
+    excludedHashes: Set<string>,
     recentSwipes: ColdStartPromptSwipe[],
   ): Promise<SongSnapshot[]> {
     try {
@@ -460,7 +473,7 @@ export class QueueBuilderService {
         kind: "track",
       }));
 
-      const result = dedupeBySnapshotHash(tuples, seenHashes);
+      const result = dedupeBySnapshotHash(tuples, excludedHashes);
       if (result.length > 0) return result;
     } catch (err) {
       this.logger.warn(
@@ -469,7 +482,7 @@ export class QueueBuilderService {
       );
     }
     // Fallback: static seed list (no cover art, but always available).
-    return seedSnapshots().filter((s) => !seenHashes.has(computeSnapshotHash(s)));
+    return seedSnapshots().filter((s) => !excludedHashes.has(computeSnapshotHash(s)));
   }
 
   /**
@@ -486,13 +499,13 @@ export class QueueBuilderService {
    *     provider makes downstream cover resolution more predictable.
    *
    * LLM output: up to ARTIST_REFINEMENT_PICKS_TARGET picks from the
-   * pool (verbatim). Caller dedupes against seenHashes; LLM failures
-   * fall through to the deduped pool top-N so the queue is never empty
-   * when there's pool content available.
+   * pool (verbatim). Caller dedupes against excludedHashes (per-slot burnt
+   * set, API-25); LLM failures fall through to the deduped pool top-N so
+   * the queue is never empty when there's pool content available.
    */
   private async sourceArtistRefinement(
     profile: TasteProfile | null,
-    seenHashes: Set<string>,
+    excludedHashes: Set<string>,
   ): Promise<SongSnapshot[]> {
     if (!profile || profile.artists.length === 0) return [];
 
@@ -528,7 +541,7 @@ export class QueueBuilderService {
 
     const dedupedPool = dedupeBySnapshotHash(
       fulfilledTracks.map((track) => toSnapshot(track)),
-      seenHashes,
+      excludedHashes,
     );
 
     if (dedupedPool.length === 0) return [];
@@ -594,8 +607,8 @@ export class QueueBuilderService {
    *
    * LLM output: 10 picks from the pool (verbatim) + 10 novel suggestions
    * NOT in any score bucket. The caller dedupes both lists against
-   * seenHashes (swipes ledger) and against the score buckets in case
-   * the LLM ignored the prompt rule.
+   * excludedHashes (per-slot burnt set, API-25) and against the score
+   * buckets in case the LLM ignored the prompt rule.
    *
    * Falls through to the deduped raw pool on LLM / parser failure so
    * the queue is never empty when there's pool content available.
@@ -603,7 +616,7 @@ export class QueueBuilderService {
   private async sourcePersonalized(
     userId: string,
     profile: TasteProfile | null,
-    seenHashes: Set<string>,
+    excludedHashes: Set<string>,
   ): Promise<SongSnapshot[]> {
     if (!profile) return [];
 
@@ -632,7 +645,7 @@ export class QueueBuilderService {
     }
     const dedupedPool = dedupeBySnapshotHash(
       fulfilledTracks.map(({ track }) => toSnapshot(track)),
-      seenHashes,
+      excludedHashes,
     );
 
     // Per-snapshot lookup so the prompt can carry the original provider
@@ -703,9 +716,9 @@ export class QueueBuilderService {
       novel.push({ title: n.title, artist: n.artist, kind: "track" });
     }
 
-    // Combine picks + novel, dedupe against seenHashes (and against
+    // Combine picks + novel, dedupe against excludedHashes (and against
     // each other — a novel suggestion may collide with a pick title).
-    const combined = dedupeBySnapshotHash([...picks, ...novel], seenHashes);
+    const combined = dedupeBySnapshotHash([...picks, ...novel], excludedHashes);
     if (combined.length > 0) return combined;
 
     // Heuristic fallback: if the LLM produced nothing usable, surface
@@ -804,4 +817,10 @@ function shuffleInPlace<T>(arr: T[]): void {
     const j = Math.floor(Math.random() * (i + 1));
     [arr[i], arr[j]] = [arr[j]!, arr[i]!];
   }
+}
+
+function toEligibilitySwipes(
+  docs: ReadonlyArray<{ snapshotHash: string; direction: "right" | "left"; at: Date }>,
+): EligibilitySwipe[] {
+  return docs.map((d) => ({ snapshotHash: d.snapshotHash, direction: d.direction, at: d.at }));
 }

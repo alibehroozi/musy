@@ -238,13 +238,11 @@ function BucketFailedShell({ bucket }: { bucket: TasteBucket }): JSX.Element {
       <Typography variant="h1" className="mb-1 mt-4">
         {bucket.name}
       </Typography>
-      <Typography
-        variant="body"
-        className="text-text-muted"
-        data-testid="bucket-detail-failed-reason"
-      >
-        {reason}
-      </Typography>
+      <div data-testid="bucket-detail-failed-reason">
+        <Typography variant="body" className="text-text-muted">
+          {reason}
+        </Typography>
+      </div>
     </section>
   );
 }

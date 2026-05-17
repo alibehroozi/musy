@@ -5,6 +5,7 @@ import { SwipesRepository } from "./explore.repository.js";
 import { InterestScoresRepository } from "../search/interest-scores.repository.js";
 import { ProfileBuilderService } from "./profile-builder.service.js";
 import { QueueBuilderService } from "./queue-builder.service.js";
+import { ScoringService } from "../taste/scoring.service.js";
 
 interface RecordSwipeInput {
   userId: string;
@@ -20,6 +21,7 @@ export class ExploreService {
     @Inject(SwipesRepository) private readonly swipes: SwipesRepository,
     @Inject(InterestScoresRepository)
     private readonly interestScores: InterestScoresRepository,
+    @Inject(ScoringService) private readonly scoring: ScoringService,
     @Optional()
     @Inject(ProfileBuilderService)
     private readonly profileBuilder?: ProfileBuilderService,
@@ -56,6 +58,20 @@ export class ExploreService {
         eventType: "saved",
       });
     }
+    // Fire-and-forget contextual-scoring write. A failure logs but never
+    // rolls back the swipe — the swipes ledger is the source of truth.
+    void this.scoring
+      .recordSwipe({
+        userId: input.userId,
+        snapshot: input.snapshot,
+        direction: input.direction,
+      })
+      .catch((err) => {
+        this.logger.error(
+          { event: "context_score_write_failed", err: errToString(err) },
+          "context_score_write_failed",
+        );
+      });
     if (this.profileBuilder) {
       void this.profileBuilder.maybeBuild(input.userId).catch((err) => {
         this.logger.error(

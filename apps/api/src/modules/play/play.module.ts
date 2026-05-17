@@ -22,6 +22,7 @@ import { PlayEventsController } from "./play-events.controller.js";
 import { AudiusStreamClient } from "./providers/audius-stream.client.js";
 import { SoundCloudStreamClient } from "./providers/soundcloud-stream.client.js";
 import { SearchModule } from "../search/search.module.js";
+import { TasteModule } from "../taste/taste.module.js";
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SearchModule } from "../search/search.module.js";
       { name: LISTENING_EVENTS_MODEL, schema: ListeningEventsSchemaDefinition },
     ]),
     SearchModule,
+    TasteModule,
   ],
   controllers: [PlayController, PlayEventsController],
   providers: [

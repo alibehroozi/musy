@@ -17,8 +17,10 @@ import { PlayEventsController } from "../../../apps/api/src/modules/play/play-ev
 import { PlayEventsService } from "../../../apps/api/src/modules/play/play-events.service.js";
 import { ListeningEventsRepository } from "../../../apps/api/src/modules/play/listening-events.repository.js";
 import { InterestScoresRepository } from "../../../apps/api/src/modules/search/interest-scores.repository.js";
+import { ScoringService } from "../../../apps/api/src/modules/taste/scoring.service.js";
 import { FakeUsersRepository } from "./test-app.js";
 import { FakeInterestScoresRepository } from "./search-events-test-app.js";
+import { FakeScoringService } from "./fake-scoring-service.js";
 
 export const PLAY_EVENTS_TEST_ENV = {
   GOOGLE_CLIENT_ID: "test-google-client-id",
@@ -72,6 +74,7 @@ export class FakeListeningEventsRepository {
 const fakeUsersToken = Symbol.for("test:fake-users-repo-play-events");
 const fakeListeningRepoToken = Symbol.for("test:fake-listening-events-repo");
 const fakeInterestRepoToken = Symbol.for("test:fake-interest-repo-play-events");
+const fakeScoringToken = Symbol.for("test:fake-scoring-play-events");
 
 @Module({
   imports: [
@@ -123,6 +126,15 @@ const fakeInterestRepoToken = Symbol.for("test:fake-interest-repo-play-events");
         fake as unknown as InterestScoresRepository,
       inject: [fakeInterestRepoToken],
     },
+    {
+      provide: fakeScoringToken,
+      useFactory: () => new FakeScoringService(),
+    },
+    {
+      provide: ScoringService,
+      useFactory: (fake: FakeScoringService) => fake as unknown as ScoringService,
+      inject: [fakeScoringToken],
+    },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -133,6 +145,7 @@ export interface PlayEventsTestAppHandle {
   app: INestApplication;
   listeningRepo: FakeListeningEventsRepository;
   interestRepo: FakeInterestScoresRepository;
+  scoring: FakeScoringService;
   authService: AuthService;
   env: typeof PLAY_EVENTS_TEST_ENV;
 }
@@ -147,8 +160,9 @@ export async function buildPlayEventsTestApp(): Promise<PlayEventsTestAppHandle>
 
   const listeningRepo = app.get<FakeListeningEventsRepository>(fakeListeningRepoToken);
   const interestRepo = app.get<FakeInterestScoresRepository>(fakeInterestRepoToken);
+  const scoring = app.get<FakeScoringService>(fakeScoringToken);
   const authService = app.get(AuthService);
-  return { app, listeningRepo, interestRepo, authService, env: PLAY_EVENTS_TEST_ENV };
+  return { app, listeningRepo, interestRepo, scoring, authService, env: PLAY_EVENTS_TEST_ENV };
 }
 
 export function makeSnapshot(overrides: Partial<SongSnapshot> = {}): SongSnapshot {

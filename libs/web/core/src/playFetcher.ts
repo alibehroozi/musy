@@ -29,6 +29,9 @@ export interface PlayStartedBody {
   source: ProviderName;
   externalId: string;
   snapshot: SongSnapshot;
+  /** Present when play originates from a bucket (feature 08 / SEC-17). */
+  bucketId?: string | null;
+  bucketKind?: "auto" | "custom" | null;
 }
 
 export interface PlayCompletedBody {
@@ -36,6 +39,9 @@ export interface PlayCompletedBody {
   externalId: string;
   snapshot: SongSnapshot;
   elapsedMs: number;
+  /** Present when play originates from a bucket (feature 08 / SEC-17). */
+  bucketId?: string | null;
+  bucketKind?: "auto" | "custom" | null;
 }
 
 export async function recordPlayStarted(body: PlayStartedBody, apiBase = "/api"): Promise<void> {

@@ -1,4 +1,8 @@
-import { CustomMixCreatedResponse, TasteBucketsResponse } from "@moc/contracts";
+import {
+  BucketDetailResponse,
+  CustomMixCreatedResponse,
+  TasteBucketsResponse,
+} from "@moc/contracts";
 import { fetchJson } from "../fetcher.js";
 
 /**
@@ -31,4 +35,16 @@ export function requestCustomMix(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ promptText }),
   });
+}
+
+/**
+ * GET /api/me/taste/buckets/:bucketId — returns the full bucket plus
+ * its song list sorted by score desc (API-29). Throws HttpError(404) when
+ * the bucket doesn't exist or doesn't belong to the caller.
+ */
+export function fetchBucketDetail(
+  bucketId: string,
+  apiBase = "/api",
+): Promise<BucketDetailResponse> {
+  return fetchJson(`${apiBase}/me/taste/buckets/${bucketId}`, BucketDetailResponse);
 }

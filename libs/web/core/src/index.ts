@@ -13,3 +13,4 @@ export * from "./explore/snapshot-match.js";
 export * from "./explore/explore-fetcher.js";
 export * from "./taste/polling-cadence.js";
 export * from "./taste/tasteFetcher.js";
+export * from "./taste/sort-songs.js";

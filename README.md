@@ -80,3 +80,7 @@ In production, `VITE_API_URL` is either:
 ## Stack
 
 React + Vite (PWA) · NestJS · MongoDB + Mongoose · Zod (shared contracts) · Vitest · Jest · Playwright
+
+## License
+
+[GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version as a network service, you must offer users the corresponding source.

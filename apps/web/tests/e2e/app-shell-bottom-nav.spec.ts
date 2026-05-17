@@ -1,5 +1,5 @@
 import { test, expect, mockJsonRoute, expectAccessible } from "./fixtures.js";
-import { HistoryResponse } from "@moc/contracts";
+import { HistoryResponse, TasteBucketsResponse } from "@moc/contracts";
 
 /**
  * Feature 01: App shell — router + bottom navigation.
@@ -9,14 +9,19 @@ import { HistoryResponse } from "@moc/contracts";
  * section, plus its named failure modes and viewport requirements.
  *
  * History calls fire on every Search-page mount; mocked empty so the
- * page state stays deterministic on /search visits.
+ * page state stays deterministic on /search visits. Taste profile is
+ * mocked empty too — the page itself is owned by feature taste/07,
+ * but the shell tests still need to land on /taste and want a
+ * deterministic state to screenshot.
  */
 
 const HISTORY_EMPTY = { entries: [], nextCursor: null };
+const TASTE_EMPTY = { buckets: [] };
 
 test.describe("app shell — bottom nav", () => {
   test.beforeEach(async ({ page }) => {
     await mockJsonRoute(page, /\/api\/search\/history/, HistoryResponse, HISTORY_EMPTY);
+    await mockJsonRoute(page, /\/api\/me\/taste\/profile/, TasteBucketsResponse, TASTE_EMPTY);
   });
 
   // Step 1 — anonymous (or authed) user opens / and lands on Search.
@@ -54,14 +59,16 @@ test.describe("app shell — bottom nav", () => {
     await expectAccessible(page);
   });
 
-  // Step 3 — taps Taste → "Taste — coming soon" + Taste active.
+  // Step 3 — taps Taste → empty-state Taste content (taste/07 owns the
+  // surface; here we just confirm the route lands and the tab becomes
+  // active).
   test("tapping Taste activates the Taste tab", async ({ page }) => {
     await page.goto("/explore");
     await page
       .getByRole("navigation", { name: "Main navigation" })
       .getByRole("link", { name: "Taste" })
       .click();
-    await expect(page.getByText("Taste — coming soon")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Build your Taste" })).toBeVisible();
     await expect(
       page
         .getByRole("navigation", { name: "Main navigation" })

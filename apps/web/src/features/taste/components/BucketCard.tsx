@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { TasteBucket } from "@moc/contracts";
 import { Button } from "@moc/design-system";
+import { gradientFor } from "./bucket-gradient.js";
 
 interface BucketCardProps {
   bucket: TasteBucket;
@@ -20,12 +22,21 @@ export function BucketCard({ bucket }: BucketCardProps): JSX.Element {
 }
 
 function ReadyCard({ bucket }: { bucket: TasteBucket }): JSX.Element {
+  const navigate = useNavigate();
   return (
     <div className="flex flex-col gap-2" role="listitem">
-      <Cover bucket={bucket} />
-      <div className="text-md font-semibold leading-tight line-clamp-2 text-text">
-        {bucket.name}
-      </div>
+      <Button
+        variant="ghost"
+        size="md"
+        onClick={() => navigate(`/taste/buckets/${bucket.id}`)}
+        aria-label={`Open bucket ${bucket.name}`}
+        className="flex flex-col gap-2 p-0 hover:bg-transparent w-full text-left items-stretch"
+      >
+        <Cover bucket={bucket} />
+        <span className="text-md font-semibold leading-tight line-clamp-2 text-text">
+          {bucket.name}
+        </span>
+      </Button>
     </div>
   );
 }
@@ -113,24 +124,4 @@ function Cover({ bucket }: { bucket: TasteBucket }): JSX.Element {
       }}
     />
   );
-}
-
-/**
- * Deterministic CSS gradient keyed by the bucket id hash. Same input
- * always produces the same gradient so a reload doesn't reshuffle the
- * grid's color palette. Five gradient families mirror the mockup.
- */
-function gradientFor(bucketId: string): string {
-  const PALETTE = [
-    "linear-gradient(135deg, oklch(0.32 0.12 270), oklch(0.18 0.08 320))",
-    "linear-gradient(135deg, oklch(0.55 0.18 320), oklch(0.35 0.12 340))",
-    "linear-gradient(135deg, oklch(0.45 0.10 60), oklch(0.30 0.08 30))",
-    "linear-gradient(135deg, oklch(0.40 0.12 200), oklch(0.25 0.08 230))",
-    "linear-gradient(135deg, oklch(0.50 0.10 130), oklch(0.30 0.07 100))",
-  ];
-  let h = 0;
-  for (let i = 0; i < bucketId.length; i++) {
-    h = (h * 31 + bucketId.charCodeAt(i)) | 0;
-  }
-  return PALETTE[Math.abs(h) % PALETTE.length]!;
 }

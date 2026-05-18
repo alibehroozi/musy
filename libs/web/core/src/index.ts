@@ -12,4 +12,6 @@ export * from "./explore/direction-from-drag.js";
 export * from "./explore/snapshot-match.js";
 export * from "./explore/explore-fetcher.js";
 export * from "./taste/polling-cadence.js";
+export * from "./taste/sort-songs.js";
+export * from "./taste/song-key.js";
 export * from "./taste/tasteFetcher.js";

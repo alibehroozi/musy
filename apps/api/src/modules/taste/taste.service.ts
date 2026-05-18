@@ -1,5 +1,10 @@
-import { Inject, Injectable } from "@nestjs/common";
-import type { TasteBucket, TasteBucketsResponse } from "@moc/contracts";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type {
+  BucketDetailResponse,
+  BucketDetailSong,
+  TasteBucket,
+  TasteBucketsResponse,
+} from "@moc/contracts";
 import { BucketsRepository } from "./buckets.repository.js";
 import { BucketSongScoresRepository } from "./bucket-song-scores.repository.js";
 
@@ -59,5 +64,47 @@ export class TasteService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * API-29 / SEC-18: bucket detail by id, scoped to the caller's userId.
+   *
+   * The bucket lookup uses a `(userId, bucketId)` filter so a row owned
+   * by another user never matches — collapses to NotFound, which the
+   * AllExceptionsFilter renders as 404 + ErrorResponse with a stable
+   * body (no oracle distinguishing "absent" from "owned-by-other").
+   *
+   * Only after the bucket lookup succeeds does the song-list join fire;
+   * a missed lookup short-circuits before any `bucket_song_scores` read,
+   * so a probing client cannot trigger that read against an unscoped id.
+   *
+   * `songs` is server-sorted by `score` desc; ties on `score` break by
+   * `lastUpdatedAt` desc (more recently scored first), then by
+   * lexicographically ascending `songKey` so the order is deterministic
+   * across reloads (LOGIC-40 owns the comparator; this mirrors it).
+   */
+  async getBucketDetail(userId: string, bucketId: string): Promise<BucketDetailResponse> {
+    const bucket = await this.buckets.findByIdForUser(userId, bucketId);
+    if (bucket === null) {
+      throw new NotFoundException("Bucket not found");
+    }
+    const coverArtworkUrl = await this.computeCoverArtworkUrl(userId, bucketId);
+    const rows = await this.bucketScores.findForUserBucket(userId, bucketId);
+    const sorted = [...rows].sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      const aTime = a.lastUpdatedAt instanceof Date ? a.lastUpdatedAt.getTime() : 0;
+      const bTime = b.lastUpdatedAt instanceof Date ? b.lastUpdatedAt.getTime() : 0;
+      if (aTime !== bTime) return bTime - aTime;
+      return a.songKey < b.songKey ? -1 : a.songKey > b.songKey ? 1 : 0;
+    });
+    const songs: BucketDetailSong[] = sorted.map((row) => ({
+      songKey: row.songKey,
+      snapshot: row.snapshot,
+      score: row.score,
+    }));
+    return {
+      bucket: { ...bucket, coverArtworkUrl },
+      songs,
+    };
   }
 }

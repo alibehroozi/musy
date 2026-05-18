@@ -5,6 +5,7 @@ import { PlayerProvider } from "./features/player/PlayerProvider.js";
 import { MiniPlayerHost } from "./features/player/MiniPlayerHost.js";
 import { NowPlayingOverlay } from "./features/player/NowPlayingOverlay.js";
 import { ExploreTopCardProvider } from "./features/explore/ExploreTopCardContext.js";
+import { PwaController } from "./features/pwa/PwaController.js";
 
 const NAV_TABS: BottomNavTab[] = [
   { id: "explore", label: "Explore", icon: "compass", href: "/explore" },
@@ -27,6 +28,7 @@ export function App(): JSX.Element {
           <BottomNav tabs={NAV_TABS} activePath={location.pathname} onNavigate={navigate} />
         </div>
         <NowPlayingOverlay />
+        <PwaController />
       </PlayerProvider>
     </ExploreTopCardProvider>
   );

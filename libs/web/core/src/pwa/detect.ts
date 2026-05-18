@@ -66,13 +66,16 @@ export function detectPwaPlatform({ userAgent, isStandalone }: PwaPlatformInputs
  *
  * Lives next to `detectPwaPlatform` for convenience but accepts the
  * `window` it reads — keeps the lib's "no module-scope globals" rule.
- * Returns `false` when the inputs aren't present (jsdom, SSR).
+ * `navigator` is read via an `unknown` cast because `navigator.standalone`
+ * is iOS-only and not in `lib.dom`; the helper hides that quirk from
+ * its callers. Returns `false` when the inputs aren't present (jsdom, SSR).
  */
 export function isInStandaloneMode(win: {
   matchMedia?: (q: string) => { matches: boolean };
-  navigator?: { standalone?: boolean };
+  navigator?: unknown;
 }): boolean {
   const mediaStandalone = win.matchMedia?.("(display-mode: standalone)")?.matches ?? false;
-  const iosStandalone = win.navigator?.standalone === true;
+  const iosNav = win.navigator as { standalone?: boolean } | undefined;
+  const iosStandalone = iosNav?.standalone === true;
   return mediaStandalone || iosStandalone;
 }

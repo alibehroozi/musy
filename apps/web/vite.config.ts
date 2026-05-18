@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
+import { pwaManifest } from "./manifest.config.js";
 
 export default defineConfig(({ mode }) => {
   // Load env from apps/web/.env.local + .env. Empty prefix loads all keys
@@ -25,31 +26,7 @@ export default defineConfig(({ mode }) => {
         registerType: "autoUpdate",
         injectRegister: false,
         includeAssets: ["favicon.ico", "icon-source.svg", "apple-touch-icon-180x180.png"],
-        manifest: {
-          id: "/",
-          name: "musy",
-          short_name: "musy",
-          description: "Music app with AI-powered taste processing",
-          theme_color: "#000000",
-          background_color: "#000000",
-          display: "standalone",
-          display_override: ["standalone"],
-          start_url: "/",
-          scope: "/",
-          orientation: "portrait",
-          categories: ["music", "entertainment", "lifestyle"],
-          icons: [
-            { src: "pwa-64x64.png", sizes: "64x64", type: "image/png" },
-            { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
-            { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },
-            {
-              src: "maskable-icon-512x512.png",
-              sizes: "512x512",
-              type: "image/png",
-              purpose: "maskable",
-            },
-          ],
-        },
+        manifest: pwaManifest,
       }),
     ],
     resolve: {

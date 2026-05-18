@@ -17,17 +17,38 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
+        // The SW installs and immediately claims clients (skipWaiting +
+        // clientsClaim are workbox defaults under autoUpdate). The
+        // PwaController in apps/web/src/features/pwa wires the
+        // user-facing update banner + visibility-change auto-apply on
+        // top of useRegisterSW from "virtual:pwa-register/react".
         registerType: "autoUpdate",
-        includeAssets: ["favicon.ico"],
+        injectRegister: false,
+        includeAssets: ["favicon.ico", "icon-source.svg", "apple-touch-icon-180x180.png"],
         manifest: {
+          id: "/",
           name: "musy",
           short_name: "musy",
           description: "Music app with AI-powered taste processing",
-          theme_color: "#0f0f10",
-          background_color: "#0f0f10",
+          theme_color: "#000000",
+          background_color: "#000000",
           display: "standalone",
+          display_override: ["standalone"],
           start_url: "/",
-          icons: [],
+          scope: "/",
+          orientation: "portrait",
+          categories: ["music", "entertainment", "lifestyle"],
+          icons: [
+            { src: "pwa-64x64.png", sizes: "64x64", type: "image/png" },
+            { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
+            { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },
+            {
+              src: "maskable-icon-512x512.png",
+              sizes: "512x512",
+              type: "image/png",
+              purpose: "maskable",
+            },
+          ],
         },
       }),
     ],

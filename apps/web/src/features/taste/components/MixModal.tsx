@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Input, Modal, Typography } from "@moc/design-system";
-import { HttpError, requestCustomMix } from "@moc/web-core";
+import { HttpError } from "@moc/web-core";
+import { requestCustomMix } from "../api.js";
 
 interface MixModalProps {
   open: boolean;

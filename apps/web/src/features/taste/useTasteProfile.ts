@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TasteBucketsResponse } from "@moc/contracts";
-import { fetchTasteProfile, nextPollDelayMs } from "@moc/web-core";
+import { nextPollDelayMs } from "@moc/web-core";
+import { fetchTasteProfile } from "./api.js";
 
 type ProfileState =
   | { status: "loading" }

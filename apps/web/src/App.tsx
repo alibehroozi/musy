@@ -23,7 +23,20 @@ export function App(): JSX.Element {
   return (
     <PlayerProvider>
       <ExploreTopCardProvider>
-        <div className="fixed inset-0 flex flex-col overflow-hidden">
+        {/* BROWSER-09 — iOS PWA standalone with viewport-fit=cover lets the
+            OS clock / notch overlay web content. paddingTop reserves space
+            below the status bar; left/right cover landscape notches. No
+            bottom inset on the wrapper — BottomNav owns env(safe-area-
+            inset-bottom) so the nav stays stuck to the viewport bottom. */}
+        <div
+          data-testid="app-shell"
+          className="fixed inset-0 flex flex-col overflow-hidden"
+          style={{
+            paddingTop: "env(safe-area-inset-top)",
+            paddingLeft: "env(safe-area-inset-left)",
+            paddingRight: "env(safe-area-inset-right)",
+          }}
+        >
           <div className="flex-1 overflow-y-auto">
             <AppRoutes />
           </div>

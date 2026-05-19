@@ -37,10 +37,8 @@ export function ExplorePage(): JSX.Element {
   const top = items[0] ?? null;
   const { getCachedStreamUrl } = useTopCardPreview(items);
 
-  // UI-31: live items ref so the Media Session action handler (a stable
-  // closure registered via registerMediaOverrides) can read the
-  // next-in-queue snapshot synchronously without re-registering on every
-  // queue change.
+  // Live items ref so the on-screen ✕ / ♥ buttons' advance() callback
+  // reads the latest items without being re-bound on every queue change.
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -73,13 +71,10 @@ export function ExplorePage(): JSX.Element {
 
   const onLike = useCallback(() => advance("right"), [advance]);
   const onPass = useCallback(() => advance("left"), [advance]);
-
-  // Wire OS media-session next/prev to like/pass while Explore is mounted.
-  const { registerMediaOverrides } = usePlayer();
-  useEffect(() => {
-    const cleanup = registerMediaOverrides({ onNext: onLike, onPrev: onPass });
-    return cleanup;
-  }, [registerMediaOverrides, onLike, onPass]);
+  // UI-40: OS Media Session next/prev are wired by the top-level
+  // ExploreMediaBridge component (mounted in App), NOT by ExplorePage —
+  // so the lock-screen controls keep advancing the Explore queue even
+  // after the user navigates away to another tab.
 
   // UI-30: the deck never advances on engine "failed". A previous version
   // of this component scheduled a 5-second `swipe("left")` whenever the

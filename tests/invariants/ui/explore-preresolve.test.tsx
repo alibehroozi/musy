@@ -605,10 +605,11 @@ describe("UI-22: near-end-of-track refresh of the next-in-queue cached URL", () 
 
     renderAuthedApp();
     await screen.findByText("Track A");
-    // Pre-resolve fires for both B and C (PRE_RESOLVE_AHEAD=5).
+    // Pre-resolve fires only for the immediately-next card (PRE_RESOLVE_AHEAD=1).
+    // C is resolved later — either when it becomes items[1] after the swipe
+    // or via the UI-22 near-end refresh on B.
     await waitFor(() => {
       expect(resolveCallCounts[KEY_B] ?? 0).toBe(1);
-      expect(resolveCallCounts[KEY_C] ?? 0).toBe(1);
     });
 
     // Phase 1 — A is top, B is next. Near-end fires refresh on B.

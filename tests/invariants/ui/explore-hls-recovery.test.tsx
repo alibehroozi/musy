@@ -5,7 +5,7 @@
 // Invariants verified here are listed in INVARIANTS.md under UI-39.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, cleanup, act } from "@testing-library/react";
+import { render, screen, waitFor, cleanup, act, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter } from "react-router-dom";
 
@@ -346,6 +346,53 @@ describe("UI-39: hls.js fatal-error propagation as audio 'error' event", () => {
       // Give any spurious effects a moment to fire.
       await new Promise((r) => setTimeout(r, 60));
       expect(resolveCallCounts[KEY_A]).toBe(1);
+    },
+  );
+
+  it(
+    "the pre-resolve cache and UI-21 retry latch survive ExplorePage unmount/remount: " +
+      "navigating away to /taste and back to /explore does NOT re-fire /play/resolve " +
+      "for snapshots already cached (the user-reported tab-switch re-resolve bug)",
+    async () => {
+      const KEY_A = snapshotKey(ITEM_A);
+      const KEY_B = snapshotKey(ITEM_B);
+      const { resolveCallCounts } = installFetchMock({
+        resolveScripts: {
+          [KEY_A]: [{ streamUrl: "https://stream/A-progressive.mp3" }],
+          [KEY_B]: [{ streamUrl: "https://stream/B-progressive.mp3" }],
+        },
+      });
+
+      renderAuthedApp();
+
+      // Initial mount: A is resolved via playPreview, B is pre-resolved once.
+      await screen.findByText("Track A");
+      await waitFor(() => {
+        expect(resolveCallCounts[KEY_A]).toBe(1);
+        expect(resolveCallCounts[KEY_B]).toBe(1);
+      });
+
+      // Navigate to /taste — ExplorePage unmounts. (Track A's title stays in
+      // the DOM via MiniPlayerHost — the engine still has it loaded — so we
+      // assert ExplorePage's testid is gone instead.)
+      await act(async () => {
+        fireEvent.click(screen.getByRole("link", { name: /taste/i }));
+      });
+      await waitFor(() => expect(screen.queryByTestId("explore-page")).toBeNull());
+
+      // Navigate back to /explore — ExplorePage re-mounts. The provider-scoped
+      // cache means resolveCallCounts must NOT increment for A or B.
+      await act(async () => {
+        fireEvent.click(screen.getByRole("link", { name: /explore/i }));
+      });
+      await waitFor(() => expect(screen.queryByTestId("explore-page")).not.toBeNull());
+
+      // Give any spurious effects a moment to fire.
+      await new Promise((r) => setTimeout(r, 80));
+
+      // Hard assertion: no extra resolves fired across the remount.
+      expect(resolveCallCounts[KEY_A]).toBe(1);
+      expect(resolveCallCounts[KEY_B]).toBe(1);
     },
   );
 

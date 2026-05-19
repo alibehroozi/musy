@@ -11,6 +11,13 @@ export default defineConfig({
       "@moc/api-core": path.resolve(__dirname, "libs/api/core/src/index.ts"),
       "@moc/web-core": path.resolve(__dirname, "libs/web/core/src/index.ts"),
       "@moc/design-system": path.resolve(__dirname, "libs/web/design-system/src/index.ts"),
+      // vite-plugin-pwa's virtual:* module only resolves inside Vite.
+      // The stub keeps anything transitively importing App.tsx
+      // loadable under vitest's resolver. See file header for details.
+      "virtual:pwa-register/react": path.resolve(
+        __dirname,
+        "tests/invariants/_helpers/virtual-pwa-register-react.ts",
+      ),
     },
   },
   test: {

@@ -31,16 +31,14 @@ function writeOnboardedFlag(): void {
 export function ExplorePage(): JSX.Element {
   const { state: authState } = useAuth();
   const { items, phase, status, swipe, retry } = useExploreQueue();
-  const { engineState, togglePlay, loadPreviewSync } = usePlayer();
+  const { engineState, togglePlay, loadPreview } = usePlayer();
   const [onboarded, setOnboarded] = useState(() => readOnboardedFlag());
 
   const top = items[0] ?? null;
   const { getCachedStreamUrl } = useTopCardPreview(items);
 
-  // UI-31: live items ref so the Media Session action handler (a stable
-  // closure registered via registerMediaOverrides) can read the
-  // next-in-queue snapshot synchronously without re-registering on every
-  // queue change.
+  // Live items ref so the on-screen ✕ / ♥ buttons' advance() callback
+  // reads the latest items without being re-bound on every queue change.
   const itemsRef = useRef(items);
   itemsRef.current = items;
 
@@ -49,13 +47,13 @@ export function ExplorePage(): JSX.Element {
     setOnboarded(true);
   }, []);
 
-  // UI-31: before advancing the queue (which is async via setItems →
-  // render → effect → loadPreview → 250ms fade), synchronously load the
-  // next track via loadPreviewSync so iOS Safari sees engine.load (and
-  // therefore audio.play()) happen inside the Media Session handler's
-  // user-gesture window. Touch-driven swipes hit this same path; they
-  // lose the 250ms crossfade in exchange for an instant track change,
-  // which is desirable for a deliberate swipe action anyway.
+  // UI-29 + UI-31: before advancing the queue (which is async via
+  // setItems → render → effect → loadPreview), synchronously load the
+  // next track via `loadPreview`. `loadPreview` is now itself synchronous
+  // (no RAF, no fade), so audio.src = newUrl + audio.play() happens
+  // within the same microtask as the click — the user gets immediate
+  // silence on the old track and the new track starts as soon as the
+  // resource is ready.
   const advance = useCallback(
     (direction: "right" | "left") => {
       const list = itemsRef.current;
@@ -63,23 +61,20 @@ export function ExplorePage(): JSX.Element {
       if (nextSnap !== undefined) {
         const cached = getCachedStreamUrl(nextSnap);
         if (cached !== null) {
-          loadPreviewSync(nextSnap, cached);
+          loadPreview(nextSnap, cached);
         }
       }
       swipe(direction);
     },
-    [getCachedStreamUrl, loadPreviewSync, swipe],
+    [getCachedStreamUrl, loadPreview, swipe],
   );
 
   const onLike = useCallback(() => advance("right"), [advance]);
   const onPass = useCallback(() => advance("left"), [advance]);
-
-  // Wire OS media-session next/prev to like/pass while Explore is mounted.
-  const { registerMediaOverrides } = usePlayer();
-  useEffect(() => {
-    const cleanup = registerMediaOverrides({ onNext: onLike, onPrev: onPass });
-    return cleanup;
-  }, [registerMediaOverrides, onLike, onPass]);
+  // UI-40: OS Media Session next/prev are wired by the top-level
+  // ExploreMediaBridge component (mounted in App), NOT by ExplorePage —
+  // so the lock-screen controls keep advancing the Explore queue even
+  // after the user navigates away to another tab.
 
   // UI-30: the deck never advances on engine "failed". A previous version
   // of this component scheduled a 5-second `swipe("left")` whenever the

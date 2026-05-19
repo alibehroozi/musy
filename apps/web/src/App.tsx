@@ -5,6 +5,7 @@ import { PlayerProvider } from "./features/player/PlayerProvider.js";
 import { MiniPlayerHost } from "./features/player/MiniPlayerHost.js";
 import { NowPlayingOverlay } from "./features/player/NowPlayingOverlay.js";
 import { ExploreTopCardProvider } from "./features/explore/ExploreTopCardContext.js";
+import { ExploreMediaBridge } from "./features/explore/ExploreMediaBridge.js";
 import { PwaController } from "./features/pwa/PwaController.js";
 
 const NAV_TABS: BottomNavTab[] = [
@@ -13,13 +14,15 @@ const NAV_TABS: BottomNavTab[] = [
   { id: "search", label: "Search", icon: "search", href: "/search" },
 ];
 
+// PlayerProvider wraps ExploreTopCardProvider so ExploreMediaBridge (UI-40)
+// can consume both contexts. The two providers are otherwise independent.
 export function App(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
 
   return (
-    <ExploreTopCardProvider>
-      <PlayerProvider>
+    <PlayerProvider>
+      <ExploreTopCardProvider>
         <div className="fixed inset-0 flex flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto">
             <AppRoutes />
@@ -28,8 +31,9 @@ export function App(): JSX.Element {
           <BottomNav tabs={NAV_TABS} activePath={location.pathname} onNavigate={navigate} />
         </div>
         <NowPlayingOverlay />
+        <ExploreMediaBridge />
         <PwaController />
-      </PlayerProvider>
-    </ExploreTopCardProvider>
+      </ExploreTopCardProvider>
+    </PlayerProvider>
   );
 }

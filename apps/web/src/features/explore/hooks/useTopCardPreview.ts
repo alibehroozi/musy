@@ -2,10 +2,15 @@ import { useCallback, useEffect, useRef } from "react";
 import { snapshotsMatch, playableHandoffDecision } from "@moc/web-core";
 import type { SongSnapshot } from "@moc/contracts";
 import { usePlayer } from "../../player/usePlayer.js";
-import { useExploreTopCard } from "../ExploreTopCardContext.js";
+import { useExploreContext, useExploreTopCard } from "../ExploreTopCardContext.js";
 import { resolveStream } from "../../player/api.js";
 
-const PRE_RESOLVE_AHEAD = 5;
+// Only the immediately-next card is pre-resolved. The previous value (5)
+// fired five /play/resolve requests on every fresh ExplorePage mount,
+// which made navigating away and back to /explore expensive on a cold
+// per-mount cache. With the cache now provider-scoped (survives mounts)
+// and the lookahead at 1, a cold mount fires at most one pre-resolve.
+const PRE_RESOLVE_AHEAD = 1;
 const HANDOFF_LOOKAHEAD_MS = 5_000;
 
 /**
@@ -58,36 +63,40 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
   const next = items[1] ?? null;
   const { playPreview, loadPreview, pause, engineState } = usePlayer();
   const { setTopCard } = useExploreTopCard();
+  // Provider-scoped caches — survive ExplorePage mount/unmount so a
+  // tab-switch away from /explore and back does NOT re-fire /play/resolve
+  // for snapshots already cached, and UI-21's retry latch is not
+  // re-armed for snapshots that already burned their single retry.
+  const { caches } = useExploreContext();
+  const resolveCache = caches.resolve;
+  const resolvingKeys = caches.inFlight;
+  const retriedKeys = caches.retried;
+  const refreshedPairs = caches.handoffRefreshed;
 
   useEffect(() => {
     setTopCard(top);
     return () => setTopCard(null);
   }, [top, setTopCard]);
 
-  // keyed by snapshotKey → resolved streamUrl (null = unresolvable)
-  const resolveCache = useRef<Map<string, string | null>>(new Map());
-  // tracks in-flight resolves so we don't fire duplicates
-  const resolvingKeys = useRef<Set<string>>(new Set());
-
   // Pre-resolve cards [1..PRE_RESOLVE_AHEAD] ahead of the top card.
   useEffect(() => {
     const ahead = items.slice(1, 1 + PRE_RESOLVE_AHEAD);
     for (const snap of ahead) {
       const k = snapshotKey(snap);
-      if (resolveCache.current.has(k) || resolvingKeys.current.has(k)) continue;
-      resolvingKeys.current.add(k);
+      if (resolveCache.has(k) || resolvingKeys.has(k)) continue;
+      resolvingKeys.add(k);
       resolveStream({ snapshot: snap })
         .then((res) => {
-          resolveCache.current.set(k, res.streamUrl);
+          resolveCache.set(k, res.streamUrl);
         })
         .catch(() => {
           // Leave absent — playPreview will retry via /play/resolve if needed.
         })
         .finally(() => {
-          resolvingKeys.current.delete(k);
+          resolvingKeys.delete(k);
         });
     }
-  }, [items]);
+  }, [items, resolveCache, resolvingKeys]);
 
   const currentSnapshotRef = useRef<SongSnapshot | null>(null);
   currentSnapshotRef.current = engineState.currentTrack?.snapshot ?? null;
@@ -102,11 +111,12 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
 
   const pendingPreviewRef = useRef<SongSnapshot | null>(null);
 
-  // UI-21 latch: snapshot keys we've already retried this mount, so a
-  // second error doesn't hot-loop. Once a snapshot reaches "playing", we
-  // also add it so a late mid-stream error doesn't trigger a retry on a
-  // healthy stream.
-  const retriedKeysRef = useRef<Set<string>>(new Set());
+  // UI-21 latch: snapshot keys we've already retried this page session, so
+  // a second error doesn't hot-loop AND a remount of ExplorePage doesn't
+  // re-arm the retry. Once a snapshot reaches "playing", we also add it
+  // so a late mid-stream error doesn't trigger a retry on a healthy
+  // stream. Sourced from ExploreTopCardContext's `caches.retried` so the
+  // set survives ExplorePage unmount/remount (see UI-21).
 
   useEffect(() => {
     if (top === null) {
@@ -125,13 +135,13 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
     if (snapshotsMatch(pendingPreviewRef.current, top)) return;
     pendingPreviewRef.current = top;
 
-    const cached = resolveCache.current.get(snapshotKey(top));
+    const cached = resolveCache.get(snapshotKey(top));
     if (cached !== undefined && cached !== null) {
       loadPreview(top, cached);
     } else {
       playPreview(top);
     }
-  }, [top, playPreview, loadPreview, pause]);
+  }, [top, playPreview, loadPreview, pause, resolveCache]);
 
   // UI-21 + UI-25 + UI-30: on any engine "failed" for the current top
   // card — regardless of whether it was loaded via the cache fast-path
@@ -146,9 +156,9 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
     const current = engineState.currentTrack?.snapshot;
     if (!current) return;
     const key = snapshotKey(current);
-    if (retriedKeysRef.current.has(key)) return;
-    retriedKeysRef.current.add(key);
-    resolveCache.current.delete(key);
+    if (retriedKeys.has(key)) return;
+    retriedKeys.add(key);
+    resolveCache.delete(key);
 
     void resolveStream({ snapshot: current })
       .then((res) => {
@@ -158,14 +168,14 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
         // the stale snapshot's audio. Silently discard.
         if (!snapshotsMatch(topRef.current, current)) return;
         if (res.streamUrl === null) return;
-        resolveCache.current.set(key, res.streamUrl);
+        resolveCache.set(key, res.streamUrl);
         loadPreview(current, res.streamUrl);
       })
       .catch(() => {
         // Silent — engine stays in "failed", card stays on the deck per
         // UI-30 until the user swipes.
       });
-  }, [engineState.status, engineState.currentTrack, loadPreview]);
+  }, [engineState.status, engineState.currentTrack, loadPreview, retriedKeys, resolveCache]);
 
   // Once a snapshot reaches "playing", lock its retry latch so a late
   // mid-stream error (network drop, decode glitch) does not re-trigger
@@ -174,16 +184,16 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
     if (engineState.status !== "playing") return;
     const current = engineState.currentTrack?.snapshot;
     if (!current) return;
-    retriedKeysRef.current.add(snapshotKey(current));
-  }, [engineState.status, engineState.currentTrack]);
+    retriedKeys.add(snapshotKey(current));
+  }, [engineState.status, engineState.currentTrack, retriedKeys]);
 
   // UI-22: once the current track is within HANDOFF_LOOKAHEAD_MS of its
   // duration (LOGIC-23 flips true), refresh the next-in-queue's cached
-  // URL via /play/resolve. Latched per (current, next) pair: any change
-  // to either snapshot resets the latch so a subsequent near-end fires a
-  // fresh refresh. Failures are silently swallowed — UI-21 catches the
-  // fallthrough if the still-stale URL is then played.
-  const refreshedPairsRef = useRef<Set<string>>(new Set());
+  // URL via /play/resolve. Latched per (current, next) pair using the
+  // provider-scoped set — survives ExplorePage unmount/remount so
+  // navigating away and back doesn't re-fire a refresh that already
+  // burned its turn. Failures are silently swallowed — UI-21 catches
+  // the fallthrough if the still-stale URL is then played.
   useEffect(() => {
     if (engineState.status !== "playing") return;
     const current = engineState.currentTrack?.snapshot;
@@ -200,14 +210,14 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
     });
     if (!flip) return;
     const pairKey = `${snapshotKey(current)}→${snapshotKey(next)}`;
-    if (refreshedPairsRef.current.has(pairKey)) return;
-    refreshedPairsRef.current.add(pairKey);
+    if (refreshedPairs.has(pairKey)) return;
+    refreshedPairs.add(pairKey);
 
     const nextKey = snapshotKey(next);
     void resolveStream({ snapshot: next })
       .then((res) => {
         if (res.streamUrl === null) return;
-        resolveCache.current.set(nextKey, res.streamUrl);
+        resolveCache.set(nextKey, res.streamUrl);
       })
       .catch(() => {
         // Silent — UI-21 catches any 403 on the actual handoff.
@@ -219,14 +229,21 @@ export function useTopCardPreview(items: SongSnapshot[]): UseTopCardPreviewResul
     engineState.currentTrack,
     engineState.progressMs,
     engineState.durationMs,
+    resolveCache,
+    refreshedPairs,
   ]);
 
-  // UI-31: expose the resolve cache to ExplorePage's sync Media Session
-  // handlers. resolveCache is a ref so callers always see the latest
-  // value without needing to be re-rendered on each entry.
-  const getCachedStreamUrl = useCallback((snap: SongSnapshot): string | null => {
-    return resolveCache.current.get(snapshotKey(snap)) ?? null;
-  }, []);
+  // UI-31: expose the resolve cache to ExplorePage's on-screen ✕ / ♥
+  // buttons (the OS Media Session next/prev handlers read the same
+  // cache directly via `ExploreMediaBridge`, see UI-40). The cache
+  // identity is stable for the lifetime of ExploreTopCardProvider, so
+  // callers can rely on this closure to see the latest entries.
+  const getCachedStreamUrl = useCallback(
+    (snap: SongSnapshot): string | null => {
+      return resolveCache.get(snapshotKey(snap)) ?? null;
+    },
+    [resolveCache],
+  );
 
   return { getCachedStreamUrl };
 }

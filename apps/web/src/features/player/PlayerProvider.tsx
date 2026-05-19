@@ -54,27 +54,17 @@ export interface PlayerContextValue {
   /**
    * Load a snapshot directly from a pre-resolved stream URL, bypassing the
    * /play/resolve HTTP call. Same no-recording contract as playPreview.
-   * Fades out the current audio before loading the new track.
+   * Synchronously calls `engine.load` (no fade, no RAF gating per UI-29)
+   * so OS Media Session handlers reach `audio.play()` within their
+   * gesture window (UI-31).
    */
   loadPreview: (snapshot: SongSnapshot, streamUrl: string) => void;
   /**
-   * UI-31: Same as `loadPreview` but skips the 250 ms volume-dip crossfade
-   * and calls `engine.load(snapshot, streamUrl)` synchronously. Required
-   * from inside OS Media Session action handlers so iOS Safari sees the
-   * `audio.src = url; audio.play()` happen in the synchronous portion of
-   * the user-gesture window — any async hop (fade `.then()`, React state
-   * update, useEffect) loses the gesture context and `audio.play()` is
-   * rejected, leaving the source pinned to the previous track until the
-   * user unlocks. Touch-driven swipes inside the visible page keep using
-   * `loadPreview` with the crossfade.
-   */
-  loadPreviewSync: (snapshot: SongSnapshot, streamUrl: string) => void;
-  /**
    * UI-32 (Bad Remix): rotates the underlying stream URL for the currently
-   * loaded track without clearing `currentSource`. Same snapshot identity,
-   * same fade-in behaviour as `loadPreview`, but the now-playing overlay
-   * stays mounted because `currentSource` is preserved (the overlay's
-   * visibility check requires it to be non-null).
+   * loaded track without clearing `currentSource`. Same snapshot identity
+   * and synchronous-load semantics as `loadPreview`, but the now-playing
+   * overlay stays mounted because `currentSource` is preserved (the
+   * overlay's visibility check requires it to be non-null).
    */
   swapStream: (snapshot: SongSnapshot, streamUrl: string) => void;
   togglePlay: () => void;
@@ -121,7 +111,6 @@ const NOOP_CONTEXT: PlayerContextValue = {
   playSnapshot: () => {},
   playPreview: () => {},
   loadPreview: () => {},
-  loadPreviewSync: () => {},
   swapStream: () => {},
   togglePlay: () => {},
   pause: () => {},
@@ -144,8 +133,6 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
   // Each playPreview/loadPreview call increments this; resolve callbacks
   // check it so stale results from swiped-past cards are discarded.
   const previewGenRef = useRef(0);
-  // requestAnimationFrame handle for the volume-fade animation.
-  const fadeRafRef = useRef<number | null>(null);
   const { state: authState } = useAuth();
 
   const [engineState, setEngineState] = useState<EngineState>({
@@ -180,6 +167,18 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
         // Safari supports HLS natively via the plain src assignment path below.
         if (/\.m3u8(\?|$)/.test(url) && Hls.isSupported()) {
           const hls = new Hls();
+          // UI-39: hls.js intercepts the audio element's loading lifecycle,
+          // so a 403 on the m3u8 manifest (or any other fatal HLS pipeline
+          // failure) never fires the native "error" event on <audio>. We
+          // promote fatal hls.js errors into a synthetic "error" event so
+          // AudioEngine._handleError fires and UI-21's retry path kicks in.
+          // Non-fatal errors are hls.js' own concern (auto-recovery) and
+          // must NOT be propagated.
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) {
+              audio.dispatchEvent(new Event("error"));
+            }
+          });
           hls.loadSource(url);
           hls.attachMedia(audio);
           hlsRef.current = hls;
@@ -209,10 +208,6 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
 
     return () => {
       offState();
-      if (fadeRafRef.current !== null) {
-        cancelAnimationFrame(fadeRafRef.current);
-        fadeRafRef.current = null;
-      }
       audio.pause();
       audio.src = "";
       hlsRef.current?.destroy();
@@ -284,103 +279,53 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     [isAuthed],
   );
 
-  // Animate audio.volume from its current level to 0 over durationMs.
-  // Skipped when no audio is meaningfully loaded (src empty or already ended)
-  // OR when the page is hidden — RAF is suspended on iOS while the screen is
-  // locked and in any backgrounded tab, so a fade gated on RAF would stall
-  // every dependent engine.load call until the page becomes visible again
-  // (UI-29). The fade is a visible-page enhancement; skipping it when nobody
-  // can hear it is a no-op cost.
-  // Cancels any in-flight fade so concurrent calls don't fight each other.
-  const fadeOutAudio = useCallback((durationMs: number): Promise<void> => {
-    return new Promise((resolve) => {
-      const audio = audioRef.current;
-      const pageHidden = typeof document !== "undefined" && document.hidden;
-      if (!audio || audio.src === "" || audio.ended || audio.volume === 0 || pageHidden) {
-        if (audio) audio.volume = 1;
-        resolve();
-        return;
-      }
-      if (fadeRafRef.current !== null) {
-        cancelAnimationFrame(fadeRafRef.current);
-        fadeRafRef.current = null;
-      }
-      const startVolume = audio.volume;
-      const startTime = performance.now();
-      const step = (now: number): void => {
-        const a = audioRef.current;
-        if (!a) {
-          resolve();
-          return;
-        }
-        const elapsed = now - startTime;
-        // Clamp to [0,1]: RAF timestamps can be slightly earlier than the
-        // performance.now() captured at startTime, making elapsed negative
-        // on the first frame and producing volume > 1 without the lower clamp.
-        const progress = Math.max(0, Math.min(1, elapsed / durationMs));
-        a.volume = startVolume * (1 - progress);
-        if (progress < 1) {
-          fadeRafRef.current = requestAnimationFrame(step);
-        } else {
-          a.volume = 0;
-          fadeRafRef.current = null;
-          resolve();
-        }
-      };
-      fadeRafRef.current = requestAnimationFrame(step);
-    });
-  }, []);
-
-  const playPreview = useCallback(
-    (snapshot: SongSnapshot) => {
-      const engine = engineRef.current;
-      if (!engine) return;
-      const gen = ++previewGenRef.current;
-
-      void fadeOutAudio(250).then(async () => {
-        if (previewGenRef.current !== gen) return;
-        setCurrentSource(null);
-        setFailedTitle(null);
-        setEngineState((prev) => ({
-          ...prev,
-          status: "loading",
-          currentTrack: { snapshot, streamUrl: "" },
-        }));
-        if (audioRef.current) audioRef.current.volume = 1;
-        try {
-          const result = await resolveStream({ snapshot });
-          if (previewGenRef.current !== gen) return;
-          if (result.streamUrl === null) {
-            setFailedTitle(`Couldn't play '${snapshot.title}'`);
-            setEngineState((prev) => ({ ...prev, status: "failed" }));
-            return;
-          }
-          engine.load(snapshot, result.streamUrl);
-        } catch {
-          if (previewGenRef.current !== gen) return;
-          setFailedTitle("Couldn't reach the player service");
-          setEngineState((prev) => ({ ...prev, status: "failed" }));
-        }
-      });
-    },
-    [fadeOutAudio],
-  );
-
-  // UI-31: Synchronous loader for OS Media Session action handlers.
-  // Skips the RAF-driven crossfade entirely so engine.load(...) — and
-  // therefore audio.src = url + audio.play() — happens inside the
-  // user-gesture window iOS Safari grants the handler. Any async hop
-  // (fade .then, setState→effect chain) loses gesture context and
-  // audio.play() is rejected. Increments previewGenRef so any
-  // in-flight async loadPreview/playPreview is invalidated and won't
-  // clobber the synchronously-loaded track when its fade completes.
-  const loadPreviewSync = useCallback((snapshot: SongSnapshot, streamUrl: string) => {
+  // UI-29: playPreview pauses the previously-loaded track synchronously
+  // before the async resolve fetch starts. The user gets immediate silence
+  // ("stop and wait") instead of the previous 250 ms fade-out that was
+  // audibly leaking the old track into the resolve window. The previewGen
+  // bumps here too so any in-flight load is invalidated before /play/resolve.
+  const playPreview = useCallback((snapshot: SongSnapshot) => {
     const engine = engineRef.current;
     if (!engine) return;
-    if (fadeRafRef.current !== null) {
-      cancelAnimationFrame(fadeRafRef.current);
-      fadeRafRef.current = null;
-    }
+    const gen = ++previewGenRef.current;
+    engine.pause();
+    setCurrentSource(null);
+    setFailedTitle(null);
+    setEngineState((prev) => ({
+      ...prev,
+      status: "loading",
+      currentTrack: { snapshot, streamUrl: "" },
+    }));
+    if (audioRef.current) audioRef.current.volume = 1;
+    void (async () => {
+      try {
+        const result = await resolveStream({ snapshot });
+        if (previewGenRef.current !== gen) return;
+        if (result.streamUrl === null) {
+          setFailedTitle(`Couldn't play '${snapshot.title}'`);
+          setEngineState((prev) => ({ ...prev, status: "failed" }));
+          return;
+        }
+        engine.load(snapshot, result.streamUrl);
+      } catch {
+        if (previewGenRef.current !== gen) return;
+        setFailedTitle("Couldn't reach the player service");
+        setEngineState((prev) => ({ ...prev, status: "failed" }));
+      }
+    })();
+  }, []);
+
+  // UI-29 + UI-31: synchronous load. `audio.src = newUrl` (or the hls.attachMedia
+  // equivalent for HLS) implicitly stops the previously-loaded track, then
+  // audio.play() starts the new one — all within the same microtask of the
+  // call, so an OS Media Session handler reaches engine.load inside the
+  // gesture window iOS Safari grants the handler. No RAF, no fade, no
+  // async hop. Used by useTopCardPreview's cached fast-path, by UI-21's
+  // retry, by Explore's on-screen ✕ / ♥ advance(), and by
+  // ExploreMediaBridge's OS next/prev handlers.
+  const loadPreview = useCallback((snapshot: SongSnapshot, streamUrl: string) => {
+    const engine = engineRef.current;
+    if (!engine) return;
     previewGenRef.current++;
     setCurrentSource(null);
     setFailedTitle(null);
@@ -393,56 +338,24 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
     engine.load(snapshot, streamUrl);
   }, []);
 
-  // Load a pre-resolved stream URL directly, bypassing /play/resolve.
-  // Same no-recording contract as playPreview; includes the volume-dip crossfade.
-  const loadPreview = useCallback(
-    (snapshot: SongSnapshot, streamUrl: string) => {
-      const engine = engineRef.current;
-      if (!engine) return;
-      const gen = ++previewGenRef.current;
-
-      void fadeOutAudio(250).then(() => {
-        if (previewGenRef.current !== gen) return;
-        setCurrentSource(null);
-        setFailedTitle(null);
-        setEngineState((prev) => ({
-          ...prev,
-          status: "loading",
-          currentTrack: { snapshot, streamUrl },
-        }));
-        if (audioRef.current) audioRef.current.volume = 1;
-        engine.load(snapshot, streamUrl);
-      });
-    },
-    [fadeOutAudio],
-  );
-
   // UI-32: Bad Remix — swap the underlying stream URL for the currently
-  // active track without clearing `currentSource`. Mirrors loadPreview's
-  // fade-in dance but skips the `setCurrentSource(null)` so the now-playing
-  // overlay stays mounted (its visibility check requires `currentSource`
+  // active track without clearing `currentSource` (so the now-playing
+  // overlay stays mounted; its visibility check requires `currentSource`
   // to be non-null). Snapshot identity is preserved; only the audio source
-  // rotates.
-  const swapStream = useCallback(
-    (snapshot: SongSnapshot, streamUrl: string) => {
-      const engine = engineRef.current;
-      if (!engine) return;
-      const gen = ++previewGenRef.current;
-
-      void fadeOutAudio(250).then(() => {
-        if (previewGenRef.current !== gen) return;
-        setFailedTitle(null);
-        setEngineState((prev) => ({
-          ...prev,
-          status: "loading",
-          currentTrack: { snapshot, streamUrl },
-        }));
-        if (audioRef.current) audioRef.current.volume = 1;
-        engine.load(snapshot, streamUrl);
-      });
-    },
-    [fadeOutAudio],
-  );
+  // rotates. Same synchronous-load semantics as loadPreview (UI-29).
+  const swapStream = useCallback((snapshot: SongSnapshot, streamUrl: string) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    previewGenRef.current++;
+    setFailedTitle(null);
+    setEngineState((prev) => ({
+      ...prev,
+      status: "loading",
+      currentTrack: { snapshot, streamUrl },
+    }));
+    if (audioRef.current) audioRef.current.volume = 1;
+    engine.load(snapshot, streamUrl);
+  }, []);
 
   const togglePlay = useCallback(() => {
     engineRef.current?.togglePlay();
@@ -558,7 +471,6 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playSnapshot,
       playPreview,
       loadPreview,
-      loadPreviewSync,
       swapStream,
       togglePlay,
       pause,
@@ -577,7 +489,6 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
       playSnapshot,
       playPreview,
       loadPreview,
-      loadPreviewSync,
       swapStream,
       togglePlay,
       pause,

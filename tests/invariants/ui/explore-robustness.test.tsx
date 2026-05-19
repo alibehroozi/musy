@@ -280,10 +280,10 @@ describe("UI-25: UI-21 retry's loadPreview is gated on top-card stability", () =
 
     renderAuthedApp();
     await screen.findByText("Track A");
-    // Wait for pre-resolves of B and C.
+    // Only items[1] (B) is pre-resolved on mount (PRE_RESOLVE_AHEAD=1).
+    // C is resolved later, when it becomes items[1] after the swipe.
     await waitFor(() => {
       expect(installed.resolveCallCounts[KEY_B] ?? 0).toBe(1);
-      expect(installed.resolveCallCounts[KEY_C] ?? 0).toBe(1);
     });
     // A reaches "playing".
     await act(async () => {

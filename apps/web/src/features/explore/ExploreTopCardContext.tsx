@@ -13,6 +13,27 @@ import { fetchNext, fetchProfile, submitSwipe } from "./api.js";
 
 export type ExploreQueueStatus = "loading" | "ready" | "empty" | "error";
 
+/**
+ * Provider-scoped caches for the Explore deck. Identity is stable for the
+ * lifetime of the provider (one per App tree), which means the caches
+ * survive ExplorePage unmount/remount — navigating to another tab and back
+ * does NOT re-fire /play/resolve for snapshots already in the cache, and
+ * UI-21's retry latch is not re-armed for snapshots that already burned
+ * their single attempt. Tests get fresh caches automatically because each
+ * test re-mounts the App tree. See UI-21, UI-22, UI-31, UI-40.
+ */
+export interface ExploreCaches {
+  /** key → resolved stream URL (or null if unresolvable). */
+  readonly resolve: Map<string, string | null>;
+  /** keys for which a /play/resolve fetch is currently in-flight. */
+  readonly inFlight: Set<string>;
+  /** keys for which UI-21's once-per-snapshot retry latch is set. */
+  readonly retried: Set<string>;
+  /** `${currentKey}→${nextKey}` pairs for which UI-22's once-per-pair
+   *  near-end refresh has already fired. */
+  readonly handoffRefreshed: Set<string>;
+}
+
 interface ExploreContextValue {
   // Published by useTopCardPreview so MiniPlayerHost knows to hide (UI-16).
   topCard: SongSnapshot | null;
@@ -26,7 +47,15 @@ interface ExploreContextValue {
   // Call on first ExplorePage mount to start fetching. No-op on subsequent mounts
   // unless the queue previously errored (e.g. 401 before the user was authenticated).
   activate: () => void;
+  caches: ExploreCaches;
 }
+
+const NOOP_CACHES: ExploreCaches = {
+  resolve: new Map(),
+  inFlight: new Set(),
+  retried: new Set(),
+  handoffRefreshed: new Set(),
+};
 
 const NOOP: ExploreContextValue = {
   topCard: null,
@@ -37,6 +66,7 @@ const NOOP: ExploreContextValue = {
   swipe: () => {},
   retry: () => {},
   activate: () => {},
+  caches: NOOP_CACHES,
 };
 
 const ExploreContext = createContext<ExploreContextValue>(NOOP);
@@ -47,6 +77,13 @@ const BUILDING_POLL_INTERVAL_MS = 5_000;
 
 export function ExploreTopCardProvider({ children }: { children: ReactNode }): JSX.Element {
   const [topCard, setTopCard] = useState<SongSnapshot | null>(null);
+  // Stable for the lifetime of the provider (see ExploreCaches docstring).
+  const cachesRef = useRef<ExploreCaches>({
+    resolve: new Map<string, string | null>(),
+    inFlight: new Set<string>(),
+    retried: new Set<string>(),
+    handoffRefreshed: new Set<string>(),
+  });
 
   const [items, setItems] = useState<SongSnapshot[]>([]);
   const [phase, setPhase] = useState<QueuePhase | null>(null);
@@ -138,7 +175,17 @@ export function ExploreTopCardProvider({ children }: { children: ReactNode }): J
   }, [refresh]);
 
   const value = useMemo(
-    () => ({ topCard, setTopCard, items, phase, status, swipe, retry, activate }),
+    () => ({
+      topCard,
+      setTopCard,
+      items,
+      phase,
+      status,
+      swipe,
+      retry,
+      activate,
+      caches: cachesRef.current,
+    }),
     [topCard, items, phase, status, swipe, retry, activate],
   );
 

@@ -24,4 +24,7 @@ describe("BROWSER-09: top safe-area inset on PWA standalone", () => {
   it.todo(
     "the App shell's outermost container does NOT add bottom-inset padding — nav stays flush to viewport bottom (apps/web/tests/e2e/safe-area-top.spec.ts)",
   );
+  it.todo(
+    "the BottomNav clamps env(safe-area-inset-bottom) at 12px via min() so the iPhone home-bar buffer matches the indicator pill, not the full gesture zone (apps/web/tests/e2e/safe-area-top.spec.ts)",
+  );
 });

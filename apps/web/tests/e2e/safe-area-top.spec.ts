@@ -110,4 +110,21 @@ test.describe("BROWSER-09 — top safe-area inset on PWA standalone", () => {
     const paddingTopDecl = await overlay.evaluate((el) => (el as HTMLElement).style.paddingTop);
     expect(paddingTopDecl).toMatch(/safe-area-inset-top/);
   });
+
+  test("the bottom-nav clamps env(safe-area-inset-bottom) at 12px", async ({ page }) => {
+    await mockJsonRoute(page, /\/api\/search\/history/, HistoryResponse, HISTORY_EMPTY);
+    await page.goto("/search");
+
+    const nav = page.getByRole("navigation", { name: "Main navigation" });
+    await expect(nav).toBeVisible();
+
+    const paddingBottom = await nav.evaluate((el) => (el as HTMLElement).style.paddingBottom);
+    // bg-surface still extends through the home-bar zone — paddingBottom, not
+    // marginBottom — and the env() reference survives so iOS still drives the
+    // value. The clamp caps it at 12px so the iPhone buffer matches the
+    // visible home-indicator pill, not the full ~34px gesture zone.
+    expect(paddingBottom).toMatch(/safe-area-inset-bottom/);
+    expect(paddingBottom).toMatch(/min\(/);
+    expect(paddingBottom).toMatch(/12px/);
+  });
 });

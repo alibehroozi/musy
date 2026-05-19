@@ -14,8 +14,18 @@
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
+/* BROWSER-10 — lock the document so iOS PWA standalone can't rubber-band
+   the fixed App-shell wrapper and expose a strip of body bg below it. */
+html,
 body {
   margin: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
   background: var(--color-bg);
   color: var(--color-text);
 }

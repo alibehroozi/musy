@@ -37,7 +37,14 @@ export function App(): JSX.Element {
             paddingRight: "env(safe-area-inset-right)",
           }}
         >
-          <div className="flex-1 overflow-y-auto">
+          {/* BROWSER-10 — overscroll-behavior:contain stops this scroller's
+              scroll-chain at its own edges so iOS can't propagate the
+              gesture up to the document and rubber-band the fixed wrapper. */}
+          <div
+            data-testid="app-shell-scroll"
+            className="flex-1 overflow-y-auto"
+            style={{ overscrollBehavior: "contain" }}
+          >
             <AppRoutes />
           </div>
           <MiniPlayerHost />

@@ -15,3 +15,4 @@ export * from "./taste/polling-cadence.js";
 export * from "./taste/sort-songs.js";
 export * from "./taste/song-key.js";
 export * from "./taste/tasteFetcher.js";
+export * from "./pwa/detect.js";

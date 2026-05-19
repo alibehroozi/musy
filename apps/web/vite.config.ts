@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "node:path";
+import { pwaManifest } from "./manifest.config.js";
 
 export default defineConfig(({ mode }) => {
   // Load env from apps/web/.env.local + .env. Empty prefix loads all keys
@@ -17,18 +18,15 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
+        // The SW installs and immediately claims clients (skipWaiting +
+        // clientsClaim are workbox defaults under autoUpdate). The
+        // PwaController in apps/web/src/features/pwa wires the
+        // user-facing update banner + visibility-change auto-apply on
+        // top of useRegisterSW from "virtual:pwa-register/react".
         registerType: "autoUpdate",
-        includeAssets: ["favicon.ico"],
-        manifest: {
-          name: "musy",
-          short_name: "musy",
-          description: "Music app with AI-powered taste processing",
-          theme_color: "#0f0f10",
-          background_color: "#0f0f10",
-          display: "standalone",
-          start_url: "/",
-          icons: [],
-        },
+        injectRegister: false,
+        includeAssets: ["favicon.ico", "icon-source.svg", "apple-touch-icon-180x180.png"],
+        manifest: pwaManifest,
       }),
     ],
     resolve: {

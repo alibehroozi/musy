@@ -180,6 +180,18 @@ export function PlayerProvider({ children }: { children: ReactNode }): JSX.Eleme
         // Safari supports HLS natively via the plain src assignment path below.
         if (/\.m3u8(\?|$)/.test(url) && Hls.isSupported()) {
           const hls = new Hls();
+          // UI-39: hls.js intercepts the audio element's loading lifecycle,
+          // so a 403 on the m3u8 manifest (or any other fatal HLS pipeline
+          // failure) never fires the native "error" event on <audio>. We
+          // promote fatal hls.js errors into a synthetic "error" event so
+          // AudioEngine._handleError fires and UI-21's retry path kicks in.
+          // Non-fatal errors are hls.js' own concern (auto-recovery) and
+          // must NOT be propagated.
+          hls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal) {
+              audio.dispatchEvent(new Event("error"));
+            }
+          });
           hls.loadSource(url);
           hls.attachMedia(audio);
           hlsRef.current = hls;

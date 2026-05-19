@@ -268,8 +268,13 @@ export function NowPlayingOverlay(): JSX.Element | null {
       style={{
         zIndex: "var(--z-modal)",
         animation: "overlay-slide-up var(--transition-normal) ease-out",
+        // BROWSER-09 — clear iOS status bar / notch; the +1rem keeps the
+        // topbar's prior visual spacing. Bottom stays flush against the
+        // viewport edge so the provider badge sits where the original
+        // `py-4` placed it.
+        paddingTop: "calc(env(safe-area-inset-top) + 1rem)",
       }}
-      className="fixed inset-0 bg-bg text-text flex flex-col px-6 py-4"
+      className="fixed inset-0 bg-bg text-text flex flex-col px-6 pb-4"
     >
       <div className="flex items-center justify-between h-8 shrink-0">
         <IconButton aria-label="Collapse player" onClick={collapse}>

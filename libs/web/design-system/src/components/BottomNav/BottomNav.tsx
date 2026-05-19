@@ -19,7 +19,7 @@ export function BottomNav({ tabs, activePath, onNavigate }: BottomNavProps): JSX
     <nav
       aria-label="Main navigation"
       className="bg-surface border-t border-border"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      style={{ paddingBottom: "min(env(safe-area-inset-bottom, 0px), 12px)" }}
     >
       <div className="flex h-16">
         {tabs.map((tab) => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { BucketDetailResponse } from "@moc/contracts";
-import { fetchBucketDetail, HttpError } from "@moc/web-core";
+import { HttpError } from "@moc/web-core";
+import { fetchBucketDetail } from "./api.js";
 
 export type BucketDetailState =
   | { status: "loading" }

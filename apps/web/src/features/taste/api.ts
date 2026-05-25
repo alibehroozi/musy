@@ -1,8 +1,13 @@
 import {
+  fetchBucketDetail as fetchBucketDetailCore,
   fetchTasteProfile as fetchTasteProfileCore,
   requestCustomMix as requestCustomMixCore,
 } from "@moc/web-core";
-import type { CustomMixCreatedResponse, TasteBucketsResponse } from "@moc/contracts";
+import type {
+  BucketDetailResponse,
+  CustomMixCreatedResponse,
+  TasteBucketsResponse,
+} from "@moc/contracts";
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "/api";
 
@@ -12,4 +17,8 @@ export function fetchTasteProfile(): Promise<TasteBucketsResponse> {
 
 export function requestCustomMix(promptText: string): Promise<CustomMixCreatedResponse> {
   return requestCustomMixCore(promptText, API_BASE);
+}
+
+export function fetchBucketDetail(bucketId: string): Promise<BucketDetailResponse> {
+  return fetchBucketDetailCore(bucketId, API_BASE);
 }

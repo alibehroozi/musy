@@ -683,7 +683,7 @@ describe("API-25: GET /api/explore/next contextual slot eligibility (per LOGIC-3
     expect(titles).toContain("never-swiped");
   });
 
-  it("left-swipe in the current slot also burns the slot — both directions exclude equally", async () => {
+  it("left-swipe in the current slot excludes the song (left burns forever — covers the current slot too)", async () => {
     const userId = "u-context-3";
     const swipes = new FakeSwipesRepo();
     const queues = new FakeQueueRepo();
@@ -833,7 +833,7 @@ describe("API-25: GET /api/explore/next contextual slot eligibility (per LOGIC-3
     expect(titles).toContain("ok");
   });
 
-  it("maybeRefill does NOT trigger when many items are swiped but only at other slots (slot-eligible count is still high)", async () => {
+  it("maybeRefill does NOT trigger when many items are right-swiped only at other slots (right-swipes burn the slot only)", async () => {
     const userId = "u-refill-1";
     const items = Array.from({ length: 20 }, (_, i) => snapshot(`song-${i}`));
     const swipes = new FakeSwipesRepo();
@@ -847,15 +847,16 @@ describe("API-25: GET /api/explore/next contextual slot eligibility (per LOGIC-3
       generatedAt: TUE_EVENING,
       swipesSeenAtBuild: 0,
     });
-    // All 20 items have swipes — but at WED_MORNING (different slot from now).
-    // Under contextual eligibility, all 20 are still slot-eligible at
-    // (tue, evening), so the refill must NOT trigger.
+    // All 20 items have right-swipes at WED_MORNING (different slot from now).
+    // Under asymmetric eligibility (LOGIC-41), right-swipes burn only their
+    // own slot — at (tue, evening) all 20 remain eligible. Refill must NOT
+    // trigger.
     for (const item of items) {
       swipes.swipes.push({
         userId,
         snapshot: item,
         snapshotHash: computeSnapshotHash(item),
-        direction: "left",
+        direction: "right",
         at: WED_MORNING,
       });
     }
@@ -903,5 +904,332 @@ describe("API-25: GET /api/explore/next contextual slot eligibility (per LOGIC-3
     await Promise.resolve();
 
     expect(rebuildSpy).toHaveBeenCalledWith(userId);
+  });
+});
+
+describe("API-25 (asymmetric per LOGIC-41): left-swipes burn forever, right-swipes burn only their slot", () => {
+  // Anchor "now" so the slot is stable across tests in this block.
+  const TUE_EVENING_ASYM = new Date(2026, 4, 19, 19, 30);
+  const WED_MORNING_ASYM = new Date(2026, 4, 20, 9, 0);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(TUE_EVENING_ASYM);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("a LEFT-swipe at a different slot still excludes the song from /next at the current slot (forever burn)", async () => {
+    const userId = "u-asym-1";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const leftSwiped = snapshot("left-elsewhere");
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [leftSwiped, snapshot("ok")],
+      phase: "discovery",
+      generatedAt: TUE_EVENING_ASYM,
+      swipesSeenAtBuild: 0,
+    });
+    // Left-swipe happened at WED_MORNING — under the OLD symmetric rule
+    // this would only burn WED_MORNING and the song would still appear at
+    // TUE_EVENING. Under LOGIC-41 the left-swipe forever-excludes.
+    swipes.swipes.push({
+      userId,
+      snapshot: leftSwiped,
+      snapshotHash: computeSnapshotHash(leftSwiped),
+      direction: "left",
+      at: WED_MORNING_ASYM,
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const response = await builder.getNext(userId, 20);
+    const titles = response.items.map((i) => i.title);
+    expect(titles).not.toContain("left-elsewhere");
+    expect(titles).toContain("ok");
+  });
+
+  it("a RIGHT-swipe at a different slot keeps the song eligible at the current slot (slot-only burn)", async () => {
+    const userId = "u-asym-2";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    const rightSwiped = snapshot("right-elsewhere");
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [rightSwiped, snapshot("ok")],
+      phase: "discovery",
+      generatedAt: TUE_EVENING_ASYM,
+      swipesSeenAtBuild: 0,
+    });
+    swipes.swipes.push({
+      userId,
+      snapshot: rightSwiped,
+      snapshotHash: computeSnapshotHash(rightSwiped),
+      direction: "right",
+      at: WED_MORNING_ASYM,
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const response = await builder.getNext(userId, 20);
+    const titles = response.items.map((i) => i.title);
+    expect(titles).toContain("right-elsewhere");
+  });
+
+  it("maybeRefill DOES trigger when items are LEFT-swiped at other slots (forever exclusion drops eligible count)", async () => {
+    const userId = "u-asym-3";
+    const items = Array.from({ length: 20 }, (_, i) => snapshot(`song-${i}`));
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items,
+      phase: "discovery",
+      generatedAt: TUE_EVENING_ASYM,
+      swipesSeenAtBuild: 0,
+    });
+    // 18 of 20 items left-swiped at WED_MORNING — eligible drops to 2
+    // (< REFILL_THRESHOLD of 5). Refill must trigger.
+    for (const item of items.slice(0, 18)) {
+      swipes.swipes.push({
+        userId,
+        snapshot: item,
+        snapshotHash: computeSnapshotHash(item),
+        direction: "left",
+        at: WED_MORNING_ASYM,
+      });
+    }
+
+    const { builder } = makeBuilder({ swipes, queues });
+    const rebuildSpy = vi.spyOn(builder, "rebuildQueue").mockResolvedValue();
+
+    await builder.maybeRefill(userId);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(rebuildSpy).toHaveBeenCalledWith(userId);
+  });
+});
+
+describe("API-30: soft-suppress artists with ≥ 2 left-swipes from rebuild candidate pool", () => {
+  it("no queue item carries an artist with ≥ 2 left-swipes (case-insensitive)", async () => {
+    const userId = "u-soft-1";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+    const profilesRepo = new FakeTasteProfilesRepo();
+
+    // Two left-swipes on Skrillex tracks → Skrillex is suppressed.
+    for (const t of ["Bangarang", "Scary Monsters"]) {
+      const s = snapshot(t, "Skrillex");
+      swipes.swipes.push({
+        userId,
+        snapshot: s,
+        snapshotHash: computeSnapshotHash(s),
+        direction: "left",
+        at: new Date(),
+      });
+    }
+
+    // Mock the cold-start LLM to return Skrillex + Deadmau5 tracks in the
+    // pool — the pool would normally surface Skrillex, but the soft-suppress
+    // filter must strip it before persistence.
+    const noopAnthropic = {
+      complete: vi.fn().mockResolvedValue({
+        text: JSON.stringify({
+          songs: [
+            { title: "Strobe", artist: "Deadmau5" },
+            { title: "First of the Year", artist: "Skrillex" },
+            { title: "Ghosts 'n Stuff", artist: "Deadmau5" },
+          ],
+        }),
+      }),
+    };
+    const noopAudius = { search: vi.fn().mockResolvedValue([]) };
+    const noopSoundCloud = { search: vi.fn().mockResolvedValue([]) };
+    const noopSearch = {
+      search: vi.fn().mockImplementation(async (q: string) => {
+        // Cover-resolution lookup: pretend everything has a cover.
+        const [title, ...artistParts] = q.split(" ");
+        return {
+          results: [
+            {
+              type: "track" as const,
+              id: `r-${title}`,
+              title: title ?? "",
+              artist: artistParts.join(" "),
+              provider: "deezer" as const,
+              providerId: "p",
+              sources: ["deezer" as const],
+              artworkUrl: "https://cdn/cover.jpg",
+            },
+          ],
+          partial: false,
+          failedProviders: [],
+          cached: false,
+        };
+      }),
+    };
+    const noopPlay = { resolve: vi.fn().mockResolvedValue({}) };
+    const noopInterestScores = { sampleByScoreBucket: vi.fn().mockResolvedValue([]) };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const profileBuilder = {
+      getProfile: async (uid: string) => profilesRepo.profiles.get(uid) ?? null,
+      maybeBuild: async () => {},
+      buildIfDue: async () => {},
+    };
+
+    const builder = new QueueBuilderService(
+      swipes as never,
+      profilesRepo as never,
+      queues as never,
+      profileBuilder as never,
+      noopAnthropic as never,
+      noopAudius as never,
+      noopSoundCloud as never,
+      noopSearch as never,
+      noopInterestScores as never,
+      noopPlay as never,
+      fakeConfig as never,
+    );
+
+    await builder.rebuildQueue(userId);
+
+    const persisted = queues.queues.get(userId);
+    expect(persisted).toBeDefined();
+    const artists = (persisted?.items ?? []).map((i) => i.artist.trim().toLowerCase());
+    expect(artists).not.toContain("skrillex");
+  });
+});
+
+describe("API-31: every /api/explore/next response contains at most 2 items per artist (case-insensitive)", () => {
+  it("a cold-start pool with 5 tracks by the same artist is capped to 2 in the persisted queue", async () => {
+    const userId = "u-cap-1";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+    const profilesRepo = new FakeTasteProfilesRepo();
+
+    // Cold-start LLM returns 5 tracks by Skrillex + 2 tracks by Deadmau5.
+    // Per-artist cap (LOGIC-43) must drop Skrillex to 2 in the persisted queue.
+    const noopAnthropic = {
+      complete: vi.fn().mockResolvedValue({
+        text: JSON.stringify({
+          songs: [
+            { title: "Bangarang", artist: "Skrillex" },
+            { title: "Scary Monsters", artist: "Skrillex" },
+            { title: "First of the Year", artist: "Skrillex" },
+            { title: "Kyoto", artist: "Skrillex" },
+            { title: "Rock n Roll", artist: "Skrillex" },
+            { title: "Strobe", artist: "Deadmau5" },
+            { title: "Ghosts 'n Stuff", artist: "Deadmau5" },
+          ],
+        }),
+      }),
+    };
+    const noopAudius = { search: vi.fn().mockResolvedValue([]) };
+    const noopSoundCloud = { search: vi.fn().mockResolvedValue([]) };
+    const noopSearch = {
+      search: vi.fn().mockImplementation(async (q: string) => {
+        const [title, ...artistParts] = q.split(" ");
+        return {
+          results: [
+            {
+              type: "track" as const,
+              id: `r-${title}`,
+              title: title ?? "",
+              artist: artistParts.join(" "),
+              provider: "deezer" as const,
+              providerId: "p",
+              sources: ["deezer" as const],
+              artworkUrl: "https://cdn/cover.jpg",
+            },
+          ],
+          partial: false,
+          failedProviders: [],
+          cached: false,
+        };
+      }),
+    };
+    const noopPlay = { resolve: vi.fn().mockResolvedValue({}) };
+    const noopInterestScores = { sampleByScoreBucket: vi.fn().mockResolvedValue([]) };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const profileBuilder = {
+      getProfile: async (uid: string) => profilesRepo.profiles.get(uid) ?? null,
+      maybeBuild: async () => {},
+      buildIfDue: async () => {},
+    };
+
+    const builder = new QueueBuilderService(
+      swipes as never,
+      profilesRepo as never,
+      queues as never,
+      profileBuilder as never,
+      noopAnthropic as never,
+      noopAudius as never,
+      noopSoundCloud as never,
+      noopSearch as never,
+      noopInterestScores as never,
+      noopPlay as never,
+      fakeConfig as never,
+    );
+
+    await builder.rebuildQueue(userId);
+
+    const persisted = queues.queues.get(userId);
+    expect(persisted).toBeDefined();
+    const counts = new Map<string, number>();
+    for (const item of persisted?.items ?? []) {
+      const key = item.artist.trim().toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    for (const [artist, n] of counts) {
+      expect(n, `expected <= 2 tracks by ${artist}, got ${n}`).toBeLessThanOrEqual(2);
+    }
+    expect(counts.get("skrillex")).toBe(2);
+    expect(counts.get("deadmau5")).toBe(2);
+  });
+
+  it("the /next response also exposes at most 2 items per artist (downstream filter cannot increase the count)", async () => {
+    const userId = "u-cap-2";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+
+    // Pre-populate a queue with 5 Skrillex items — simulating a stale queue
+    // built before the cap was enforced. /next must still enforce the cap.
+    queues.queues.set(userId, {
+      id: "q1",
+      userId,
+      items: [
+        snapshot("Bangarang", "Skrillex"),
+        snapshot("Scary Monsters", "Skrillex"),
+        snapshot("First of the Year", "Skrillex"),
+        snapshot("Kyoto", "Skrillex"),
+        snapshot("Rock n Roll", "Skrillex"),
+        snapshot("Strobe", "Deadmau5"),
+      ],
+      phase: "discovery",
+      generatedAt: new Date(),
+      swipesSeenAtBuild: 0,
+    });
+
+    const { builder } = makeBuilder({ swipes, queues });
+
+    const response = await builder.getNext(userId, 20);
+    const counts = new Map<string, number>();
+    for (const item of response.items) {
+      const key = item.artist.trim().toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    expect(counts.get("skrillex") ?? 0).toBeLessThanOrEqual(2);
   });
 });

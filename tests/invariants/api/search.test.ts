@@ -350,3 +350,20 @@ describe("SoundCloudClient: real provider (no mocking)", () => {
     expect(Array.isArray(results)).toBe(true);
   }, 30_000);
 });
+
+describe("LOGIC-44: SoundCloudClient.search() returns up to 25 normalized TrackResult per query", () => {
+  it("never returns more than 25 results for a popular query (real upstream)", async () => {
+    const client = new SoundCloudClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: REAL_UA }));
+    const results = await client.search("the beatles");
+    expect(results.length).toBeLessThanOrEqual(25);
+  }, 30_000);
+
+  it("returns more than 10 results for a sufficiently popular query (bump from 10 → 25 is active)", async () => {
+    // SoundCloud's "the beatles" search reliably yields well over 10 tracks
+    // because of its deep user-upload catalog; before the bump this test
+    // would top out at 10. After the bump it should comfortably exceed 10.
+    const client = new SoundCloudClient(fakeConfig({ SOUNDCLOUD_USER_AGENT: REAL_UA }));
+    const results = await client.search("the beatles");
+    expect(results.length).toBeGreaterThan(10);
+  }, 30_000);
+});

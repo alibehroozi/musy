@@ -2,12 +2,13 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { v4 as uuidv4 } from "uuid";
 import {
+  applyPerArtistCap,
   ARTIST_REFINEMENT_PICKS_TARGET,
   buildArtistRefinementPrompt,
   buildColdStartPrompt,
   buildPersonalizedPrompt,
   COLD_START_MAX_RECENT_SWIPES,
-  collectSlotBurntHashes,
+  collectAsymmetricExcludedHashes,
   computeSnapshotHash,
   parseArtistRefinementResponse,
   parseColdStartResponse,
@@ -17,14 +18,16 @@ import {
   resolveCoversForQueue,
   seedSnapshots,
   slotFor,
+  softSuppressedArtists,
   STRONG_ARTIST_SCORE_THRESHOLD,
   SWIPE_TRIGGER_THRESHOLD,
   type ArtistRefinementPromptCandidate,
+  type AsymmetricSwipe,
   type ColdStartPromptSwipe,
-  type EligibilitySwipe,
   type PersonalizedPromptCandidate,
   type PersonalizedScoreBuckets,
   type ScoreBucketEntry,
+  type SoftSuppressSwipe,
 } from "@moc/api-core";
 import type {
   NextResponse,
@@ -134,15 +137,21 @@ export class QueueBuilderService {
       };
     }
 
-    // Filter against per-slot eligibility (API-25 / LOGIC-33) and
+    // Filter against asymmetric eligibility (API-25 / LOGIC-41) and
     // cover-completeness (API-17 defense in depth — the queue builder is
     // the primary enforcement, but stale pre-DATA-13 rows could still
-    // slip through). A song is burnt only for its (weekday, timeOfDay)
-    // slots — see the prior commit's INVARIANTS update.
+    // slip through). Left-swipes burn forever; right-swipes burn the slot.
+    // Per-artist cap (API-31 / LOGIC-43) is also enforced here so a stale
+    // queue persisted before the cap landed still serves capped responses.
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
-    const slotBurnt = collectSlotBurntHashes(toEligibilitySwipes(swipeDocs), slotFor(new Date()));
-    const filtered = queue.items.filter(
-      (item) => !slotBurnt.has(computeSnapshotHash(item)) && hasNonEmptyCover(item),
+    const excluded = collectAsymmetricExcludedHashes(
+      toAsymmetricSwipes(swipeDocs),
+      slotFor(new Date()),
+    );
+    const filtered = applyPerArtistCap(
+      queue.items.filter(
+        (item) => !excluded.has(computeSnapshotHash(item)) && hasNonEmptyCover(item),
+      ),
     );
 
     // Self-heal: if unseen runs low and no rebuild is in flight, fire
@@ -222,11 +231,21 @@ export class QueueBuilderService {
 
     const phase = phaseFor(profile, swipeDocs.length);
 
-    // API-25: exclusion is per-slot, not per-snapshot-forever. The same
-    // slot is computed at the moment of build so candidates burnt at the
-    // *current* slot are excluded from sourcing while songs only swiped
-    // in other slots remain eligible.
-    const slotBurnt = collectSlotBurntHashes(toEligibilitySwipes(swipeDocs), slotFor(new Date()));
+    // API-25: asymmetric exclusion (LOGIC-41) — left-swipes burn forever,
+    // right-swipes burn only the current `(weekday, timeOfDay)` slot. Both
+    // contribute to the dedupe set the per-phase sourcing pipelines use
+    // when filtering raw provider results.
+    const excludedHashes = collectAsymmetricExcludedHashes(
+      toAsymmetricSwipes(swipeDocs),
+      slotFor(new Date()),
+    );
+    // API-30: artists with ≥ 2 left-swipes anywhere in history are
+    // soft-suppressed from the rebuild candidate pool. Computed live from
+    // swipes so no separate state to migrate; case-insensitive trimmed
+    // match per LOGIC-42.
+    const suppressedArtists = softSuppressedArtists({
+      swipeHistory: toSoftSuppressSwipes(swipeDocs),
+    });
     // Project swipes for the cold-start soft signal (LOGIC-28). Newest-
     // first so the per-prompt truncation drops oldest. Only the discovery
     // path actually reads this; other phases ignore it.
@@ -245,7 +264,7 @@ export class QueueBuilderService {
         userId,
         phase,
         profile,
-        slotBurnt,
+        excludedHashes,
         recentSwipesForColdStart,
       );
     } catch (err) {
@@ -257,8 +276,15 @@ export class QueueBuilderService {
         },
         "explore_queue_source_failed",
       );
-      items = seedSnapshots().filter((s) => !slotBurnt.has(computeSnapshotHash(s)));
+      items = seedSnapshots().filter((s) => !excludedHashes.has(computeSnapshotHash(s)));
     }
+
+    // API-30 + API-31: soft-suppress artists with ≥ 2 left-swipes, then
+    // cap at 2 per artist. Both are computed against the candidate pool
+    // as produced by sourceCandidates so no single deep-catalog artist
+    // (SC's catalog is the usual offender) steamrolls the queue.
+    items = items.filter((s) => !suppressedArtists.has(s.artist.trim().toLowerCase()));
+    items = applyPerArtistCap(items);
 
     // DATA-13: any candidate that didn't pick up a coverUrl during
     // sourcing gets one resolved here via the unified search aggregator.
@@ -324,11 +350,14 @@ export class QueueBuilderService {
 
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
     // API-18 / API-25: refill triggers on the count of items still
-    // eligible at the *current* (weekday, timeOfDay) slot, not the
-    // historical seen-set. A song swiped only in a different slot is
-    // still eligible now.
-    const slotBurnt = collectSlotBurntHashes(toEligibilitySwipes(swipeDocs), slotFor(new Date()));
-    const eligible = queue.items.filter((item) => !slotBurnt.has(computeSnapshotHash(item))).length;
+    // *asymmetrically* eligible — left-swipes burn forever (so they count
+    // as ineligible regardless of slot), right-swipes burn the current
+    // slot only. Per LOGIC-41.
+    const excluded = collectAsymmetricExcludedHashes(
+      toAsymmetricSwipes(swipeDocs),
+      slotFor(new Date()),
+    );
+    const eligible = queue.items.filter((item) => !excluded.has(computeSnapshotHash(item))).length;
     if (eligible >= REFILL_THRESHOLD) return;
 
     this.logger.log(
@@ -820,8 +849,14 @@ function shuffleInPlace<T>(arr: T[]): void {
   }
 }
 
-function toEligibilitySwipes(
+function toAsymmetricSwipes(
   docs: ReadonlyArray<{ snapshotHash: string; direction: "right" | "left"; at: Date }>,
-): EligibilitySwipe[] {
+): AsymmetricSwipe[] {
   return docs.map((d) => ({ snapshotHash: d.snapshotHash, direction: d.direction, at: d.at }));
+}
+
+function toSoftSuppressSwipes(
+  docs: ReadonlyArray<{ snapshot: SongSnapshot; direction: "right" | "left" }>,
+): SoftSuppressSwipe[] {
+  return docs.map((d) => ({ direction: d.direction, artist: d.snapshot.artist }));
 }

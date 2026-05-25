@@ -13,7 +13,11 @@ const DEFAULT_USER_AGENT =
 
 const SEARCH_PAGE_BASE = "https://soundcloud.com/search/sounds";
 const SEARCH_API = "https://api-v2.soundcloud.com/search/tracks";
-const LIMIT = 10;
+// LOGIC-44: 25 results per query. Bump from 10 → 25 lets the per-artist
+// cap (LOGIC-43) and downstream taste-driven adjacency work pull a wider
+// per-artist pool; at LIMIT=10 a popular artist's first page already
+// crowded out the diversity budget before the cap could even apply.
+const LIMIT = 25;
 
 interface RawSearchEnvelope {
   collection?: unknown[];

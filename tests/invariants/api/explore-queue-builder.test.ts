@@ -574,10 +574,13 @@ describe("API-20: getNext surfaces buildingQueue: true while a rebuild is in fli
     };
 
     // Prime a non-empty queue, no swipes, no in-flight rebuild.
+    // Use unique artists per item so the per-artist cap (LOGIC-43 / API-31)
+    // doesn't trim the visible item count below REFILL_THRESHOLD — this
+    // test is asserting on the buildingQueue flag, not the cap behavior.
     queues.queues.set(userId, {
       id: "q-steady",
       userId,
-      items: Array.from({ length: 20 }, (_, i) => snapshot(`song-${i}`)),
+      items: Array.from({ length: 20 }, (_, i) => snapshot(`song-${i}`, `Artist-${i}`)),
       phase: "discovery",
       generatedAt: new Date(),
       swipesSeenAtBuild: 0,

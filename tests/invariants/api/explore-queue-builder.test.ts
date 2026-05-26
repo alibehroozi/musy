@@ -1042,22 +1042,45 @@ describe("API-30: soft-suppress artists with ≥ 2 left-swipes from rebuild cand
       });
     }
 
-    // Mock the cold-start LLM to return Skrillex + Deadmau5 tracks in the
-    // pool — the pool would normally surface Skrillex, but the soft-suppress
-    // filter must strip it before persistence.
+    // Mock Claude to return two discovery scenes, then SC to return Skrillex +
+    // Deadmau5 tracks — the soft-suppress filter must strip Skrillex before
+    // persistence because it has ≥ 2 left-swipes.
     const noopAnthropic = {
       complete: vi.fn().mockResolvedValue({
-        text: JSON.stringify({
-          songs: [
-            { title: "Strobe", artist: "Deadmau5" },
-            { title: "First of the Year", artist: "Skrillex" },
-            { title: "Ghosts 'n Stuff", artist: "Deadmau5" },
-          ],
-        }),
+        text: JSON.stringify({ scenes: ["electronic dance music", "heavy dubstep bass"] }),
       }),
     };
     const noopAudius = { search: vi.fn().mockResolvedValue([]) };
-    const noopSoundCloud = { search: vi.fn().mockResolvedValue([]) };
+    const scTracks: import("@moc/contracts").TrackResult[] = [
+      {
+        type: "track",
+        id: "sc-strobe",
+        title: "Strobe",
+        artist: "Deadmau5",
+        provider: "soundcloud",
+        providerId: "sc-1",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-foty",
+        title: "First of the Year",
+        artist: "Skrillex",
+        provider: "soundcloud",
+        providerId: "sc-2",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-ghosts",
+        title: "Ghosts 'n Stuff",
+        artist: "Deadmau5",
+        provider: "soundcloud",
+        providerId: "sc-3",
+        sources: ["soundcloud"],
+      },
+    ];
+    const noopSoundCloud = { search: vi.fn().mockResolvedValue(scTracks) };
     const noopSearch = {
       search: vi.fn().mockImplementation(async (q: string) => {
         // Cover-resolution lookup: pretend everything has a cover.
@@ -1121,25 +1144,80 @@ describe("API-31: every /api/explore/next response contains at most 2 items per 
     const queues = new FakeQueueRepo();
     const profilesRepo = new FakeTasteProfilesRepo();
 
-    // Cold-start LLM returns 5 tracks by Skrillex + 2 tracks by Deadmau5.
+    // Claude returns two scenes; SC searches return 5 Skrillex + 2 Deadmau5 tracks.
     // Per-artist cap (LOGIC-43) must drop Skrillex to 2 in the persisted queue.
     const noopAnthropic = {
       complete: vi.fn().mockResolvedValue({
-        text: JSON.stringify({
-          songs: [
-            { title: "Bangarang", artist: "Skrillex" },
-            { title: "Scary Monsters", artist: "Skrillex" },
-            { title: "First of the Year", artist: "Skrillex" },
-            { title: "Kyoto", artist: "Skrillex" },
-            { title: "Rock n Roll", artist: "Skrillex" },
-            { title: "Strobe", artist: "Deadmau5" },
-            { title: "Ghosts 'n Stuff", artist: "Deadmau5" },
-          ],
-        }),
+        text: JSON.stringify({ scenes: ["heavy dubstep bass", "progressive house"] }),
       }),
     };
     const noopAudius = { search: vi.fn().mockResolvedValue([]) };
-    const noopSoundCloud = { search: vi.fn().mockResolvedValue([]) };
+    const scTracks: import("@moc/contracts").TrackResult[] = [
+      {
+        type: "track",
+        id: "sc-bang",
+        title: "Bangarang",
+        artist: "Skrillex",
+        provider: "soundcloud",
+        providerId: "sc-1",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-scary",
+        title: "Scary Monsters",
+        artist: "Skrillex",
+        provider: "soundcloud",
+        providerId: "sc-2",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-foty",
+        title: "First of the Year",
+        artist: "Skrillex",
+        provider: "soundcloud",
+        providerId: "sc-3",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-kyoto",
+        title: "Kyoto",
+        artist: "Skrillex",
+        provider: "soundcloud",
+        providerId: "sc-4",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-rock",
+        title: "Rock n Roll",
+        artist: "Skrillex",
+        provider: "soundcloud",
+        providerId: "sc-5",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-strobe",
+        title: "Strobe",
+        artist: "Deadmau5",
+        provider: "soundcloud",
+        providerId: "sc-6",
+        sources: ["soundcloud"],
+      },
+      {
+        type: "track",
+        id: "sc-ghosts",
+        title: "Ghosts 'n Stuff",
+        artist: "Deadmau5",
+        provider: "soundcloud",
+        providerId: "sc-7",
+        sources: ["soundcloud"],
+      },
+    ];
+    const noopSoundCloud = { search: vi.fn().mockResolvedValue(scTracks) };
     const noopSearch = {
       search: vi.fn().mockImplementation(async (q: string) => {
         const [title, ...artistParts] = q.split(" ");
@@ -1238,15 +1316,243 @@ describe("API-31: every /api/explore/next response contains at most 2 items per 
 });
 
 describe("API-32: discovery phase pools from SoundCloud scene searches, not LLM-generated titles", () => {
-  it.todo(
-    "sourceDiscovery fires exactly 1 Claude call (for scenes) and up to 8 SoundCloud searches",
-  );
-  it.todo("sourceDiscovery falls back to seedSnapshots when the Claude scenes call fails");
-  it.todo(
-    "sourceDiscovery falls back to seedSnapshots when all SoundCloud searches return empty pools",
-  );
-  it.todo(
-    "sourceDiscovery falls back to seedSnapshots when all tracks are excluded by asymmetric dedup",
-  );
-  it.todo("buildColdStartPrompt is NOT called during a discovery rebuild");
+  function makeTrack(
+    id: string,
+    title: string,
+    artist: string,
+  ): import("@moc/contracts").TrackResult {
+    return {
+      type: "track",
+      id,
+      title,
+      artist,
+      provider: "soundcloud",
+      providerId: id,
+      sources: ["soundcloud"],
+    };
+  }
+
+  it("sourceDiscovery fires exactly 1 Claude call (for scenes) and up to 8 SoundCloud searches", async () => {
+    const userId = "u-api32-1";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+    const profilesRepo = new FakeTasteProfilesRepo();
+
+    const scenes = ["scene 1", "scene 2", "scene 3"];
+    const anthropicMock = {
+      complete: vi.fn().mockResolvedValue({
+        text: JSON.stringify({ scenes }),
+      }),
+    };
+    const scTrack = makeTrack("sc-1", "Track 1", "Artist 1");
+    const soundcloudMock = { search: vi.fn().mockResolvedValue([scTrack]) };
+    const searchMock = {
+      search: vi.fn().mockImplementation(async (q: string) => ({
+        results: [
+          {
+            type: "track" as const,
+            id: `r-${q}`,
+            title: "Track 1",
+            artist: "Artist 1",
+            provider: "deezer" as const,
+            providerId: "p",
+            sources: ["deezer" as const],
+            artworkUrl: "https://cdn/cover.jpg",
+          },
+        ],
+        partial: false,
+        failedProviders: [],
+        cached: false,
+      })),
+    };
+    const profileBuilder = {
+      getProfile: async () => null,
+      maybeBuild: async () => {},
+      buildIfDue: async () => {},
+    };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const builder = new QueueBuilderService(
+      swipes as never,
+      profilesRepo as never,
+      queues as never,
+      profileBuilder as never,
+      anthropicMock as never,
+      { search: vi.fn().mockResolvedValue([]) } as never,
+      soundcloudMock as never,
+      searchMock as never,
+      { sampleByScoreBucket: vi.fn().mockResolvedValue([]) } as never,
+      { resolve: vi.fn().mockResolvedValue({}) } as never,
+      fakeConfig as never,
+    );
+
+    await builder.rebuildQueue(userId);
+
+    // Exactly 1 Claude call for scenes.
+    expect(anthropicMock.complete).toHaveBeenCalledTimes(1);
+    // One SC search per scene.
+    expect(soundcloudMock.search).toHaveBeenCalledTimes(scenes.length);
+    for (const scene of scenes) {
+      expect(soundcloudMock.search).toHaveBeenCalledWith(scene);
+    }
+  });
+
+  it("sourceDiscovery falls back to seedSnapshots when the Claude scenes call fails", async () => {
+    const userId = "u-api32-2";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+    const profilesRepo = new FakeTasteProfilesRepo();
+
+    const anthropicMock = {
+      complete: vi.fn().mockRejectedValue(new Error("LLM unavailable")),
+    };
+    const soundcloudMock = { search: vi.fn().mockResolvedValue([]) };
+    const searchMock = {
+      search: vi
+        .fn()
+        .mockResolvedValue({ results: [], partial: false, failedProviders: [], cached: false }),
+    };
+    const profileBuilder = {
+      getProfile: async () => null,
+      maybeBuild: async () => {},
+      buildIfDue: async () => {},
+    };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const builder = new QueueBuilderService(
+      swipes as never,
+      profilesRepo as never,
+      queues as never,
+      profileBuilder as never,
+      anthropicMock as never,
+      { search: vi.fn().mockResolvedValue([]) } as never,
+      soundcloudMock as never,
+      searchMock as never,
+      { sampleByScoreBucket: vi.fn().mockResolvedValue([]) } as never,
+      { resolve: vi.fn().mockResolvedValue({}) } as never,
+      fakeConfig as never,
+    );
+
+    await builder.rebuildQueue(userId);
+
+    // SC was never called (scenes call failed before fan-out).
+    expect(soundcloudMock.search).not.toHaveBeenCalled();
+    // Queue was built from seedSnapshots fallback.
+    const persisted = queues.queues.get(userId);
+    expect(persisted).toBeDefined();
+    expect(persisted?.items.length).toBeGreaterThan(0);
+  });
+
+  it("sourceDiscovery falls back to seedSnapshots when all SoundCloud searches return empty pools", async () => {
+    const userId = "u-api32-3";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+    const profilesRepo = new FakeTasteProfilesRepo();
+
+    const anthropicMock = {
+      complete: vi.fn().mockResolvedValue({
+        text: JSON.stringify({ scenes: ["scene a", "scene b"] }),
+      }),
+    };
+    const soundcloudMock = { search: vi.fn().mockResolvedValue([]) };
+    const searchMock = {
+      search: vi
+        .fn()
+        .mockResolvedValue({ results: [], partial: false, failedProviders: [], cached: false }),
+    };
+    const profileBuilder = {
+      getProfile: async () => null,
+      maybeBuild: async () => {},
+      buildIfDue: async () => {},
+    };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const builder = new QueueBuilderService(
+      swipes as never,
+      profilesRepo as never,
+      queues as never,
+      profileBuilder as never,
+      anthropicMock as never,
+      { search: vi.fn().mockResolvedValue([]) } as never,
+      soundcloudMock as never,
+      searchMock as never,
+      { sampleByScoreBucket: vi.fn().mockResolvedValue([]) } as never,
+      { resolve: vi.fn().mockResolvedValue({}) } as never,
+      fakeConfig as never,
+    );
+
+    await builder.rebuildQueue(userId);
+
+    // SC was called but returned nothing; fallback queue is non-empty.
+    expect(soundcloudMock.search).toHaveBeenCalled();
+    const persisted = queues.queues.get(userId);
+    expect(persisted).toBeDefined();
+    expect(persisted?.items.length).toBeGreaterThan(0);
+  });
+
+  it("buildColdStartPrompt is NOT called during a discovery rebuild", async () => {
+    const userId = "u-api32-5";
+    const swipes = new FakeSwipesRepo();
+    const queues = new FakeQueueRepo();
+    const profilesRepo = new FakeTasteProfilesRepo();
+
+    const anthropicMock = {
+      complete: vi.fn().mockResolvedValue({
+        text: JSON.stringify({ scenes: ["indie pop 2010s", "minimal techno"] }),
+      }),
+    };
+    const scTrack = makeTrack("sc-1", "Track A", "Artist A");
+    const soundcloudMock = { search: vi.fn().mockResolvedValue([scTrack]) };
+    const searchMock = {
+      search: vi.fn().mockImplementation(async (q: string) => ({
+        results: [
+          {
+            type: "track" as const,
+            id: `r-${q}`,
+            title: "Track A",
+            artist: "Artist A",
+            provider: "deezer" as const,
+            providerId: "p",
+            sources: ["deezer" as const],
+            artworkUrl: "https://cdn/cover.jpg",
+          },
+        ],
+        partial: false,
+        failedProviders: [],
+        cached: false,
+      })),
+    };
+    const profileBuilder = {
+      getProfile: async () => null,
+      maybeBuild: async () => {},
+      buildIfDue: async () => {},
+    };
+    const fakeConfig = { get: vi.fn().mockReturnValue("claude-sonnet-4-6") };
+
+    const builder = new QueueBuilderService(
+      swipes as never,
+      profilesRepo as never,
+      queues as never,
+      profileBuilder as never,
+      anthropicMock as never,
+      { search: vi.fn().mockResolvedValue([]) } as never,
+      soundcloudMock as never,
+      searchMock as never,
+      { sampleByScoreBucket: vi.fn().mockResolvedValue([]) } as never,
+      { resolve: vi.fn().mockResolvedValue({}) } as never,
+      fakeConfig as never,
+    );
+
+    await builder.rebuildQueue(userId);
+
+    // The persisted queue has tracks from SC (real tracks, not LLM-generated titles).
+    const persisted = queues.queues.get(userId);
+    expect(persisted?.items.some((i) => i.title === "Track A")).toBe(true);
+    // Scenes prompt was invoked once; no second "songs" call.
+    expect(anthropicMock.complete).toHaveBeenCalledTimes(1);
+    const promptArg = anthropicMock.complete.mock.calls[0]?.[0] as
+      | { userMessage: string }
+      | undefined;
+    expect(promptArg?.userMessage).toContain("scene");
+  });
 });

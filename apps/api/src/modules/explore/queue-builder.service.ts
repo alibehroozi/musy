@@ -5,13 +5,13 @@ import {
   applyPerArtistCap,
   ARTIST_REFINEMENT_PICKS_TARGET,
   buildArtistRefinementPrompt,
-  buildColdStartPrompt,
+  buildDiscoveryScenesPrompt,
   buildPersonalizedPrompt,
-  COLD_START_MAX_RECENT_SWIPES,
   collectAsymmetricExcludedHashes,
   computeSnapshotHash,
+  DISCOVERY_SCENES_MAX_RECENT_SWIPES,
   parseArtistRefinementResponse,
-  parseColdStartResponse,
+  parseDiscoveryScenesResponse,
   parsePersonalizedResponse,
   phaseFor,
   pickCoverMatch,
@@ -23,7 +23,7 @@ import {
   SWIPE_TRIGGER_THRESHOLD,
   type ArtistRefinementPromptCandidate,
   type AsymmetricSwipe,
-  type ColdStartPromptSwipe,
+  type DiscoveryScenesSwipe,
   type PersonalizedPromptCandidate,
   type PersonalizedScoreBuckets,
   type ScoreBucketEntry,
@@ -246,13 +246,13 @@ export class QueueBuilderService {
     const suppressedArtists = softSuppressedArtists({
       swipeHistory: toSoftSuppressSwipes(swipeDocs),
     });
-    // Project swipes for the cold-start soft signal (LOGIC-28). Newest-
-    // first so the per-prompt truncation drops oldest. Only the discovery
-    // path actually reads this; other phases ignore it.
-    const recentSwipesForColdStart: ColdStartPromptSwipe[] = swipeDocs
+    // Project swipes for the discovery scenes soft signal. Newest-first so
+    // the per-prompt truncation drops oldest. Only the discovery path reads
+    // this; other phases ignore it.
+    const recentSwipesForScenes: DiscoveryScenesSwipe[] = swipeDocs
       .slice()
       .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-      .slice(0, COLD_START_MAX_RECENT_SWIPES)
+      .slice(0, DISCOVERY_SCENES_MAX_RECENT_SWIPES)
       .map((s) => ({
         title: s.snapshot.title,
         artist: s.snapshot.artist,
@@ -265,7 +265,7 @@ export class QueueBuilderService {
         phase,
         profile,
         excludedHashes,
-        recentSwipesForColdStart,
+        recentSwipesForScenes,
       );
     } catch (err) {
       this.logger.warn(
@@ -449,10 +449,10 @@ export class QueueBuilderService {
     phase: QueuePhase,
     profile: TasteProfile | null,
     excludedHashes: Set<string>,
-    recentSwipesForColdStart: ColdStartPromptSwipe[],
+    recentSwipesForScenes: DiscoveryScenesSwipe[],
   ): Promise<SongSnapshot[]> {
     if (phase === "discovery") {
-      return await this.sourceDiscovery(excludedHashes, recentSwipesForColdStart);
+      return await this.sourceDiscovery(excludedHashes, recentSwipesForScenes);
     }
 
     if (phase === "artist-refinement") {
@@ -463,55 +463,76 @@ export class QueueBuilderService {
   }
 
   /**
-   * Discovery phase: ask Claude to generate a diverse initial set of
-   * canonical commercial titles. Emits `{title, artist}` tuples only —
-   * the downstream cover-resolution step (`resolveCoversForCandidates`)
-   * is the single authority for covers, fanning out to the unified
-   * search aggregator (Audius + Deezer + RadioBrowser + Genius) and
-   * dropping anything Deezer / Genius can't cover.
+   * Discovery phase — API-32 / LOGIC-45..47 / AI-17.
    *
-   * SoundCloud is deliberately NOT consulted here: its user-upload
-   * catalog has unreliable artwork, and using its `artworkUrl` would
-   * smuggle covers from a source we've decided to exclude. Falls back
-   * to the static seed list if the cold-start LLM fails.
+   * Two-step pattern: (1) Claude generates up to DISCOVERY_SCENES_COUNT
+   * short genre+era+mood keyword phrases ("scenes"); (2) each scene fans
+   * out to a SoundCloud search in parallel; the flat-mapped results are
+   * deduplicated against the asymmetric excluded-hash set and returned.
    *
-   * `recentSwipes` is the soft-signal payload from LOGIC-28. Empty
-   * on the user's first call (the cache-friendly path); non-empty on
-   * rebuilds within the discovery phase so the LLM leans toward the
-   * feel of right-swiped items and away from left-swiped ones without
-   * hard-excluding any artist.
+   * Every track in the pool is a real SoundCloud result — no hallucinated
+   * titles can slip through because SC's `search()` is the gating step.
+   * The downstream cover-resolution step (`resolveCoversForCandidates`)
+   * still drops any candidate whose artwork can't be resolved.
+   *
+   * SoundCloud `artworkUrl` is intentionally dropped via `toSnapshot` —
+   * the cover-resolution step picks covers from the trusted aggregator
+   * (Deezer / Genius) as it does in the artist-refinement phase.
+   *
+   * `recentSwipes` is the soft-signal payload. Empty on a user's first
+   * call (cache-stable path, LOGIC-46); non-empty on rebuilds within the
+   * discovery phase so the scene phrases lean toward the feel of right-
+   * swiped items and away from left-swiped ones without hard-excluding
+   * any genre or era.
+   *
+   * Falls back to the static `seedSnapshots()` list when the Claude call
+   * fails, when all SC searches return zero results, or when every result
+   * is already excluded by the asymmetric dedup filter.
    */
   private async sourceDiscovery(
     excludedHashes: Set<string>,
-    recentSwipes: ColdStartPromptSwipe[],
+    recentSwipes: DiscoveryScenesSwipe[],
   ): Promise<SongSnapshot[]> {
     try {
-      const { system, userMessage } = buildColdStartPrompt({ recentSwipes });
+      const { system, userMessage } = buildDiscoveryScenesPrompt({ recentSwipes });
       const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
       const response = await this.anthropic.complete({
         system,
         userMessage,
         model,
-        maxTokens: 1024,
+        maxTokens: 512,
       });
-      const suggestions = parseColdStartResponse(response.text);
-      if (suggestions.length === 0) throw new Error("cold-start: empty response");
+      const { scenes } = parseDiscoveryScenesResponse(response.text);
+      if (scenes.length === 0) throw new Error("discovery-scenes: empty scenes list");
 
-      const tuples: SongSnapshot[] = suggestions.map(({ title, artist }) => ({
-        title,
-        artist,
-        kind: "track",
-      }));
+      const settled = await Promise.allSettled(
+        scenes.map((scene) => this.soundcloud.search(scene).catch(() => [] as TrackResult[])),
+      );
 
-      const result = dedupeBySnapshotHash(tuples, excludedHashes);
-      if (result.length > 0) return result;
+      const allTracks: TrackResult[] = [];
+      for (const r of settled) {
+        if (r.status === "fulfilled") {
+          for (const t of r.value) allTracks.push(t);
+        }
+      }
+
+      if (allTracks.length === 0) throw new Error("discovery-scenes: all SC searches empty");
+
+      const pool = dedupeBySnapshotHash(
+        allTracks.map((t) => toSnapshot(t)),
+        excludedHashes,
+      );
+
+      if (pool.length > 0) return pool;
+
+      throw new Error("discovery-scenes: all candidates already excluded");
     } catch (err) {
       this.logger.warn(
-        { event: "explore_cold_start_failed", err: errToString(err) },
-        "explore_cold_start_failed",
+        { event: "explore_discovery_scenes_failed", err: errToString(err) },
+        "explore_discovery_scenes_failed",
       );
     }
-    // Fallback: static seed list (no cover art, but always available).
+    // Fallback: static seed list (always available, no cover art).
     return seedSnapshots().filter((s) => !excludedHashes.has(computeSnapshotHash(s)));
   }
 

@@ -1407,10 +1407,26 @@ describe("API-32: discovery phase pools from SoundCloud scene searches, not LLM-
       complete: vi.fn().mockRejectedValue(new Error("LLM unavailable")),
     };
     const soundcloudMock = { search: vi.fn().mockResolvedValue([]) };
+    // Cover-resolution calls search.search() for each seed snapshot.
+    // Return a cover-containing result so seeds survive resolveCoversForCandidates.
     const searchMock = {
-      search: vi
-        .fn()
-        .mockResolvedValue({ results: [], partial: false, failedProviders: [], cached: false }),
+      search: vi.fn().mockImplementation(async (q: string) => ({
+        results: [
+          {
+            type: "track" as const,
+            id: `r-${q}`,
+            title: q,
+            artist: "Fallback Artist",
+            provider: "deezer" as const,
+            providerId: "p",
+            sources: ["deezer" as const],
+            artworkUrl: "https://cdn/cover.jpg",
+          },
+        ],
+        partial: false,
+        failedProviders: [],
+        cached: false,
+      })),
     };
     const profileBuilder = {
       getProfile: async () => null,
@@ -1455,10 +1471,26 @@ describe("API-32: discovery phase pools from SoundCloud scene searches, not LLM-
       }),
     };
     const soundcloudMock = { search: vi.fn().mockResolvedValue([]) };
+    // Cover-resolution calls search.search() for each seed snapshot.
+    // Return a cover-containing result so seeds survive resolveCoversForCandidates.
     const searchMock = {
-      search: vi
-        .fn()
-        .mockResolvedValue({ results: [], partial: false, failedProviders: [], cached: false }),
+      search: vi.fn().mockImplementation(async (q: string) => ({
+        results: [
+          {
+            type: "track" as const,
+            id: `r-${q}`,
+            title: q,
+            artist: "Fallback Artist",
+            provider: "deezer" as const,
+            providerId: "p",
+            sources: ["deezer" as const],
+            artworkUrl: "https://cdn/cover.jpg",
+          },
+        ],
+        partial: false,
+        failedProviders: [],
+        cached: false,
+      })),
     };
     const profileBuilder = {
       getProfile: async () => null,

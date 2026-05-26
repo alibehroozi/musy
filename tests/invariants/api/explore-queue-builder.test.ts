@@ -1,6 +1,6 @@
 // If a test fails, fix the source code, not the test.
 //
-// Invariants verified here are listed in INVARIANTS.md under API-18, API-19, API-20, API-21, API-25.
+// Invariants verified here are listed in INVARIANTS.md under API-18, API-19, API-20, API-21, API-25, API-30, API-31, API-32.
 //
 // These tests exercise QueueBuilderService directly (not through HTTP)
 // because the invariants are about service-internal control flow — refill
@@ -1235,4 +1235,18 @@ describe("API-31: every /api/explore/next response contains at most 2 items per 
     }
     expect(counts.get("skrillex") ?? 0).toBeLessThanOrEqual(2);
   });
+});
+
+describe("API-32: discovery phase pools from SoundCloud scene searches, not LLM-generated titles", () => {
+  it.todo(
+    "sourceDiscovery fires exactly 1 Claude call (for scenes) and up to 8 SoundCloud searches",
+  );
+  it.todo("sourceDiscovery falls back to seedSnapshots when the Claude scenes call fails");
+  it.todo(
+    "sourceDiscovery falls back to seedSnapshots when all SoundCloud searches return empty pools",
+  );
+  it.todo(
+    "sourceDiscovery falls back to seedSnapshots when all tracks are excluded by asymmetric dedup",
+  );
+  it.todo("buildColdStartPrompt is NOT called during a discovery rebuild");
 });

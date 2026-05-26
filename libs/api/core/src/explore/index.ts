@@ -11,4 +11,7 @@ export * from "./dedup-history.js";
 export * from "./soft-suppress.js";
 export * from "./per-artist-cap.js";
 export * from "./discovery-scenes-prompt.js";
+export * from "./related-artists-prompt.js";
+export * from "./taste-driven-pick-prompt.js";
+export * from "./paginate-unseen-by-skip.js";
 export * from "./llm-json.js";

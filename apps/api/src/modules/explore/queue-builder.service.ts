@@ -3,31 +3,33 @@ import { ConfigService } from "@nestjs/config";
 import { v4 as uuidv4 } from "uuid";
 import {
   applyPerArtistCap,
-  ARTIST_REFINEMENT_PICKS_TARGET,
-  buildArtistRefinementPrompt,
   buildDiscoveryScenesPrompt,
-  buildPersonalizedPrompt,
+  buildRelatedArtistsPrompt,
+  buildTasteDrivenPickPrompt,
   collectAsymmetricExcludedHashes,
   computeSnapshotHash,
   DISCOVERY_SCENES_MAX_RECENT_SWIPES,
-  parseArtistRefinementResponse,
+  paginateUnseenBySkip,
   parseDiscoveryScenesResponse,
-  parsePersonalizedResponse,
+  parseRelatedArtistsResponse,
+  parseTasteDrivenPickResponse,
   phaseFor,
   pickCoverMatch,
+  RELATED_ARTISTS_HIGH_BUCKET_SAMPLE_CAP,
   resolveCoversForQueue,
   seedSnapshots,
   slotFor,
   softSuppressedArtists,
   STRONG_ARTIST_SCORE_THRESHOLD,
   SWIPE_TRIGGER_THRESHOLD,
-  type ArtistRefinementPromptCandidate,
+  TASTE_DRIVEN_PICKS_TARGET,
   type AsymmetricSwipe,
   type DiscoveryScenesSwipe,
-  type PersonalizedPromptCandidate,
-  type PersonalizedScoreBuckets,
-  type ScoreBucketEntry,
+  type HighBucketSample,
   type SoftSuppressSwipe,
+  type TasteDrivenPromptCandidate,
+  type TasteDrivenScoreBuckets,
+  type TasteDrivenScoreBucketEntry,
 } from "@moc/api-core";
 import type {
   NextResponse,
@@ -53,26 +55,20 @@ const REFILL_THRESHOLD = 5;
 const MAX_COUNT = 50;
 const MIN_COUNT = 1;
 const DEFAULT_MODEL = "claude-sonnet-4-6";
-const PERSONALIZED_MAX_TOKENS = 4096;
-const ARTIST_REFINEMENT_MAX_TOKENS = 4096;
 
-// Artist refinement phase — top N profile artists feed the SoundCloud
-// search fan-out. Caps upstream egress at 8 concurrent searches per
-// rebuild and aligns with phaseFor's "strong artists < 8" exit gate:
-// even if the user has more than 8 weak-signal artists, refinement
-// only ever asks about the 8 best.
-const ARTIST_REFINEMENT_TOP_ARTISTS = 8;
-const ARTIST_REFINEMENT_SONGS_PER_ARTIST = 5;
-
-// Personalized phase: how many distinct artists from profile.artists
-// reach the prompt — chosen uniformly at random per rebuild so consecutive
-// rebuilds get different angles on the user's taste. LOGIC-25.
-const PERSONALIZED_ARTIST_SHUFFLE_SIZE = 5;
-// Top genres always reach the prompt (no shuffle — they're already
-// score-ranked in the profile).
-const PERSONALIZED_TOP_GENRES = 3;
-// Per the design: 10 random songs from each score bucket reach the prompt
-// as "songs the user has already rated at this level" context.
+// Taste-driven phase: how many seed artist names from profile.artists are
+// shuffled and passed to the related-artists Claude call. Gives variability
+// across rebuilds while keeping the seed list recognizable.
+const TASTE_DRIVEN_SEED_SHUFFLE_SIZE = 8;
+// Fallback when the related-artists Claude call fails: search SoundCloud
+// directly for the top N profile artists (same as the old artist-refinement
+// pattern for graceful degradation).
+const TASTE_DRIVEN_FALLBACK_TOP_ARTISTS = 8;
+// Max tokens for the related-artists call (small — just a list of names).
+const TASTE_DRIVEN_RELATED_ARTISTS_MAX_TOKENS = 512;
+// Max tokens for the final-pick call.
+const TASTE_DRIVEN_PICK_MAX_TOKENS = 4096;
+// Per the design: 10 random songs from each score bucket reach the prompt.
 const SCORE_BUCKET_SAMPLE_SIZE = 10;
 const SCORE_BUCKET_LOW = { min: 0, max: 3 };
 const SCORE_BUCKET_MID = { min: 4, max: 7 };
@@ -113,21 +109,12 @@ export class QueueBuilderService {
    * (fire-and-forget) and signals `buildingQueue: true` so the FE can
    * show a loading state and poll without re-triggering rebuilds (UI-23,
    * idempotency via API-21).
-   *
-   * The previous sync-block-on-first-hit was removed: cold-start LLM
-   * latency is 5–30 s and blocking the HTTP response that long is worse
-   * UX than returning empty + the buildingQueue flag immediately.
-   *
-   * `count` is clamped to [MIN_COUNT, MAX_COUNT]; the response carries
-   * the top `count` items of the queue.
    */
   async getNext(userId: string, count: number): Promise<NextResponse> {
     const safeCount = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Math.floor(count)));
     const queue = await this.queues.findForUser(userId);
 
     if (!queue) {
-      // No queue yet (first visit). Fire an async rebuild — the FE will
-      // observe buildingQueue: true and poll until items arrive.
       this.kickoffRebuild(userId);
       return {
         items: [],
@@ -137,12 +124,6 @@ export class QueueBuilderService {
       };
     }
 
-    // Filter against asymmetric eligibility (API-25 / LOGIC-41) and
-    // cover-completeness (API-17 defense in depth — the queue builder is
-    // the primary enforcement, but stale pre-DATA-13 rows could still
-    // slip through). Left-swipes burn forever; right-swipes burn the slot.
-    // Per-artist cap (API-31 / LOGIC-43) is also enforced here so a stale
-    // queue persisted before the cap landed still serves capped responses.
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
     const excluded = collectAsymmetricExcludedHashes(
       toAsymmetricSwipes(swipeDocs),
@@ -154,10 +135,6 @@ export class QueueBuilderService {
       ),
     );
 
-    // Self-heal: if unseen runs low and no rebuild is in flight, fire
-    // one. This complements the swipe-write-triggered maybeRefill
-    // (API-18) — for example, a user opening the app cold with a stale
-    // queue from a previous session.
     if (filtered.length < REFILL_THRESHOLD) {
       this.kickoffRebuild(userId);
     }
@@ -184,15 +161,11 @@ export class QueueBuilderService {
   }
 
   /**
-   * Force-rebuild the queue. Per spec, this is also fired by the swipe
-   * handler when the queue dips below REFILL_THRESHOLD items (measured
-   * as unseen-remaining; see API-18).
+   * Force-rebuild the queue.
    *
    * Idempotent per user (API-21): concurrent invocations for the same
-   * userId share one underlying build — the second caller awaits the
-   * first's promise rather than starting a duplicate sourcing pipeline.
-   * The in-flight entry is cleared on settle so the *next* rebuild
-   * cycle starts fresh.
+   * userId share one underlying build. The in-flight entry is cleared on
+   * settle so the next rebuild cycle starts fresh.
    */
   async rebuildQueue(userId: string): Promise<void> {
     const inFlight = this.inFlightRebuilds.get(userId);
@@ -215,15 +188,7 @@ export class QueueBuilderService {
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
     let profile = await this.profileBuilder.getProfile(userId);
 
-    // API-19: discovery-exit ritual. When the user has crossed the
-    // profile-build threshold but no profile has been persisted yet,
-    // the fire-and-forget build kicked off by recordSwipe may still be
-    // in flight. If we don't await it here, sourceCandidates will run
-    // the discovery path again (asking the cold-start LLM for tracks
-    // that overlap with what the user just swiped) and the queue will
-    // re-empty. buildIfDue self-no-ops if the build isn't actually due
-    // — this guard just prevents the redundant read when we know it
-    // isn't.
+    // API-19: discovery-exit ritual.
     if (profile === null && swipeDocs.length >= SWIPE_TRIGGER_THRESHOLD) {
       await this.profileBuilder.buildIfDue(userId);
       profile = await this.profileBuilder.getProfile(userId);
@@ -231,24 +196,13 @@ export class QueueBuilderService {
 
     const phase = phaseFor(profile, swipeDocs.length);
 
-    // API-25: asymmetric exclusion (LOGIC-41) — left-swipes burn forever,
-    // right-swipes burn only the current `(weekday, timeOfDay)` slot. Both
-    // contribute to the dedupe set the per-phase sourcing pipelines use
-    // when filtering raw provider results.
     const excludedHashes = collectAsymmetricExcludedHashes(
       toAsymmetricSwipes(swipeDocs),
       slotFor(new Date()),
     );
-    // API-30: artists with ≥ 2 left-swipes anywhere in history are
-    // soft-suppressed from the rebuild candidate pool. Computed live from
-    // swipes so no separate state to migrate; case-insensitive trimmed
-    // match per LOGIC-42.
     const suppressedArtists = softSuppressedArtists({
       swipeHistory: toSoftSuppressSwipes(swipeDocs),
     });
-    // Project swipes for the discovery scenes soft signal. Newest-first so
-    // the per-prompt truncation drops oldest. Only the discovery path reads
-    // this; other phases ignore it.
     const recentSwipesForScenes: DiscoveryScenesSwipe[] = swipeDocs
       .slice()
       .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
@@ -258,6 +212,7 @@ export class QueueBuilderService {
         artist: s.snapshot.artist,
         direction: s.direction,
       }));
+
     let items: SongSnapshot[];
     try {
       items = await this.sourceCandidates(
@@ -266,6 +221,7 @@ export class QueueBuilderService {
         profile,
         excludedHashes,
         recentSwipesForScenes,
+        toAsymmetricSwipes(swipeDocs),
       );
     } catch (err) {
       this.logger.warn(
@@ -279,17 +235,8 @@ export class QueueBuilderService {
       items = seedSnapshots().filter((s) => !excludedHashes.has(computeSnapshotHash(s)));
     }
 
-    // API-30 + API-31: soft-suppress artists with ≥ 2 left-swipes, then
-    // cap at 2 per artist. Both are computed against the candidate pool
-    // as produced by sourceCandidates so no single deep-catalog artist
-    // (SC's catalog is the usual offender) steamrolls the queue.
     items = items.filter((s) => !suppressedArtists.has(s.artist.trim().toLowerCase()));
     items = applyPerArtistCap(items);
-
-    // DATA-13: any candidate that didn't pick up a coverUrl during
-    // sourcing gets one resolved here via the unified search aggregator.
-    // Candidates the aggregator can't cover are dropped: a song with no
-    // resolvable artwork "doesn't exist" by the explore queue's contract.
     items = await this.resolveCoversForCandidates(items);
 
     if (items.length === 0) {
@@ -309,7 +256,6 @@ export class QueueBuilderService {
       swipesSeenAtBuild: swipeDocs.length,
     });
 
-    // Pre-resolve in parallel; failures are logged but don't block the queue.
     await Promise.allSettled(
       items.slice(0, PRE_RESOLVE_TOP_N).map((s) =>
         this.play.resolve(s).catch((err: unknown) => {
@@ -333,26 +279,13 @@ export class QueueBuilderService {
   }
 
   /**
-   * Refill trigger: called by the swipe handler. If the queue is short,
-   * fire-and-forget a rebuild. Caller does not await.
-   *
-   * Per API-18 the "short queue" signal is the count of **unseen** items
-   * remaining, not the raw `items.length` of the stored document. Swipes
-   * append to a separate collection and never prune the queue, so raw
-   * length stays at ~20 even after every item has been swiped — masking
-   * the exhaustion signal. Computing unseen here lets the trigger fire
-   * exactly when the user would otherwise see `{items:[], partial:true}`
-   * on the next /next.
+   * Refill trigger: called by the swipe handler.
    */
   async maybeRefill(userId: string): Promise<void> {
     const queue = await this.queues.findForUser(userId);
     if (!queue) return;
 
     const swipeDocs = await this.swipes.findSwipesForUser(userId);
-    // API-18 / API-25: refill triggers on the count of items still
-    // *asymmetrically* eligible — left-swipes burn forever (so they count
-    // as ineligible regardless of slot), right-swipes burn the current
-    // slot only. Per LOGIC-41.
     const excluded = collectAsymmetricExcludedHashes(
       toAsymmetricSwipes(swipeDocs),
       slotFor(new Date()),
@@ -377,19 +310,6 @@ export class QueueBuilderService {
     });
   }
 
-  /**
-   * Resolve covers for any candidate that didn't pick one up during
-   * the per-phase sourcing step. Each uncovered candidate is queried
-   * against the unified `SearchService` aggregator (broader provider
-   * fan-out than the per-phase Audius/SoundCloud lookups — adds
-   * Deezer + Genius + RadioBrowser); the first track with a non-empty
-   * `artworkUrl` becomes that candidate's `coverUrl`. Candidates with
-   * no resolvable artwork are dropped.
-   *
-   * The pure helper `resolveCoversForQueue` from `@moc/api-core` does
-   * the actual filtering — this method just resolves the lookups in
-   * parallel and hands them to the helper as a sync function.
-   */
   private async resolveCoversForCandidates(candidates: SongSnapshot[]): Promise<SongSnapshot[]> {
     if (candidates.length === 0) return candidates;
     const uncovered = candidates.filter((c) => !hasNonEmptyCover(c));
@@ -450,44 +370,20 @@ export class QueueBuilderService {
     profile: TasteProfile | null,
     excludedHashes: Set<string>,
     recentSwipesForScenes: DiscoveryScenesSwipe[],
+    swipeHistory: AsymmetricSwipe[],
   ): Promise<SongSnapshot[]> {
     if (phase === "discovery") {
       return await this.sourceDiscovery(excludedHashes, recentSwipesForScenes);
     }
 
-    if (phase === "artist-refinement") {
-      return await this.sourceArtistRefinement(profile, excludedHashes);
-    }
-
-    return await this.sourcePersonalized(userId, profile, excludedHashes);
+    // "personalized" and the legacy stored "artist-refinement" phase both
+    // route through sourceTasteDriven (API-33: no new "artist-refinement"
+    // documents are written, but old stored ones may still be read).
+    return await this.sourceTasteDriven(userId, profile, excludedHashes, swipeHistory);
   }
 
   /**
    * Discovery phase — API-32 / LOGIC-45..47 / AI-17.
-   *
-   * Two-step pattern: (1) Claude generates up to DISCOVERY_SCENES_COUNT
-   * short genre+era+mood keyword phrases ("scenes"); (2) each scene fans
-   * out to a SoundCloud search in parallel; the flat-mapped results are
-   * deduplicated against the asymmetric excluded-hash set and returned.
-   *
-   * Every track in the pool is a real SoundCloud result — no hallucinated
-   * titles can slip through because SC's `search()` is the gating step.
-   * The downstream cover-resolution step (`resolveCoversForCandidates`)
-   * still drops any candidate whose artwork can't be resolved.
-   *
-   * SoundCloud `artworkUrl` is intentionally dropped via `toSnapshot` —
-   * the cover-resolution step picks covers from the trusted aggregator
-   * (Deezer / Genius) as it does in the artist-refinement phase.
-   *
-   * `recentSwipes` is the soft-signal payload. Empty on a user's first
-   * call (cache-stable path, LOGIC-46); non-empty on rebuilds within the
-   * discovery phase so the scene phrases lean toward the feel of right-
-   * swiped items and away from left-swiped ones without hard-excluding
-   * any genre or era.
-   *
-   * Falls back to the static `seedSnapshots()` list when the Claude call
-   * fails, when all SC searches return zero results, or when every result
-   * is already excluded by the asymmetric dedup filter.
    */
   private async sourceDiscovery(
     excludedHashes: Set<string>,
@@ -532,257 +428,162 @@ export class QueueBuilderService {
         "explore_discovery_scenes_failed",
       );
     }
-    // Fallback: static seed list (always available, no cover art).
     return seedSnapshots().filter((s) => !excludedHashes.has(computeSnapshotHash(s)));
   }
 
   /**
-   * Artist-refinement phase — LOGIC-26 / AI-09 / PRIVACY-10.
+   * Taste-driven adjacency phase — API-33 / API-34 / LOGIC-48..53 / AI-18..19 / PRIVACY-17.
    *
-   * Inputs to the LLM:
-   *   - The full profile (projected per PRIVACY-10).
-   *   - A candidate pool built per-artist: for each of the top
-   *     ARTIST_REFINEMENT_TOP_ARTISTS in profile.artists (ranked by
-   *     score), query SoundCloud and keep the first
-   *     ARTIST_REFINEMENT_SONGS_PER_ARTIST hits. Audius is intentionally
-   *     not consulted here — the artist-name search shape works better
-   *     on SoundCloud's index, and keeping the pool source single-
-   *     provider makes downstream cover resolution more predictable.
+   * Two-step Claude pattern:
+   *   1. Related-artists call: Claude receives profile + high-bucket samples +
+   *      shuffled seed artists → returns ~15 adjacent artist names.
+   *   2. SoundCloud fan-out: for each adjacent artist, search SC (up to 25
+   *      results) and paginate unseen tracks (paginateUnseenBySkip, 3/artist).
+   *   3. Final-pick call: Claude receives profile + score buckets + candidate
+   *      pool → picks 25 tracks (≤ 2/artist).
    *
-   * LLM output: up to ARTIST_REFINEMENT_PICKS_TARGET picks from the
-   * pool (verbatim). Caller dedupes against excludedHashes (per-slot burnt
-   * set, API-25); LLM failures fall through to the deduped pool top-N so
-   * the queue is never empty when there's pool content available.
+   * Fallback when related-artists call fails: search SoundCloud directly for
+   * the top TASTE_DRIVEN_FALLBACK_TOP_ARTISTS profile artists (graceful
+   * degradation to the old artist-refinement pattern).
+   *
+   * Fallback when final-pick call fails: return the deduped pool's first 25.
    */
-  private async sourceArtistRefinement(
-    profile: TasteProfile | null,
-    excludedHashes: Set<string>,
-  ): Promise<SongSnapshot[]> {
-    if (!profile || profile.artists.length === 0) return [];
-
-    // Fan out only on the user's strong-signal artists (>= 0.5). Avoids
-    // polluting the SoundCloud pool with songs from rejected artists.
-    // If there are zero strong-signal artists yet (e.g. a brand-new
-    // profile with only weak / mixed signals), fall back to top-N by
-    // score so the user still gets a pool — the LLM filter step has
-    // the per-artist scores in the profile projection and can
-    // deprioritize the weak ones at the pick step.
-    const strongArtists = profile.artists.filter((a) => a.score >= STRONG_ARTIST_SCORE_THRESHOLD);
-    const seedArtists = strongArtists.length > 0 ? strongArtists : profile.artists;
-    const rankedArtists = [...seedArtists]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, ARTIST_REFINEMENT_TOP_ARTISTS);
-    const artistNames = rankedArtists.map((a) => a.name);
-
-    const settled = await Promise.allSettled(
-      artistNames.map((name) =>
-        this.soundcloud
-          .search(name)
-          .then((hits) => hits.slice(0, ARTIST_REFINEMENT_SONGS_PER_ARTIST))
-          .catch(() => [] as TrackResult[]),
-      ),
-    );
-
-    const fulfilledTracks: TrackResult[] = [];
-    for (const r of settled) {
-      if (r.status === "fulfilled") {
-        for (const t of r.value) fulfilledTracks.push(t);
-      }
-    }
-
-    const dedupedPool = dedupeBySnapshotHash(
-      fulfilledTracks.map((track) => toSnapshot(track)),
-      excludedHashes,
-    );
-
-    if (dedupedPool.length === 0) return [];
-
-    const candidatePool: ArtistRefinementPromptCandidate[] = dedupedPool.map((s) => ({
-      title: s.title,
-      artist: s.artist,
-      source: "soundcloud",
-    }));
-
-    const { system, userMessage } = buildArtistRefinementPrompt({
-      profile,
-      candidatePool,
-    });
-
-    let parsed = { picks: [] as Array<{ title: string; artist: string }> };
-    try {
-      const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
-      const response = await this.anthropic.complete({
-        system,
-        userMessage,
-        model,
-        maxTokens: ARTIST_REFINEMENT_MAX_TOKENS,
-      });
-      parsed = parseArtistRefinementResponse(response.text);
-    } catch (err) {
-      this.logger.warn(
-        { event: "explore_queue_artist_refinement_failed", err: errToString(err) },
-        "explore_queue_artist_refinement_failed",
-      );
-    }
-
-    // Match picks against pool by (title, artist) — anything the LLM
-    // hallucinated outside the pool is dropped silently.
-    const poolByKey = new Map(dedupedPool.map((s) => [`${s.title}::${s.artist}`, s]));
-    const picks: SongSnapshot[] = [];
-    for (const p of parsed.picks) {
-      const snap = poolByKey.get(`${p.title}::${p.artist}`);
-      if (snap) picks.push(snap);
-    }
-
-    const final = picks.slice(0, ARTIST_REFINEMENT_PICKS_TARGET);
-    if (final.length > 0) return final;
-
-    // Heuristic fallback: LLM produced nothing usable — surface the
-    // deduped pool top-N so the queue isn't empty.
-    return dedupedPool.slice(0, ARTIST_REFINEMENT_PICKS_TARGET);
-  }
-
-  /**
-   * Personalized phase — LOGIC-25 / API-21 / PRIVACY-09.
-   *
-   * Inputs to the LLM:
-   *   - The *full* profile, with profile.artists shuffled to 5 of N (so
-   *     consecutive rebuilds get different angles on the user's taste).
-   *   - Three sampled score buckets from interest_scores: 10 random
-   *     entries each at scores 0–3 (low), 4–7 (mid), 8–10 (high). The
-   *     LLM treats these as "songs the user has already reacted to" so
-   *     novel suggestions know what to avoid.
-   *   - The Audius + SoundCloud candidate pool built from the 5
-   *     shuffled artists + 3 top genres (same provider mix as before
-   *     this change — "as we do now" in the design doc).
-   *
-   * LLM output: 10 picks from the pool (verbatim) + 10 novel suggestions
-   * NOT in any score bucket. The caller dedupes both lists against
-   * excludedHashes (per-slot burnt set, API-25) and against the score
-   * buckets in case the LLM ignored the prompt rule.
-   *
-   * Falls through to the deduped raw pool on LLM / parser failure so
-   * the queue is never empty when there's pool content available.
-   */
-  private async sourcePersonalized(
+  private async sourceTasteDriven(
     userId: string,
     profile: TasteProfile | null,
     excludedHashes: Set<string>,
+    swipeHistory: AsymmetricSwipe[],
   ): Promise<SongSnapshot[]> {
     if (!profile) return [];
 
-    // Shuffle artists then take 5 — variety across rebuilds.
-    const shuffledArtists = shuffleCopy(profile.artists).slice(0, PERSONALIZED_ARTIST_SHUFFLE_SIZE);
-    const artistNames = shuffledArtists.map((a) => a.name);
-    const topGenres = profile.genres.slice(0, PERSONALIZED_TOP_GENRES).map((g) => g.name);
+    const currentSlot = slotFor(new Date());
+    const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
 
-    // Score-bucket sampling runs in parallel with the provider searches.
-    const queries = [...artistNames, ...topGenres];
-    const [bucketsResult, providerResults] = await Promise.all([
-      this.sampleAllBuckets(userId),
-      Promise.allSettled(
-        queries.flatMap((q) => [
-          this.audius.search(q).catch(() => [] as TrackResult[]),
-          this.soundcloud.search(q).catch(() => [] as TrackResult[]),
-        ]),
-      ),
-    ]);
-
-    const fulfilledTracks: Array<{ track: TrackResult; provider: TrackResult["provider"] }> = [];
-    for (const r of providerResults) {
-      if (r.status === "fulfilled") {
-        for (const t of r.value) fulfilledTracks.push({ track: t, provider: t.provider });
-      }
-    }
-    const dedupedPool = dedupeBySnapshotHash(
-      fulfilledTracks.map(({ track }) => toSnapshot(track)),
-      excludedHashes,
-    );
-
-    // Per-snapshot lookup so the prompt can carry the original provider
-    // tag (audius/soundcloud) for the LLM's reference.
-    const providerByKey = new Map<string, TrackResult["provider"]>();
-    fulfilledTracks.forEach(({ track, provider }) => {
-      providerByKey.set(`${track.title}::${track.artist}`, provider);
-    });
-
-    const candidatePool: PersonalizedPromptCandidate[] = dedupedPool.map((s) => ({
-      title: s.title,
-      artist: s.artist,
-      source: providerByKey.get(`${s.title}::${s.artist}`) ?? "audius",
-    }));
-
-    const scoreBuckets: PersonalizedScoreBuckets = bucketsResult;
-    const shuffledProfile: TasteProfile = { ...profile, artists: shuffledArtists };
-
-    const { system, userMessage } = buildPersonalizedPrompt({
-      profile: shuffledProfile,
-      scoreBuckets,
-      candidatePool,
-    });
-
-    let parsed = {
-      picks_from_pool: [] as Array<{ title: string; artist: string }>,
-      novel_suggestions: [] as Array<{ title: string; artist: string }>,
-    };
+    // Step 1 — Related-artists Claude call.
+    let relatedArtists: string[];
     try {
-      const model = this.config.get<string>("ANTHROPIC_MODEL") ?? DEFAULT_MODEL;
-      const response = await this.anthropic.complete({
+      const highBucketSamples = await this.sampleHighBucketForPrompt(userId);
+      const shuffledSeedArtists = shuffleCopy(profile.artists)
+        .slice(0, TASTE_DRIVEN_SEED_SHUFFLE_SIZE)
+        .map((a) => a.name);
+
+      const { system, userMessage } = buildRelatedArtistsPrompt({
+        profile,
+        highBucketSamples,
+        shuffledSeedArtists,
+      });
+
+      const relatedResponse = await this.anthropic.complete({
         system,
         userMessage,
         model,
-        maxTokens: PERSONALIZED_MAX_TOKENS,
+        maxTokens: TASTE_DRIVEN_RELATED_ARTISTS_MAX_TOKENS,
       });
-      parsed = parsePersonalizedResponse(response.text);
+
+      const { relatedArtists: parsed } = parseRelatedArtistsResponse(relatedResponse.text);
+      if (parsed.length === 0) throw new Error("taste-driven: empty related-artists list");
+      relatedArtists = parsed;
     } catch (err) {
       this.logger.warn(
-        { event: "explore_queue_personalized_failed", err: errToString(err) },
-        "explore_queue_personalized_failed",
+        { event: "explore_taste_driven_related_artists_failed", err: errToString(err) },
+        "explore_taste_driven_related_artists_failed",
+      );
+      // Fallback: search directly for top profile artists (artist-refinement pattern).
+      const strongArtists = profile.artists.filter((a) => a.score >= STRONG_ARTIST_SCORE_THRESHOLD);
+      const seedArtists = strongArtists.length > 0 ? strongArtists : profile.artists;
+      relatedArtists = [...seedArtists]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, TASTE_DRIVEN_FALLBACK_TOP_ARTISTS)
+        .map((a) => a.name);
+    }
+
+    // Step 2 — SoundCloud fan-out + paginate-unseen per adjacent artist.
+    const settled = await Promise.allSettled(
+      relatedArtists.map((artistName) =>
+        this.soundcloud.search(artistName).catch(() => [] as TrackResult[]),
+      ),
+    );
+
+    const paginatedSnapshots: SongSnapshot[] = [];
+    for (const result of settled) {
+      if (result.status !== "fulfilled") continue;
+      const snapshots = result.value.map((t) => toSnapshot(t));
+      const unseen = paginateUnseenBySkip({ searchResults: snapshots, swipeHistory, currentSlot });
+      for (const s of unseen) paginatedSnapshots.push(s);
+    }
+
+    const candidatePool = dedupeBySnapshotHash(paginatedSnapshots, excludedHashes);
+
+    if (candidatePool.length === 0) {
+      this.logger.warn(
+        { event: "explore_taste_driven_empty_pool" },
+        "explore_taste_driven_empty_pool",
+      );
+      return seedSnapshots().filter((s) => !excludedHashes.has(computeSnapshotHash(s)));
+    }
+
+    // Step 3 — Final-pick Claude call.
+    const scoreBuckets = await this.sampleAllBucketsForTasteDriven(userId);
+    const candidatePoolForPrompt: TasteDrivenPromptCandidate[] = candidatePool.map((s) => ({
+      title: s.title,
+      artist: s.artist,
+      source: "soundcloud" as const,
+    }));
+
+    const { system: pickSystem, userMessage: pickMessage } = buildTasteDrivenPickPrompt({
+      profile,
+      candidatePool: candidatePoolForPrompt,
+      scoreBuckets,
+    });
+
+    let picks: SongSnapshot[] = [];
+    try {
+      const pickResponse = await this.anthropic.complete({
+        system: pickSystem,
+        userMessage: pickMessage,
+        model,
+        maxTokens: TASTE_DRIVEN_PICK_MAX_TOKENS,
+      });
+
+      const { picks: parsedPicks } = parseTasteDrivenPickResponse(pickResponse.text);
+      const poolByKey = new Map(candidatePool.map((s) => [lookupKey(s.title, s.artist), s]));
+      for (const p of parsedPicks) {
+        const snap = poolByKey.get(lookupKey(p.title, p.artist));
+        if (snap) picks.push(snap);
+      }
+    } catch (err) {
+      this.logger.warn(
+        { event: "explore_taste_driven_pick_failed", err: errToString(err) },
+        "explore_taste_driven_pick_failed",
       );
     }
 
-    // Match picks against pool by (title, artist) — anything the LLM
-    // hallucinated outside the pool is dropped silently.
-    const poolByKey = new Map(dedupedPool.map((s) => [`${s.title}::${s.artist}`, s]));
-    const picks: SongSnapshot[] = [];
-    for (const p of parsed.picks_from_pool) {
-      const snap = poolByKey.get(`${p.title}::${p.artist}`);
-      if (snap) picks.push(snap);
-    }
+    if (picks.length > 0) return picks;
 
-    // Novel suggestions: convert (title, artist) → bare SongSnapshot.
-    // Cover resolution downstream (resolveCoversForCandidates) fills
-    // in coverUrl or drops entries that can't be covered.
-    const bucketKeys = new Set<string>(
-      [...scoreBuckets.low, ...scoreBuckets.mid, ...scoreBuckets.high].map(
-        (e) => `${e.title}::${e.artist}`,
-      ),
-    );
-    const novel: SongSnapshot[] = [];
-    for (const n of parsed.novel_suggestions) {
-      const key = `${n.title}::${n.artist}`;
-      // Drop if the LLM ignored the prompt rule and surfaced a track
-      // already in any score bucket.
-      if (bucketKeys.has(key)) continue;
-      novel.push({ title: n.title, artist: n.artist, kind: "track" });
-    }
-
-    // Combine picks + novel, dedupe against excludedHashes (and against
-    // each other — a novel suggestion may collide with a pick title).
-    const combined = dedupeBySnapshotHash([...picks, ...novel], excludedHashes);
-    if (combined.length > 0) return combined;
-
-    // Heuristic fallback: if the LLM produced nothing usable, surface
-    // the deduped pool so the queue isn't empty.
-    return dedupedPool;
+    // Final-pick fallback: deduped pool's first N (API-34).
+    return candidatePool.slice(0, TASTE_DRIVEN_PICKS_TARGET);
   }
 
   /**
-   * Sample 10 entries from each of the three score buckets. Returns
-   * empty arrays for buckets with no matching docs (sparse-history
-   * users — common during initial rebuilds).
+   * Sample up to RELATED_ARTISTS_HIGH_BUCKET_SAMPLE_CAP entries from the
+   * high score bucket (score >= 8) for the related-artists prompt (PRIVACY-17).
+   * Uses MongoDB's $sample so the selection is random within the bucket —
+   * not sorted by score.
    */
-  private async sampleAllBuckets(userId: string): Promise<PersonalizedScoreBuckets> {
+  private async sampleHighBucketForPrompt(userId: string): Promise<HighBucketSample[]> {
+    const docs = await this.interestScores.sampleByScoreBucket(
+      userId,
+      SCORE_BUCKET_HIGH.min,
+      SCORE_BUCKET_HIGH.max,
+      RELATED_ARTISTS_HIGH_BUCKET_SAMPLE_CAP,
+    );
+    return docs.map((d) => ({ title: d.snapshot.title, artist: d.snapshot.artist }));
+  }
+
+  /**
+   * Sample score buckets for the taste-driven pick prompt.
+   */
+  private async sampleAllBucketsForTasteDriven(userId: string): Promise<TasteDrivenScoreBuckets> {
     const [low, mid, high] = await Promise.all([
       this.interestScores.sampleByScoreBucket(
         userId,
@@ -811,7 +612,7 @@ export class QueueBuilderService {
   }
 }
 
-function docToBucketEntry(doc: { snapshot: SongSnapshot }): ScoreBucketEntry {
+function docToBucketEntry(doc: { snapshot: SongSnapshot }): TasteDrivenScoreBucketEntry {
   return { title: doc.snapshot.title, artist: doc.snapshot.artist };
 }
 
@@ -825,9 +626,6 @@ function shuffleCopy<T>(items: ReadonlyArray<T>): T[] {
 }
 
 function toSnapshot(track: TrackResult): SongSnapshot {
-  // SoundCloud's artworkUrl is from user uploads — drop it so the
-  // cover-resolution step picks the cover from a trusted aggregator
-  // source (Deezer / Genius / Audius via SearchService).
   const trustedArtwork = track.provider === "soundcloud" ? undefined : track.artworkUrl;
   return {
     title: track.title,

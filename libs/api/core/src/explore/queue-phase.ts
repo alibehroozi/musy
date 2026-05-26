@@ -15,33 +15,32 @@ export const STRONG_ARTISTS_TO_LEAVE_ARTIST_REFINEMENT = 8;
 // forming a value-level import cycle between Nest services.
 export const SWIPE_TRIGGER_THRESHOLD = 20;
 
+// QueuePhaseLiteral retains "artist-refinement" for backward compatibility with
+// stored queue documents written before the taste-driven adjacency feature.
+// phaseFor no longer emits it — all post-discovery rebuilds use "personalized".
 export type QueuePhaseLiteral = "discovery" | "artist-refinement" | "personalized";
 
 /**
  * Pure decision: which sourcing phase should drive the next queue build
  * for a user, given their current profile and total swipe count?
  *
- * Per LOGIC-15 (May 2026 weakening): profile *existence* is the discovery
- * exit gate — not a genre-count threshold. Before this change, leaving
- * discovery required ≥ 3 distinct liked genres at score ≥ 0.2, which
- * deadlocked users whose 20-swipe cold-start sample didn't surface that
- * many genres confidently. A thin artist-refinement batch beats a re-run
- * of cold-start the user already saw.
+ * Per LOGIC-15 (taste-driven adjacency update): profile *existence* is the
+ * only gate — any non-null profile goes straight to "personalized". The
+ * "artist-refinement" intermediate phase is retired from the runtime; the
+ * enum value stays in the contract for backward compat with stored documents.
  *
- * Phases ordered by maturity:
- *   - "discovery": no profile yet.
- *   - "artist-refinement": profile exists, < 8 strong-signal artists.
- *   - "personalized": ≥ 8 strong-signal artists.
+ * Phases:
+ *   - "discovery":   no profile yet.
+ *   - "personalized": profile exists (any number of strong-signal artists).
  *
  * The function is identity-free, deterministic, and never reads time or
- * randomness — every test just hands it a profile and an integer.
+ * randomness — every test just hands it a profile and an integer (API-35).
  */
-export function phaseFor(profile: TasteProfile | null, totalSwipeCount: number): QueuePhaseLiteral {
+export function phaseFor(
+  profile: TasteProfile | null,
+  totalSwipeCount: number,
+): "discovery" | "personalized" {
   void totalSwipeCount;
   if (profile === null) return "discovery";
-  const strongArtists = profile.artists.filter(
-    (a) => a.score >= STRONG_ARTIST_SCORE_THRESHOLD,
-  ).length;
-  if (strongArtists < STRONG_ARTISTS_TO_LEAVE_ARTIST_REFINEMENT) return "artist-refinement";
   return "personalized";
 }

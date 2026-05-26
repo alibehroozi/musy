@@ -1,7 +1,8 @@
 ---
 epic: explore-mix
-status: pending
+status: done
 estimated-invariants: 11
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/58
 ---
 
 # Feature 03: Taste-driven adjacency phase

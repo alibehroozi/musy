@@ -12,7 +12,7 @@ function snap(title: string, artist: string): SongSnapshot {
   return { title, artist, kind: "track" };
 }
 
-const SLOT: AsymmetricSlot = { weekday: "monday", timeOfDay: "morning" };
+const SLOT: AsymmetricSlot = { weekday: "mon", timeOfDay: "morning" };
 
 // Swipe at a specific time, matched to the given slot.
 // Monday morning is approx. 2026-05-25 09:00 UTC.

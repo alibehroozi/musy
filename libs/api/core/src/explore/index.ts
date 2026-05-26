@@ -10,4 +10,5 @@ export * from "./eligibility.js";
 export * from "./dedup-history.js";
 export * from "./soft-suppress.js";
 export * from "./per-artist-cap.js";
+export * from "./discovery-scenes-prompt.js";
 export * from "./llm-json.js";

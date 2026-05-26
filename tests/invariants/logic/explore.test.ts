@@ -67,36 +67,17 @@ describe("LOGIC-15: phaseFor — profile existence is the discovery exit gate", 
     expect(phaseFor(null, 999)).toBe("discovery");
   });
 
-  it("non-null profile with no liked genres → 'artist-refinement' (profile-existence gate)", () => {
-    // Under the weakened LOGIC-15: any non-null profile with < 8 strong
-    // artists is artist-refinement, even with zero or weak genres. The
-    // previous "≥ 3 distinct liked genres at score ≥ 0.2" requirement was
-    // a deadlock — small cold-start samples rarely hit it.
-    expect(phaseFor(profile({ genres: [], artists: [] }), 20)).toBe("artist-refinement");
+  it("non-null profile with no artists → 'personalized' (profile-existence gate)", () => {
+    expect(phaseFor(profile({ genres: [], artists: [] }), 20)).toBe("personalized");
   });
 
-  it("profile with two liked genres → 'artist-refinement' (was 'discovery' under old rule)", () => {
+  it("profile with < 8 strong-signal artists → 'personalized'", () => {
     expect(
       phaseFor(
         profile({
           genres: [
             { name: "house", score: 0.9 },
             { name: "techno", score: 0.9 },
-          ],
-        }),
-        25,
-      ),
-    ).toBe("artist-refinement");
-  });
-
-  it("profile with ≥ 3 liked genres but < 8 strong-signal artists → 'artist-refinement'", () => {
-    expect(
-      phaseFor(
-        profile({
-          genres: [
-            { name: "house", score: 0.9 },
-            { name: "techno", score: 0.9 },
-            { name: "ambient", score: 0.5 },
           ],
           artists: [
             { name: "A1", score: 0.9 },
@@ -105,12 +86,28 @@ describe("LOGIC-15: phaseFor — profile existence is the discovery exit gate", 
         }),
         25,
       ),
-    ).toBe("artist-refinement");
+    ).toBe("personalized");
   });
 
-  it("profile with ≥ 8 strong-signal artists → 'personalized' (genres no longer gate)", () => {
+  it("profile with ≥ 8 strong-signal artists → 'personalized'", () => {
     const strong = Array.from({ length: 8 }, (_, i) => ({ name: `A${i}`, score: 0.9 }));
     expect(phaseFor(profile({ artists: strong }), 100)).toBe("personalized");
+  });
+
+  it("never returns 'artist-refinement' regardless of artist count", () => {
+    const profiles = [
+      profile({ artists: [] }),
+      profile({ artists: [{ name: "A", score: 0.9 }] }),
+      profile({
+        artists: Array.from({ length: 7 }, (_, i) => ({ name: `A${i}`, score: 0.9 })),
+      }),
+      profile({
+        artists: Array.from({ length: 8 }, (_, i) => ({ name: `A${i}`, score: 0.9 })),
+      }),
+    ];
+    for (const p of profiles) {
+      expect(phaseFor(p, 30)).not.toBe("artist-refinement");
+    }
   });
 
   it("equal inputs always produce the same output (no Date.now / I/O)", () => {
@@ -119,7 +116,7 @@ describe("LOGIC-15: phaseFor — profile existence is the discovery exit gate", 
       artists: [{ name: "A1", score: 0.9 }],
     });
     for (let i = 0; i < 50; i++) {
-      expect(phaseFor(p, 30)).toBe("artist-refinement");
+      expect(phaseFor(p, 30)).toBe("personalized");
     }
   });
 });

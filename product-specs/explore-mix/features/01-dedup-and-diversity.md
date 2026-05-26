@@ -1,7 +1,8 @@
 ---
 epic: explore-mix
-status: pending
+status: done
 estimated-invariants: 6
+implemented-in-pr: https://github.com/alibehroozi/musy/pull/56
 ---
 
 # Feature 01: Dedup and diversity foundation
